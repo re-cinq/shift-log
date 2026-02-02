@@ -180,3 +180,24 @@ func (r *GitRepo) HasNote(ref, commit string) bool {
 	err := r.Run("git", "notes", "--ref", ref, "show", commit)
 	return err == nil
 }
+
+// NewGitRepoAsBare creates a new bare git repository (for use as a remote)
+func NewGitRepoAsBare() (*GitRepo, error) {
+	dir, err := os.MkdirTemp("", "claudit-test-bare-*")
+	if err != nil {
+		return nil, err
+	}
+
+	repo := &GitRepo{Path: dir}
+	if err := repo.Run("git", "init", "--bare"); err != nil {
+		repo.Cleanup()
+		return nil, err
+	}
+
+	return repo, nil
+}
+
+// AddRemote adds a new remote to the repository
+func (r *GitRepo) AddRemote(name, path string) error {
+	return r.Run("git", "remote", "add", name, path)
+}
