@@ -3,6 +3,7 @@
     "args": {
       "CLAUDE_CODE_VERSION": "latest",
       "GIT_DELTA_VERSION": "0.18.2",
+      "GO_VERSION": "1.25.6",
       "TZ": "${localEnv:TZ:America/Los_Angeles}",
       "ZSH_IN_DOCKER_VERSION": "1.2.0"
     },

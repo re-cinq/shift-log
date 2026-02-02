@@ -43,8 +43,8 @@ RUN SNIPPET="export PROMPT_COMMAND='history -a' && export HISTFILE=/commandhisto
 ENV DEVCONTAINER=true
 
 # Create workspace and config directories and set permissions
-RUN mkdir -p /workspace /home/node/.claude && \
-  chown -R node:node /workspace /home/node/.claude
+RUN mkdir -p /workspace /home/node/.claude /home/node/go && \
+  chown -R node:node /workspace /home/node/.claude /home/node/go
 
 WORKDIR /workspace
 
@@ -53,6 +53,18 @@ RUN ARCH=$(dpkg --print-architecture) && \
   wget "https://github.com/dandavison/delta/releases/download/${GIT_DELTA_VERSION}/git-delta_${GIT_DELTA_VERSION}_${ARCH}.deb" && \
   sudo dpkg -i "git-delta_${GIT_DELTA_VERSION}_${ARCH}.deb" && \
   rm "git-delta_${GIT_DELTA_VERSION}_${ARCH}.deb"
+
+# Install Go
+ARG GO_VERSION=1.25.6
+RUN ARCH=$(dpkg --print-architecture) && \
+  if [ "$ARCH" = "amd64" ]; then GOARCH="amd64"; else GOARCH="arm64"; fi && \
+  wget "https://go.dev/dl/go${GO_VERSION}.linux-${GOARCH}.tar.gz" && \
+  tar -C /usr/local -xzf "go${GO_VERSION}.linux-${GOARCH}.tar.gz" && \
+  rm "go${GO_VERSION}.linux-${GOARCH}.tar.gz"
+
+ENV PATH=$PATH:/usr/local/go/bin
+ENV GOPATH=/home/node/go
+ENV PATH=$PATH:/home/node/go/bin
 
 # Set up non-root user
 USER node
