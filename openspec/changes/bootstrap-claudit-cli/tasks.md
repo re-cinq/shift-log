@@ -6,7 +6,7 @@
 
 ### 1.1 Foundation
 
-- [ ] **1.1.1** Initialize Go module and create project structure
+- [x] **1.1.1** Initialize Go module and create project structure
   - Create `go.mod` with module path
   - Create directory structure: `cmd/`, `internal/claude/`, `internal/git/`, `internal/storage/`, `internal/web/`
   - Add dependencies:
@@ -15,7 +15,7 @@
     - `github.com/onsi/gomega` (assertions)
   - Verify: `go build` succeeds
 
-- [ ] **1.1.2** Set up acceptance test infrastructure
+- [x] **1.1.2** Set up acceptance test infrastructure
   - Create `tests/acceptance/` directory structure
   - Create `acceptance_suite_test.go` with Ginkgo bootstrap
   - Create `testutil/binary.go` - build and execute claudit binary
@@ -23,44 +23,44 @@
   - Create `testutil/fixtures.go` - sample JSONL transcripts
   - Verify: `ginkgo tests/acceptance` runs (empty suite)
 
-- [ ] **1.1.3** Implement root command with Cobra
+- [x] **1.1.3** Implement root command with Cobra
   - Create `main.go` entry point
   - Create `cmd/root.go` with version flag
   - Verify: `claudit --version` displays version
 
-- [ ] **1.1.4** Implement git repository detection
+- [x] **1.1.4** Implement git repository detection
   - Create `internal/git/repo.go`
   - Detect if cwd is inside a git repository
   - Get repository root path
   - Verify: Unit tests pass
 
-- [ ] **1.1.5** Add acceptance tests for CLI foundation
+- [x] **1.1.5** Add acceptance tests for CLI foundation
   - Test `claudit` displays help
   - Test `claudit --version` displays version
   - Verify: `ginkgo tests/acceptance` passes
 
 ### 1.2 Storage Core
 
-- [ ] **1.2.1** Implement JSONL transcript parser
+- [x] **1.2.1** Implement JSONL transcript parser
   - Create `internal/claude/transcript.go`
   - Parse user, assistant, system, tool_result entries
   - Handle unknown types gracefully
   - Verify: Unit tests with sample JSONL
 
-- [ ] **1.2.2** Implement compression and encoding
+- [x] **1.2.2** Implement compression and encoding
   - Create `internal/storage/compress.go`
   - Implement gzip compression
   - Implement base64 encoding
   - Implement SHA256 checksum
   - Verify: Round-trip compression test
 
-- [ ] **1.2.3** Implement storage format
+- [x] **1.2.3** Implement storage format
   - Create `internal/storage/format.go`
   - Define `StoredConversation` struct
   - JSON serialization/deserialization
   - Verify: Unit tests
 
-- [ ] **1.2.4** Implement git notes operations
+- [x] **1.2.4** Implement git notes operations
   - Create `internal/git/notes.go`
   - Add note to commit
   - Read note from commit
@@ -69,14 +69,14 @@
 
 ### 1.3 Store Command
 
-- [ ] **1.3.1** Implement store command
+- [x] **1.3.1** Implement store command
   - Create `cmd/store.go`
   - Read PostToolUse hook JSON from stdin
   - Detect git commit commands
   - Read transcript, compress, store as note
   - Verify: Unit tests with mock stdin
 
-- [ ] **1.3.2** Add acceptance tests for store command
+- [x] **1.3.2** Add acceptance tests for store command
   - Test: Pipe hook JSON with `git commit` command, verify note created
   - Test: Pipe hook JSON with non-commit command, verify silent exit
   - Test: Verify stored note contains expected metadata
@@ -85,33 +85,33 @@
 
 ### 1.4 Init & Sync
 
-- [ ] **1.4.1** Implement Claude hooks configuration
+- [x] **1.4.1** Implement Claude hooks configuration
   - Create `internal/claude/hooks.go`
   - Read/write `.claude/settings.local.json`
   - Merge hooks without overwriting existing config
   - Verify: Unit tests
 
-- [ ] **1.4.2** Implement sync command
+- [x] **1.4.2** Implement sync command
   - Create `cmd/sync.go`
   - `sync push` - push notes to origin
   - `sync pull` - fetch notes from origin
   - Verify: Commands execute git push/fetch for notes ref
 
-- [ ] **1.4.3** Implement git hooks installation
+- [x] **1.4.3** Implement git hooks installation
   - Create `internal/git/hooks.go`
   - Install pre-push → `claudit sync push`
   - Install post-merge, post-checkout → `claudit sync pull`
   - Handle existing hooks (append, don't overwrite)
   - Verify: Hooks are executable and call claudit commands
 
-- [ ] **1.4.4** Implement init command
+- [x] **1.4.4** Implement init command
   - Create `cmd/init.go`
   - Configure Claude hooks
   - Install git hooks
   - Display success message
   - Verify: Command runs without error
 
-- [ ] **1.4.5** Add acceptance tests for init command
+- [x] **1.4.5** Add acceptance tests for init command
   - Test: `claudit init` in git repo creates `.claude/settings.local.json`
   - Test: Verify PostToolUse hook configuration is correct
   - Test: Verify git hooks are installed and executable
@@ -119,7 +119,7 @@
   - Test: `claudit init` preserves existing settings
   - Verify: `ginkgo tests/acceptance` passes
 
-- [ ] **1.4.6** Add acceptance tests for sync command
+- [x] **1.4.6** Add acceptance tests for sync command
   - Create `testutil/remote.go` - create local bare repos as remotes
   - Test: `claudit sync push` pushes notes to bare repo remote
   - Test: `claudit sync pull` fetches notes from bare repo remote
@@ -129,12 +129,12 @@
 
 ### 1.5 Milestone 1 Completion
 
-- [ ] **1.5.1** End-to-end acceptance test for store flow
+- [x] **1.5.1** End-to-end acceptance test for store flow
   - Test: Full flow - init repo, simulate Claude hook, verify note stored
   - Test: Push/pull notes between repos
   - Verify: `ginkgo tests/acceptance` passes
 
-- [ ] **1.5.2** Create Makefile (basic)
+- [x] **1.5.2** Create Makefile (basic)
   - `make build` - build binary
   - `make test` - run unit tests
   - `make acceptance` - run acceptance tests
