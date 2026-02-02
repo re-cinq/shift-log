@@ -148,14 +148,14 @@
 
 ### 2.1 Session Management
 
-- [ ] **2.1.1** Implement session file management
+- [x] **2.1.1** Implement session file management
   - Create `internal/claude/session.go`
   - Compute encoded project path
   - Write JSONL to Claude's location
   - Update sessions-index.json
   - Verify: Unit tests
 
-- [ ] **2.1.2** Set up isolated Claude test environment
+- [x] **2.1.2** Set up isolated Claude test environment
   - Create `testutil/claude_env.go`
   - Helper to create temp HOME directory for test isolation
   - Pre-populate `$HOME/.claude/projects/` structure for tests
@@ -165,7 +165,7 @@
 
 ### 2.2 Resume Command
 
-- [ ] **2.2.1** Implement resume command
+- [x] **2.2.1** Implement resume command
   - Create `cmd/resume.go`
   - Resolve commit reference (SHA, branch, relative)
   - Read and decompress conversation from note
@@ -176,7 +176,7 @@
   - Launch `claude --resume`
   - Verify: Command structure in place
 
-- [ ] **2.2.2** Add acceptance tests for resume command
+- [x] **2.2.2** Add acceptance tests for resume command
   - Test: `claudit resume <sha>` restores transcript to Claude location
   - Test: `claudit resume <sha>` calls `claude --resume <session-id>`
   - Test: `claudit resume` with branch name resolves correctly
@@ -187,13 +187,13 @@
 
 ### 2.3 List Command
 
-- [ ] **2.3.1** Implement list command
+- [x] **2.3.1** Implement list command
   - Create `cmd/list.go`
   - List commits with conversations
   - Display SHA, date, message preview
   - Verify: Command runs
 
-- [ ] **2.3.2** Add acceptance tests for list command
+- [x] **2.3.2** Add acceptance tests for list command
   - Test: `claudit list` shows commits with conversations
   - Test: `claudit list` in repo with no conversations shows empty
   - Test: Output format includes SHA, date, message
@@ -201,7 +201,7 @@
 
 ### 2.4 Milestone 2 Completion
 
-- [ ] **2.4.1** End-to-end acceptance test for resume flow
+- [x] **2.4.1** End-to-end acceptance test for resume flow
   - Test: Store conversation, then resume from that commit
   - Test: Verify Claude actually loads the session
   - Verify: `ginkgo tests/acceptance` passes
@@ -214,45 +214,46 @@
 
 ### 3.1 Web Server Foundation
 
-- [ ] **3.1.1** Set up embedded static assets
+- [x] **3.1.1** Set up embedded static assets
   - Create `internal/web/static/` directory
   - Create basic HTML template
   - Configure Go embed
   - Verify: Assets compile into binary
 
-- [ ] **3.1.2** Implement HTTP server foundation
+- [x] **3.1.2** Implement HTTP server foundation
   - Create `internal/web/server.go`
   - Localhost binding, configurable port
   - Serve embedded assets
   - Verify: Server starts and serves index page
 
-- [ ] **3.1.3** Implement serve command
+- [x] **3.1.3** Implement serve command
   - Create `cmd/serve.go`
   - Start server with port flag
   - Display URL in terminal
+  - Auto-open browser (--no-browser flag to disable)
   - Verify: `claudit serve` starts server
 
 ### 3.2 API Endpoints
 
-- [ ] **3.2.1** Implement commits API
+- [x] **3.2.1** Implement commits API
   - Create `internal/web/handlers.go`
   - `GET /api/commits` - list with pagination, has_conversation flag
   - `GET /api/commits/:sha` - full conversation
   - Verify: Handlers return expected JSON
 
-- [ ] **3.2.2** Implement graph API
+- [x] **3.2.2** Implement graph API
   - Add `GET /api/graph` endpoint
   - Return commit graph structure
   - Mark commits with conversations
   - Verify: Handler returns expected JSON
 
-- [ ] **3.2.3** Implement resume API
+- [x] **3.2.3** Implement resume API
   - Add `POST /api/resume/:sha` endpoint
   - Check for uncommitted changes (return 409 if dirty)
   - Trigger resume flow
   - Verify: Handler structure in place
 
-- [ ] **3.2.4** Add acceptance tests for serve command and APIs
+- [x] **3.2.4** Add acceptance tests for serve command and APIs
   - Test: `claudit serve` starts server on default port
   - Test: `claudit serve --port 3000` uses custom port
   - Test: `GET /api/commits` returns commit list with has_conversation flag
@@ -264,21 +265,21 @@
 
 ### 3.3 Web UI
 
-- [ ] **3.3.1** Build commit graph UI
+- [x] **3.3.1** Build commit graph UI
   - Create SVG-based graph renderer
   - Display branches and commits
   - Highlight commits with conversations
   - Implement scroll/navigation
   - Verify: Visual inspection
 
-- [ ] **3.3.2** Build conversation viewer UI
+- [x] **3.3.2** Build conversation viewer UI
   - Create message display components
   - Style user vs assistant messages
   - Render markdown content
   - Collapsible tool uses
   - Verify: Visual inspection
 
-- [ ] **3.3.3** Integrate resume button
+- [x] **3.3.3** Integrate resume button
   - Add "Resume Session" button
   - Call resume API
   - Display status feedback
@@ -286,7 +287,7 @@
 
 ### 3.4 Milestone 3 Completion
 
-- [ ] **3.4.1** End-to-end acceptance test for web flow
+- [x] **3.4.1** End-to-end acceptance test for web flow
   - Test: Start server, fetch commits, view conversation, trigger resume
   - Verify: `ginkgo tests/acceptance` passes
 

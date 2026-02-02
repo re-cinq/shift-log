@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Claudit - Conversation History</title>
+    <style>
+        :root {
+            --bg-primary: #1a1a2e;
+            --bg-secondary: #16213e;
+            --bg-tertiary: #0f3460;
+            --text-primary: #e4e4e7;
+            --text-secondary: #a1a1aa;
+            --accent: #e94560;
+            --accent-hover: #ff6b6b;
+            --user-bg: #2d3748;
+            --assistant-bg: #1e293b;
+            --border-color: #374151;
+            --success: #10b981;
+            --warning: #f59e0b;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+
+        /* Left Panel - Commit Graph */
+        .commit-panel {
+            width: 400px;
+            min-width: 300px;
+            background-color: var(--bg-secondary);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .panel-header {
+            padding: 16px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .panel-header h2 {
+            font-size: 14px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-secondary);
+        }
+
+        .commit-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+        }
+
+        .commit-item {
+            padding: 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            margin-bottom: 4px;
+        }
+
+        .commit-item:hover {
+            background-color: var(--bg-tertiary);
+        }
+
+        .commit-item.selected {
+            background-color: var(--bg-tertiary);
+            border-left: 3px solid var(--accent);
+        }
+
+        .commit-item.has-conversation {
+            position: relative;
+        }
+
+        .commit-item.has-conversation::before {
+            content: '';
+            position: absolute;
+            left: -8px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 8px;
+            height: 8px;
+            background-color: var(--accent);
+            border-radius: 50%;
+        }
+
+        .commit-sha {
+            font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+            font-size: 12px;
+            color: var(--accent);
+            margin-bottom: 4px;
+        }
+
+        .commit-message {
+            font-size: 14px;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .commit-meta {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 500;
+            background-color: var(--accent);
+            color: white;
+            margin-left: 8px;
+        }
+
+        /* Right Panel - Conversation Viewer */
+        .conversation-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background-color: var(--bg-primary);
+        }
+
+        .conversation-header {
+            padding: 16px 24px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .conversation-title {
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .resume-btn {
+            background-color: var(--accent);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .resume-btn:hover:not(:disabled) {
+            background-color: var(--accent-hover);
+        }
+
+        .resume-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .conversation-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px;
+        }
+
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: var(--text-secondary);
+        }
+
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        .message {
+            margin-bottom: 24px;
+            padding: 16px;
+            border-radius: 8px;
+            max-width: 80%;
+        }
+
+        .message.user {
+            background-color: var(--user-bg);
+            margin-left: auto;
+        }
+
+        .message.assistant {
+            background-color: var(--assistant-bg);
+            border: 1px solid var(--border-color);
+        }
+
+        .message-role {
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 8px;
+            color: var(--text-secondary);
+        }
+
+        .message-content {
+            font-size: 14px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .message-content code {
+            background-color: rgba(0, 0, 0, 0.3);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+            font-size: 13px;
+        }
+
+        .message-content pre {
+            background-color: rgba(0, 0, 0, 0.3);
+            padding: 12px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 12px 0;
+        }
+
+        .message-content pre code {
+            background: none;
+            padding: 0;
+        }
+
+        .tool-use {
+            margin: 12px 0;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .tool-header {
+            background-color: var(--bg-tertiary);
+            padding: 8px 12px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 13px;
+        }
+
+        .tool-header:hover {
+            background-color: var(--bg-secondary);
+        }
+
+        .tool-name {
+            font-weight: 500;
+            color: var(--accent);
+        }
+
+        .tool-content {
+            display: none;
+            padding: 12px;
+            background-color: rgba(0, 0, 0, 0.2);
+            font-size: 13px;
+            font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .tool-content.expanded {
+            display: block;
+        }
+
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+        }
+
+        .spinner {
+            width: 32px;
+            height: 32px;
+            border: 3px solid var(--border-color);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .status-message {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 12px 20px;
+            border-radius: 6px;
+            font-size: 14px;
+            animation: slideIn 0.3s ease;
+        }
+
+        .status-message.success {
+            background-color: var(--success);
+            color: white;
+        }
+
+        .status-message.error {
+            background-color: var(--accent);
+            color: white;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateY(100px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg-secondary);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--text-secondary);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="commit-panel">
+            <div class="panel-header">
+                <h2>Commits</h2>
+                <span id="commit-count"></span>
+            </div>
+            <div class="commit-list" id="commit-list">
+                <div class="loading">
+                    <div class="spinner"></div>
+                </div>
+            </div>
+        </div>
+        <div class="conversation-panel">
+            <div class="conversation-header">
+                <span class="conversation-title" id="conversation-title">Select a commit</span>
+                <button class="resume-btn" id="resume-btn" disabled>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                    </svg>
+                    Resume Session
+                </button>
+            </div>
+            <div class="conversation-content" id="conversation-content">
+                <div class="empty-state">
+                    <div class="empty-state-icon">💬</div>
+                    <p>Select a commit with a conversation to view it</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let selectedCommit = null;
+        let commits = [];
+
+        async function fetchCommits() {
+            try {
+                const response = await fetch('/api/commits');
+                commits = await response.json();
+                renderCommits();
+            } catch (error) {
+                console.error('Failed to fetch commits:', error);
+                showStatus('Failed to load commits', 'error');
+            }
+        }
+
+        function renderCommits() {
+            const list = document.getElementById('commit-list');
+
+            if (commits.length === 0) {
+                list.innerHTML = '<div class="empty-state"><p>No commits found</p></div>';
+                return;
+            }
+
+            const conversationCount = commits.filter(c => c.has_conversation).length;
+            document.getElementById('commit-count').textContent = `${conversationCount} with conversations`;
+
+            list.innerHTML = commits.map(commit => `
+                <div class="commit-item ${commit.has_conversation ? 'has-conversation' : ''}"
+                     data-sha="${commit.sha}"
+                     onclick="selectCommit('${commit.sha}')">
+                    <div class="commit-sha">
+                        ${commit.sha.substring(0, 7)}
+                        ${commit.has_conversation ? `<span class="badge">${commit.message_count} msgs</span>` : ''}
+                    </div>
+                    <div class="commit-message">${escapeHtml(commit.message)}</div>
+                    <div class="commit-meta">${formatDate(commit.date)} by ${escapeHtml(commit.author)}</div>
+                </div>
+            `).join('');
+        }
+
+        async function selectCommit(sha) {
+            selectedCommit = sha;
+
+            // Update UI
+            document.querySelectorAll('.commit-item').forEach(el => {
+                el.classList.toggle('selected', el.dataset.sha === sha);
+            });
+
+            const commit = commits.find(c => c.sha === sha);
+            if (!commit) return;
+
+            document.getElementById('conversation-title').textContent =
+                `${commit.message.substring(0, 50)}${commit.message.length > 50 ? '...' : ''}`;
+
+            const resumeBtn = document.getElementById('resume-btn');
+            resumeBtn.disabled = !commit.has_conversation;
+
+            if (!commit.has_conversation) {
+                document.getElementById('conversation-content').innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📭</div>
+                        <p>No conversation recorded for this commit</p>
+                    </div>
+                `;
+                return;
+            }
+
+            // Fetch conversation
+            document.getElementById('conversation-content').innerHTML = `
+                <div class="loading"><div class="spinner"></div></div>
+            `;
+
+            try {
+                const response = await fetch(`/api/commits/${sha}`);
+                const data = await response.json();
+                renderConversation(data);
+            } catch (error) {
+                console.error('Failed to fetch conversation:', error);
+                showStatus('Failed to load conversation', 'error');
+            }
+        }
+
+        function renderConversation(data) {
+            const content = document.getElementById('conversation-content');
+
+            if (!data.transcript || data.transcript.length === 0) {
+                content.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📭</div>
+                        <p>Conversation is empty</p>
+                    </div>
+                `;
+                return;
+            }
+
+            content.innerHTML = data.transcript.map(entry => {
+                if (entry.type === 'user') {
+                    return renderUserMessage(entry);
+                } else if (entry.type === 'assistant') {
+                    return renderAssistantMessage(entry);
+                }
+                return '';
+            }).join('');
+
+            // Add click handlers for tool toggles
+            content.querySelectorAll('.tool-header').forEach(header => {
+                header.addEventListener('click', () => {
+                    const toolContent = header.nextElementSibling;
+                    toolContent.classList.toggle('expanded');
+                    header.querySelector('.toggle-icon').textContent =
+                        toolContent.classList.contains('expanded') ? '▼' : '▶';
+                });
+            });
+        }
+
+        function renderUserMessage(entry) {
+            const content = entry.message?.content || [];
+            const text = content.find(c => c.type === 'text')?.text || '';
+            return `
+                <div class="message user">
+                    <div class="message-role">User</div>
+                    <div class="message-content">${formatContent(text)}</div>
+                </div>
+            `;
+        }
+
+        function renderAssistantMessage(entry) {
+            const content = entry.message?.content || [];
+            let html = '<div class="message assistant"><div class="message-role">Assistant</div>';
+
+            for (const block of content) {
+                if (block.type === 'text') {
+                    html += `<div class="message-content">${formatContent(block.text)}</div>`;
+                } else if (block.type === 'tool_use') {
+                    html += renderToolUse(block);
+                }
+            }
+
+            html += '</div>';
+            return html;
+        }
+
+        function renderToolUse(block) {
+            const input = typeof block.input === 'string'
+                ? block.input
+                : JSON.stringify(block.input, null, 2);
+            return `
+                <div class="tool-use">
+                    <div class="tool-header">
+                        <span class="tool-name">🔧 ${escapeHtml(block.name)}</span>
+                        <span class="toggle-icon">▶</span>
+                    </div>
+                    <div class="tool-content">${escapeHtml(input)}</div>
+                </div>
+            `;
+        }
+
+        async function resumeSession() {
+            if (!selectedCommit) return;
+
+            const resumeBtn = document.getElementById('resume-btn');
+            resumeBtn.disabled = true;
+            resumeBtn.innerHTML = '<div class="spinner" style="width:16px;height:16px;border-width:2px"></div> Resuming...';
+
+            try {
+                const response = await fetch(`/api/resume/${selectedCommit}`, {
+                    method: 'POST'
+                });
+
+                if (response.ok) {
+                    showStatus('Session resumed! Claude is starting...', 'success');
+                } else if (response.status === 409) {
+                    showStatus('Cannot resume: uncommitted changes in working directory', 'error');
+                } else {
+                    const data = await response.json();
+                    showStatus(data.error || 'Failed to resume session', 'error');
+                }
+            } catch (error) {
+                showStatus('Failed to resume session', 'error');
+            } finally {
+                resumeBtn.disabled = false;
+                resumeBtn.innerHTML = `
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                    </svg>
+                    Resume Session
+                `;
+            }
+        }
+
+        function showStatus(message, type) {
+            const existing = document.querySelector('.status-message');
+            if (existing) existing.remove();
+
+            const el = document.createElement('div');
+            el.className = `status-message ${type}`;
+            el.textContent = message;
+            document.body.appendChild(el);
+
+            setTimeout(() => el.remove(), 5000);
+        }
+
+        function formatContent(text) {
+            if (!text) return '';
+            // Basic markdown-like formatting
+            let html = escapeHtml(text);
+            // Code blocks
+            html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
+            // Inline code
+            html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+            return html;
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function formatDate(dateStr) {
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        // Initialize
+        document.getElementById('resume-btn').addEventListener('click', resumeSession);
+        fetchCommits();
+    </script>
+</body>
+</html>

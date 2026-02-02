@@ -75,3 +75,51 @@ func EnsureGitDir() (string, error) {
 
 	return gitDir, nil
 }
+
+// ResolveRef resolves a git reference (branch, tag, SHA, relative) to a full commit SHA
+func ResolveRef(ref string) (string, error) {
+	cmd := exec.Command("git", "rev-parse", ref)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+// HasUncommittedChanges returns true if there are uncommitted changes in the working directory
+func HasUncommittedChanges() (bool, error) {
+	// Check for staged or unstaged changes
+	cmd := exec.Command("git", "status", "--porcelain")
+	output, err := cmd.Output()
+	if err != nil {
+		return false, err
+	}
+	return len(strings.TrimSpace(string(output))) > 0, nil
+}
+
+// Checkout checks out a commit or branch
+func Checkout(ref string) error {
+	cmd := exec.Command("git", "checkout", ref)
+	return cmd.Run()
+}
+
+// GetCommitInfo returns the commit message and author date for a commit
+func GetCommitInfo(commitSHA string) (message string, date string, err error) {
+	// Get commit message (first line)
+	cmd := exec.Command("git", "log", "-1", "--format=%s", commitSHA)
+	msgOutput, err := cmd.Output()
+	if err != nil {
+		return "", "", err
+	}
+	message = strings.TrimSpace(string(msgOutput))
+
+	// Get commit date
+	cmd = exec.Command("git", "log", "-1", "--format=%ci", commitSHA)
+	dateOutput, err := cmd.Output()
+	if err != nil {
+		return "", "", err
+	}
+	date = strings.TrimSpace(string(dateOutput))
+
+	return message, date, nil
+}
