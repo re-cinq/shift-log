@@ -16,3 +16,12 @@ Use `@/openspec/AGENTS.md` to learn:
 Keep this managed block so 'openspec update' can refresh the instructions.
 
 <!-- OPENSPEC:END -->
+
+# Beads Task Tracking
+
+Automatically manage Beads issues without requiring user commands:
+- Create issues (`bd create`) when starting non-trivial work
+- Update status (`bd update --status=in_progress`) when beginning a task
+- Close issues (`bd close`) when work is complete
+- Use `bd ready` to find and prioritize available work
+- The user should not need to give `bd` commands — handle this proactively
