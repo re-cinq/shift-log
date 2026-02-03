@@ -6,15 +6,10 @@ import (
 	"path/filepath"
 )
 
-// HookMatcher defines the criteria for matching tool uses
-type HookMatcher struct {
-	ToolName string `json:"tool_name,omitempty"`
-}
-
 // Hook defines a Claude Code hook configuration
 type Hook struct {
-	Matcher HookMatcher `json:"matcher"`
-	Hooks   []HookCmd   `json:"hooks"`
+	Matcher string    `json:"matcher"` // Tool name pattern (e.g., "Bash", "Write", "Edit|Write")
+	Hooks   []HookCmd `json:"hooks"`
 }
 
 // HookCmd defines a command to run for a hook
@@ -24,10 +19,15 @@ type HookCmd struct {
 	Timeout int    `json:"timeout,omitempty"`
 }
 
+// HooksConfig represents the nested hooks configuration
+type HooksConfig struct {
+	PostToolUse []Hook `json:"PostToolUse,omitempty"`
+}
+
 // Settings represents Claude Code's settings.local.json structure
 type Settings struct {
-	PostToolUse []Hook                 `json:"hooks.postToolUse,omitempty"`
-	Other       map[string]interface{} `json:"-"` // Preserve other settings
+	Hooks HooksConfig            `json:"hooks,omitempty"`
+	Other map[string]interface{} `json:"-"` // Preserve other settings
 }
 
 // ReadSettings reads the Claude settings file from the given directory
@@ -51,10 +51,10 @@ func ReadSettings(claudeDir string) (*Settings, error) {
 	// Extract known fields
 	settings := &Settings{Other: make(map[string]interface{})}
 
-	if hooks, ok := raw["hooks.postToolUse"]; ok {
+	if hooks, ok := raw["hooks"]; ok {
 		hookBytes, _ := json.Marshal(hooks)
-		json.Unmarshal(hookBytes, &settings.PostToolUse)
-		delete(raw, "hooks.postToolUse")
+		json.Unmarshal(hookBytes, &settings.Hooks)
+		delete(raw, "hooks")
 	}
 
 	// Store remaining fields
@@ -71,8 +71,9 @@ func WriteSettings(claudeDir string, settings *Settings) error {
 		output[k] = v
 	}
 
-	if len(settings.PostToolUse) > 0 {
-		output["hooks.postToolUse"] = settings.PostToolUse
+	// Only include hooks if there are any configured
+	if len(settings.Hooks.PostToolUse) > 0 {
+		output["hooks"] = settings.Hooks
 	}
 
 	data, err := json.MarshalIndent(output, "", "  ")
@@ -92,7 +93,7 @@ func WriteSettings(claudeDir string, settings *Settings) error {
 // AddClauditHook adds or updates the claudit store hook in settings
 func AddClauditHook(settings *Settings) {
 	clauditHook := Hook{
-		Matcher: HookMatcher{ToolName: "Bash"},
+		Matcher: "Bash",
 		Hooks: []HookCmd{
 			{
 				Type:    "command",
@@ -103,12 +104,12 @@ func AddClauditHook(settings *Settings) {
 	}
 
 	// Check if claudit hook already exists and update it
-	for i, hook := range settings.PostToolUse {
-		if hook.Matcher.ToolName == "Bash" && len(hook.Hooks) > 0 {
+	for i, hook := range settings.Hooks.PostToolUse {
+		if hook.Matcher == "Bash" && len(hook.Hooks) > 0 {
 			for _, h := range hook.Hooks {
 				if h.Command == "claudit store" {
 					// Already exists, update it
-					settings.PostToolUse[i] = clauditHook
+					settings.Hooks.PostToolUse[i] = clauditHook
 					return
 				}
 			}
@@ -116,5 +117,5 @@ func AddClauditHook(settings *Settings) {
 	}
 
 	// Add new hook
-	settings.PostToolUse = append(settings.PostToolUse, clauditHook)
+	settings.Hooks.PostToolUse = append(settings.Hooks.PostToolUse, clauditHook)
 }

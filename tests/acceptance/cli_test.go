@@ -1,6 +1,7 @@
 package acceptance_test
 
 import (
+	"encoding/json"
 	"os"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -69,9 +70,43 @@ var _ = Describe("Init Command", func() {
 
 			content, err := repo.ReadFile(".claude/settings.local.json")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(content).To(ContainSubstring("hooks.postToolUse"))
+			// Verify correct Claude Code hook format: nested under "hooks.PostToolUse"
+			Expect(content).To(ContainSubstring(`"hooks"`))
+			Expect(content).To(ContainSubstring(`"PostToolUse"`))
+			Expect(content).To(ContainSubstring(`"matcher": "Bash"`))
 			Expect(content).To(ContainSubstring("claudit store"))
-			Expect(content).To(ContainSubstring("Bash"))
+		})
+
+		It("produces valid Claude Code hook JSON structure", func() {
+			_, _, err := testutil.RunClauditInDir(repo.Path, "init")
+			Expect(err).NotTo(HaveOccurred())
+
+			content, err := repo.ReadFile(".claude/settings.local.json")
+			Expect(err).NotTo(HaveOccurred())
+
+			// Parse and validate the exact structure expected by Claude Code
+			var settings struct {
+				Hooks struct {
+					PostToolUse []struct {
+						Matcher string `json:"matcher"`
+						Hooks   []struct {
+							Type    string `json:"type"`
+							Command string `json:"command"`
+							Timeout int    `json:"timeout"`
+						} `json:"hooks"`
+					} `json:"PostToolUse"`
+				} `json:"hooks"`
+			}
+			Expect(json.Unmarshal([]byte(content), &settings)).To(Succeed())
+
+			// Verify structure matches Claude Code's expected format
+			Expect(settings.Hooks.PostToolUse).To(HaveLen(1))
+			hook := settings.Hooks.PostToolUse[0]
+			Expect(hook.Matcher).To(Equal("Bash"))
+			Expect(hook.Hooks).To(HaveLen(1))
+			Expect(hook.Hooks[0].Type).To(Equal("command"))
+			Expect(hook.Hooks[0].Command).To(Equal("claudit store"))
+			Expect(hook.Hooks[0].Timeout).To(Equal(30))
 		})
 
 		It("installs git hooks", func() {

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os/exec"
 	"path/filepath"
 
 	"github.com/DanielJonesEB/claudit/internal/claude"
@@ -61,6 +62,15 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Println("✓ Installed git hooks (pre-push, post-merge, post-checkout)")
+
+	// Check if claudit is in PATH
+	if _, err := exec.LookPath("claudit"); err != nil {
+		fmt.Println()
+		fmt.Println("⚠ Warning: 'claudit' is not in your PATH.")
+		fmt.Println("  The hook will not work until claudit is installed.")
+		fmt.Println("  Install with: go install github.com/DanielJonesEB/claudit@latest")
+	}
+
 	fmt.Println()
 	fmt.Println("Claudit is now configured! Conversations will be stored")
 	fmt.Println("as git notes when commits are made via Claude Code.")
