@@ -6,7 +6,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var version = "0.3.0"
+// version is set at build time via ldflags
+var version = "dev"
 
 var rootCmd = &cobra.Command{
 	Use:   "claudit",
