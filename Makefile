@@ -13,8 +13,9 @@ acceptance: build
 	$(GO) test ./tests/acceptance/... -v
 
 # Integration test with real Claude Code CLI
-# Requires: ANTHROPIC_API_KEY environment variable
-# Skip with: SKIP_CLAUDE_INTEGRATION=1
+# Requires: ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN environment variable
+# Requires: Claude Code CLI in PATH
+# Opt out with: SKIP_CLAUDE_INTEGRATION=1
 integration: build
 	CLAUDIT_BINARY=$(PWD)/$(BINARY) $(GO) test ./tests/integration/... -v -timeout 120s
 

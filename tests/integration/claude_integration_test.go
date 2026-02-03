@@ -21,7 +21,7 @@ import (
 // - CLAUDE_CODE_OAUTH_TOKEN: OAuth token from `claude setup-token` (Pro/Max subscribers)
 //   Note: OAuth token also requires ~/.claude.json with {"hasCompletedOnboarding": true}
 //
-// Skip with: SKIP_CLAUDE_INTEGRATION=1 go test ./tests/integration/...
+// Opt out with: SKIP_CLAUDE_INTEGRATION=1 go test ./tests/integration/...
 func TestClaudeCodeIntegration(t *testing.T) {
 	// Skip conditions
 	if os.Getenv("SKIP_CLAUDE_INTEGRATION") == "1" {
@@ -31,7 +31,7 @@ func TestClaudeCodeIntegration(t *testing.T) {
 	apiKey := os.Getenv("ANTHROPIC_API_KEY")
 	oauthToken := os.Getenv("CLAUDE_CODE_OAUTH_TOKEN")
 	if apiKey == "" && oauthToken == "" {
-		t.Skip("Neither ANTHROPIC_API_KEY nor CLAUDE_CODE_OAUTH_TOKEN set - skipping integration test")
+		t.Fatal("Neither ANTHROPIC_API_KEY nor CLAUDE_CODE_OAUTH_TOKEN set - set one of these or use SKIP_CLAUDE_INTEGRATION=1")
 	}
 
 	if oauthToken != "" && apiKey == "" {
@@ -42,7 +42,7 @@ func TestClaudeCodeIntegration(t *testing.T) {
 
 	// Check Claude CLI is available
 	if _, err := exec.LookPath("claude"); err != nil {
-		t.Skip("Claude Code CLI not found in PATH")
+		t.Fatal("Claude Code CLI not found in PATH - install it or use SKIP_CLAUDE_INTEGRATION=1")
 	}
 
 	// Check claudit binary

@@ -121,13 +121,3 @@ func encodeProjectPath(path string) string {
 	}
 	return encoded
 }
-
-// SkipIfNoClaudeTests returns true if CLAUDIT_SKIP_CLAUDE_TESTS=1 is set
-func SkipIfNoClaudeTests() bool {
-	return os.Getenv("CLAUDIT_SKIP_CLAUDE_TESTS") == "1"
-}
-
-// ClaudeTestsSkipReason returns the reason message for skipping Claude tests
-func ClaudeTestsSkipReason() string {
-	return "CLAUDIT_SKIP_CLAUDE_TESTS=1 is set"
-}
