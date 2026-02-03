@@ -9,7 +9,7 @@
 - [x] Update `internal/web/handlers.go` for `?incremental=true` parameter
 - [x] Write unit tests for transcript diff functions
 - [x] Write acceptance tests for incremental show command
-- [ ] Update web UI to support incremental toggle (optional - deferred)
+- [x] Update web UI to support incremental toggle
 
 ## Testing Checklist
 
@@ -20,3 +20,5 @@
 - [x] Different session ID shows full transcript
 - [x] Web API returns correct incremental data
 - [x] Header indicates incremental vs full view
+- [ ] Web UI toggle switches between incremental and full view
+- [ ] Web UI shows parent commit link in incremental mode

@@ -181,6 +181,55 @@
             cursor: not-allowed;
         }
 
+        .view-toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-right: 16px;
+        }
+
+        .view-toggle-btn {
+            background-color: var(--bg-tertiary);
+            color: var(--text-secondary);
+            border: 1px solid var(--border-color);
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .view-toggle-btn:hover {
+            background-color: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+
+        .view-toggle-btn.active {
+            background-color: var(--accent);
+            color: white;
+            border-color: var(--accent);
+        }
+
+        .incremental-info {
+            font-size: 12px;
+            color: var(--text-secondary);
+            padding: 8px 16px;
+            background-color: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .incremental-info .parent-link {
+            color: var(--accent);
+            cursor: pointer;
+        }
+
+        .incremental-info .parent-link:hover {
+            text-decoration: underline;
+        }
+
         .conversation-content {
             flex: 1;
             overflow-y: auto;
@@ -469,12 +518,21 @@
         <div class="conversation-panel">
             <div class="conversation-header">
                 <span class="conversation-title" id="conversation-title">Select a commit</span>
-                <button class="resume-btn" id="resume-btn" disabled>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
-                    </svg>
-                    Resume Session
-                </button>
+                <div style="display: flex; align-items: center;">
+                    <div class="view-toggle" id="view-toggle" style="display: none;">
+                        <button class="view-toggle-btn active" id="incremental-btn" onclick="setViewMode('incremental')">This Commit</button>
+                        <button class="view-toggle-btn" id="full-btn" onclick="setViewMode('full')">Full Session</button>
+                    </div>
+                    <button class="resume-btn" id="resume-btn" disabled>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                        </svg>
+                        Resume Session
+                    </button>
+                </div>
+            </div>
+            <div class="incremental-info" id="incremental-info" style="display: none;">
+                <span id="incremental-info-text"></span>
             </div>
             <div class="conversation-content" id="conversation-content">
                 <div class="empty-state">
@@ -488,6 +546,8 @@
     <script>
         let selectedCommit = null;
         let commits = [];
+        let viewMode = 'incremental'; // 'incremental' or 'full'
+        let currentConversationData = null;
 
         async function fetchCommits() {
             try {
@@ -553,17 +613,61 @@
             }
 
             // Fetch conversation
+            await fetchConversation(sha, viewMode === 'incremental');
+        }
+
+        async function fetchConversation(sha, incremental) {
             document.getElementById('conversation-content').innerHTML = `
                 <div class="loading"><div class="spinner"></div></div>
             `;
 
             try {
-                const response = await fetch(`/api/commits/${sha}`);
+                const url = incremental
+                    ? `/api/commits/${sha}?incremental=true`
+                    : `/api/commits/${sha}`;
+                const response = await fetch(url);
                 const data = await response.json();
+                currentConversationData = data;
                 renderConversation(data);
+                updateViewToggle(data);
             } catch (error) {
                 console.error('Failed to fetch conversation:', error);
                 showStatus('Failed to load conversation', 'error');
+            }
+        }
+
+        function updateViewToggle(data) {
+            const toggle = document.getElementById('view-toggle');
+            const info = document.getElementById('incremental-info');
+            const infoText = document.getElementById('incremental-info-text');
+
+            // Show toggle if there's a parent conversation
+            const hasParent = data.parent_commit_sha && data.parent_commit_sha !== '';
+            toggle.style.display = hasParent ? 'flex' : 'none';
+
+            // Update toggle button states
+            document.getElementById('incremental-btn').classList.toggle('active', viewMode === 'incremental');
+            document.getElementById('full-btn').classList.toggle('active', viewMode === 'full');
+
+            // Show incremental info
+            if (data.is_incremental && hasParent) {
+                const parentSha = data.parent_commit_sha.substring(0, 7);
+                const count = data.incremental_count || data.transcript?.length || 0;
+                info.style.display = 'flex';
+                infoText.innerHTML = `Showing ${count} entries since <span class="parent-link" onclick="selectCommit('${data.parent_commit_sha}')">${parentSha}</span>`;
+            } else if (viewMode === 'full' && hasParent) {
+                info.style.display = 'flex';
+                infoText.textContent = `Showing full session (${data.message_count || data.transcript?.length || 0} entries)`;
+            } else {
+                info.style.display = 'none';
+            }
+        }
+
+        function setViewMode(mode) {
+            if (mode === viewMode) return;
+            viewMode = mode;
+            if (selectedCommit) {
+                fetchConversation(selectedCommit, mode === 'incremental');
             }
         }
 

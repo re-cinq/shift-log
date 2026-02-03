@@ -39,10 +39,16 @@ The conversation response SHALL include incremental display metadata.
 }
 ```
 
-### Requirement: UI Toggle
+### Requirement: UI Toggle ✓ IMPLEMENTED
 The web UI SHOULD provide a toggle to switch between incremental and full view.
 
 #### Scenario: Toggle incremental/full
 - **WHEN** user views a conversation in the web UI
 - **THEN** a toggle is available to switch between incremental and full view
 - **AND** incremental is the default when parent conversation exists
+
+#### Implementation Notes
+- Toggle buttons ("This Commit" / "Full Session") appear in the conversation header
+- Toggle is only visible when a parent conversation exists
+- Incremental view shows entry count and clickable link to parent commit
+- Full view shows total session entry count
