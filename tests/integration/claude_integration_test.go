@@ -138,20 +138,23 @@ func TestClaudeCodeIntegration(t *testing.T) {
 		claudeCmd.Env = append(claudeCmd.Env, "CLAUDE_CODE_OAUTH_TOKEN="+oauthToken)
 	}
 
-	// Set timeout
-	done := make(chan error, 1)
+	// Set timeout and capture output for checking
+	type result struct {
+		output []byte
+		err    error
+	}
+	done := make(chan result, 1)
 	go func() {
 		output, err := claudeCmd.CombinedOutput()
-		if err != nil {
-			t.Logf("Claude output: %s", output)
-		}
-		done <- err
+		done <- result{output, err}
 	}()
 
+	var claudeOutput []byte
 	select {
-	case err := <-done:
-		if err != nil {
-			t.Logf("Claude command finished with error (may be expected): %v", err)
+	case res := <-done:
+		claudeOutput = res.output
+		if res.err != nil {
+			t.Logf("Claude command finished with error (may be expected): %v", res.err)
 		}
 	case <-time.After(60 * time.Second):
 		claudeCmd.Process.Kill()
@@ -161,40 +164,216 @@ func TestClaudeCodeIntegration(t *testing.T) {
 	// Give hooks time to run
 	time.Sleep(2 * time.Second)
 
+	// Check for claudit warnings in stderr
+	if strings.Contains(string(claudeOutput), "claudit: warning:") {
+		t.Fatalf("FAIL: claudit logged warnings during execution, indicating hook failures:\n%s",
+			string(claudeOutput))
+	}
+
 	// Check if commit was made
 	cmd = exec.Command("git", "log", "--oneline", "-n", "2")
 	cmd.Dir = tmpDir
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Logf("Git log output: %s", output)
+		t.Fatalf("Failed to check git log: %v\nOutput: %s", err, output)
 	}
 
-	if !strings.Contains(string(output), "todo") {
-		t.Log("Commit with 'todo' not found - Claude may not have made the commit")
-		t.Logf("Git log: %s", output)
-		// This is not necessarily a failure - Claude might refuse or fail
+	commitWasMade := strings.Contains(string(output), "todo")
+	if !commitWasMade {
+		t.Skip("Claude did not make the commit - cannot test note storage")
 	}
 
-	// Check if note was created (the main test)
+	t.Log("✓ Commit was created successfully")
+	t.Logf("Git log: %s", output)
+
+	// CRITICAL TEST: If commit was made, note MUST exist
+	// This is the core assertion that will catch silent storage failures
 	cmd = exec.Command("git", "notes", "--ref=refs/notes/claude-conversations", "list")
 	cmd.Dir = tmpDir
 	notesOutput, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Logf("No notes found (may be expected if commit failed): %v", err)
-		return
+		t.Fatalf("FAIL: Commit was made but no git notes exist!\nThis means the claudit hook failed silently.\nError: %v\nOutput: %s", err, notesOutput)
 	}
 
-	if len(strings.TrimSpace(string(notesOutput))) > 0 {
-		t.Log("SUCCESS: Git note was created by claudit hook!")
-		t.Logf("Notes: %s", notesOutput)
+	if len(strings.TrimSpace(string(notesOutput))) == 0 {
+		t.Fatal("FAIL: Commit was made but git notes list is empty!\nThis means the claudit hook failed silently.")
+	}
 
-		// Verify note content
-		cmd = exec.Command("git", "notes", "--ref=refs/notes/claude-conversations", "show", "HEAD")
-		cmd.Dir = tmpDir
-		noteContent, _ := cmd.CombinedOutput()
-		t.Logf("Note content preview: %s", noteContent[:min(len(noteContent), 200)])
-	} else {
-		t.Log("No git notes found - hook may not have triggered")
+	t.Log("✓ Git note was created by claudit hook")
+	t.Logf("Notes: %s", notesOutput)
+
+	// Verify note content is valid JSON
+	cmd = exec.Command("git", "notes", "--ref=refs/notes/claude-conversations", "show", "HEAD")
+	cmd.Dir = tmpDir
+	noteContent, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("FAIL: Note exists but cannot be read: %v", err)
+	}
+
+	var noteData map[string]interface{}
+	if err := json.Unmarshal(noteContent, &noteData); err != nil {
+		t.Fatalf("FAIL: Note content is not valid JSON: %v\nContent: %s", err, noteContent[:min(len(noteContent), 500)])
+	}
+
+	// Verify required fields (using actual JSON field names from storage.StoredConversation)
+	requiredFields := []string{"version", "session_id", "project_path", "git_branch", "message_count", "checksum", "transcript", "timestamp"}
+	for _, field := range requiredFields {
+		if _, ok := noteData[field]; !ok {
+			t.Fatalf("FAIL: Note missing required field '%s'\nContent: %v", field, noteData)
+		}
+	}
+
+	t.Log("✓ Note content is valid and contains all required fields")
+	t.Logf("Note preview: version=%v, session_id=%v, message_count=%v",
+		noteData["version"], noteData["session_id"], noteData["message_count"])
+}
+
+// TestClaudeCodeIntegration_MissingClaudit verifies that the test fails when claudit is not in PATH
+// This proves our stricter assertions can catch real failures
+func TestClaudeCodeIntegration_MissingClaudit(t *testing.T) {
+	// Skip conditions
+	if os.Getenv("SKIP_CLAUDE_INTEGRATION") == "1" {
+		t.Skip("SKIP_CLAUDE_INTEGRATION=1 is set")
+	}
+
+	apiKey := os.Getenv("ANTHROPIC_API_KEY")
+	oauthToken := os.Getenv("CLAUDE_CODE_OAUTH_TOKEN")
+	if apiKey == "" && oauthToken == "" {
+		t.Skip("Neither ANTHROPIC_API_KEY nor CLAUDE_CODE_OAUTH_TOKEN set")
+	}
+
+	// Check Claude CLI is available
+	if _, err := exec.LookPath("claude"); err != nil {
+		t.Skip("Claude Code CLI not found in PATH")
+	}
+
+	// Create temporary test directory
+	tmpDir, err := os.MkdirTemp("", "claude-integration-fail-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Initialize git repo
+	runGit(t, tmpDir, "init")
+	runGit(t, tmpDir, "config", "user.email", "test@example.com")
+	runGit(t, tmpDir, "config", "user.name", "Test User")
+
+	// Create initial file and commit
+	testFile := filepath.Join(tmpDir, "README.md")
+	if err := os.WriteFile(testFile, []byte("# Test Project\n"), 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+	runGit(t, tmpDir, "add", "README.md")
+	runGit(t, tmpDir, "commit", "-m", "Initial commit")
+
+	// Manually create hook configuration WITHOUT adding claudit to PATH
+	settingsDir := filepath.Join(tmpDir, ".claude")
+	if err := os.MkdirAll(settingsDir, 0755); err != nil {
+		t.Fatalf("Failed to create .claude dir: %v", err)
+	}
+
+	// Write hook config that references claudit (which won't be in PATH)
+	settingsContent := `{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "claudit store",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}`
+	if err := os.WriteFile(filepath.Join(settingsDir, "settings.local.json"), []byte(settingsContent), 0644); err != nil {
+		t.Fatalf("Failed to write settings: %v", err)
+	}
+
+	// Create a test file that Claude will commit
+	todoFile := filepath.Join(tmpDir, "todo.txt")
+	if err := os.WriteFile(todoFile, []byte("- Test item\n"), 0644); err != nil {
+		t.Fatalf("Failed to write todo file: %v", err)
+	}
+
+	// Run Claude Code WITHOUT claudit in PATH
+	claudeCmd := exec.Command("claude",
+		"--print",
+		"--allowedTools", "Bash(git:*),Read",
+		"--max-turns", "5",
+		"--dangerously-skip-permissions",
+		"Please run: git add todo.txt && git commit -m 'Add todo list'",
+	)
+	claudeCmd.Dir = tmpDir
+	// Explicitly set PATH without claudit directory
+	claudeCmd.Env = append(os.Environ(), "PATH=/usr/bin:/bin:/usr/local/bin")
+	if apiKey != "" {
+		claudeCmd.Env = append(claudeCmd.Env, "ANTHROPIC_API_KEY="+apiKey)
+	}
+	if oauthToken != "" {
+		claudeCmd.Env = append(claudeCmd.Env, "CLAUDE_CODE_OAUTH_TOKEN="+oauthToken)
+	}
+
+	// Run with timeout
+	type result struct {
+		output []byte
+		err    error
+	}
+	done := make(chan result, 1)
+	go func() {
+		output, err := claudeCmd.CombinedOutput()
+		done <- result{output, err}
+	}()
+
+	var claudeOutput []byte
+	select {
+	case res := <-done:
+		claudeOutput = res.output
+	case <-time.After(60 * time.Second):
+		claudeCmd.Process.Kill()
+		t.Fatal("Claude command timed out")
+	}
+
+	// Give hooks time to (fail to) run
+	time.Sleep(2 * time.Second)
+
+	// Check if commit was made
+	cmd := exec.Command("git", "log", "--oneline", "-n", "2")
+	cmd.Dir = tmpDir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Logf("Git log: %s", output)
+	}
+
+	commitWasMade := strings.Contains(string(output), "todo")
+	if !commitWasMade {
+		t.Skip("Claude did not make the commit - cannot test failure case")
+	}
+
+	t.Log("✓ Commit was created")
+
+	// THIS IS THE KEY TEST: Commit was made, but note should NOT exist
+	// because claudit was not in PATH
+	cmd = exec.Command("git", "notes", "--ref=refs/notes/claude-conversations", "list")
+	cmd.Dir = tmpDir
+	notesOutput, err := cmd.CombinedOutput()
+
+	// We EXPECT this to fail (note should not exist)
+	if err == nil && len(strings.TrimSpace(string(notesOutput))) > 0 {
+		t.Fatal("UNEXPECTED: Note was created even though claudit was not in PATH!")
+	}
+
+	// Verify our updated test would catch this
+	t.Log("✓ Confirmed: Note was NOT created (as expected when claudit not in PATH)")
+	t.Log("✓ This proves our stricter test assertions would catch this failure")
+
+	// Check Claude output for hook errors
+	if strings.Contains(string(claudeOutput), "claudit") {
+		t.Logf("Claude output mentions claudit (hook may have tried to run): %s", string(claudeOutput))
 	}
 }
 
