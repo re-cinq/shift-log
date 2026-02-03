@@ -297,6 +297,92 @@
             display: block;
         }
 
+        .tool-summary {
+            color: var(--text-secondary);
+            font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+            font-size: 12px;
+            margin-left: 12px;
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .tool-result {
+            margin: 12px 0;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .tool-result-header {
+            background-color: var(--bg-tertiary);
+            padding: 8px 12px;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .tool-result-content {
+            padding: 12px;
+            background-color: rgba(0, 0, 0, 0.2);
+            font-size: 13px;
+            font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+            color: var(--text-secondary);
+        }
+
+        .thinking-block {
+            margin: 8px 0;
+            border-left: 2px solid var(--border-color);
+            padding-left: 12px;
+        }
+
+        .thinking-header {
+            font-size: 12px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+        }
+
+        .thinking-preview {
+            font-size: 13px;
+            color: var(--text-secondary);
+            font-style: italic;
+            white-space: pre-wrap;
+        }
+
+        .thinking-full {
+            display: none;
+            font-size: 13px;
+            color: var(--text-secondary);
+            font-style: italic;
+            white-space: pre-wrap;
+            margin-top: 8px;
+        }
+
+        .thinking-block.expanded .thinking-preview {
+            display: none;
+        }
+
+        .thinking-block.expanded .thinking-full {
+            display: block;
+        }
+
+        .thinking-block.expanded .toggle-icon {
+            transform: rotate(90deg);
+        }
+
+        .message.system {
+            background-color: var(--bg-tertiary);
+            border: 1px dashed var(--border-color);
+            opacity: 0.7;
+        }
+
         .loading {
             display: flex;
             align-items: center;
@@ -494,14 +580,18 @@
                 return;
             }
 
-            content.innerHTML = data.transcript.map(entry => {
-                if (entry.type === 'user') {
-                    return renderUserMessage(entry);
-                } else if (entry.type === 'assistant') {
-                    return renderAssistantMessage(entry);
-                }
-                return '';
-            }).join('');
+            content.innerHTML = data.transcript
+                .filter(entry => entry.type === 'user' || entry.type === 'assistant' || entry.type === 'system')
+                .map(entry => {
+                    if (entry.type === 'user') {
+                        return renderUserMessage(entry);
+                    } else if (entry.type === 'assistant') {
+                        return renderAssistantMessage(entry);
+                    } else if (entry.type === 'system') {
+                        return renderSystemMessage(entry);
+                    }
+                    return '';
+                }).filter(html => html !== '').join('');
 
             // Add click handlers for tool toggles
             content.querySelectorAll('.tool-header').forEach(header => {
@@ -516,7 +606,27 @@
 
         function renderUserMessage(entry) {
             const content = entry.message?.content || [];
+
+            // Handle string content (first user message)
+            if (typeof entry.message?.content === 'string') {
+                return `
+                    <div class="message user">
+                        <div class="message-role">User</div>
+                        <div class="message-content">${formatContent(entry.message.content)}</div>
+                    </div>
+                `;
+            }
+
+            // Check if this is a tool result message
+            const toolResult = content.find(c => c.type === 'tool_result');
+            if (toolResult) {
+                return renderToolResult(toolResult);
+            }
+
+            // Regular user text message
             const text = content.find(c => c.type === 'text')?.text || '';
+            if (!text) return '';
+
             return `
                 <div class="message user">
                     <div class="message-role">User</div>
@@ -530,8 +640,10 @@
             let html = '<div class="message assistant"><div class="message-role">Assistant</div>';
 
             for (const block of content) {
-                if (block.type === 'text') {
+                if (block.type === 'text' && block.text) {
                     html += `<div class="message-content">${formatContent(block.text)}</div>`;
+                } else if (block.type === 'thinking' && block.thinking) {
+                    html += renderThinking(block.thinking);
                 } else if (block.type === 'tool_use') {
                     html += renderToolUse(block);
                 }
@@ -541,17 +653,104 @@
             return html;
         }
 
+        function renderThinking(thinking) {
+            const lines = thinking.split('\n');
+            const preview = lines.slice(0, 3).join('\n');
+            const hasMore = lines.length > 3;
+
+            return `
+                <div class="thinking-block">
+                    <div class="thinking-header" onclick="this.parentElement.classList.toggle('expanded')">
+                        <span>💭 Thinking</span>
+                        <span class="toggle-icon">${hasMore ? '▶' : ''}</span>
+                    </div>
+                    <div class="thinking-preview">${escapeHtml(preview)}${hasMore ? '...' : ''}</div>
+                    ${hasMore ? `<div class="thinking-full">${escapeHtml(thinking)}</div>` : ''}
+                </div>
+            `;
+        }
+
+        function renderSystemMessage(entry) {
+            const content = entry.message?.content || [];
+            const text = typeof content === 'string' ? content :
+                         content.find(c => c.type === 'text')?.text || '';
+            if (!text) return '';
+
+            return `
+                <div class="message system">
+                    <div class="message-role">System</div>
+                    <div class="message-content">${formatContent(text)}</div>
+                </div>
+            `;
+        }
+
         function renderToolUse(block) {
-            const input = typeof block.input === 'string'
-                ? block.input
-                : JSON.stringify(block.input, null, 2);
+            const input = block.input || {};
+            const summary = formatToolInput(block.name, input);
+            const fullInput = typeof input === 'string'
+                ? input
+                : JSON.stringify(input, null, 2);
+
             return `
                 <div class="tool-use">
                     <div class="tool-header">
                         <span class="tool-name">🔧 ${escapeHtml(block.name)}</span>
+                        <span class="tool-summary">${escapeHtml(summary)}</span>
                         <span class="toggle-icon">▶</span>
                     </div>
-                    <div class="tool-content">${escapeHtml(input)}</div>
+                    <div class="tool-content">${escapeHtml(fullInput)}</div>
+                </div>
+            `;
+        }
+
+        function formatToolInput(toolName, input) {
+            if (!input || typeof input === 'string') return '';
+
+            switch (toolName) {
+                case 'Bash':
+                    const cmd = input.command || '';
+                    // Show first line or truncate
+                    const firstLine = cmd.split('\n')[0];
+                    return firstLine.length > 60 ? firstLine.substring(0, 60) + '...' : firstLine;
+                case 'Write':
+                    return input.file_path || '';
+                case 'Read':
+                    return input.file_path || '';
+                case 'Edit':
+                    return input.file_path || '';
+                case 'Grep':
+                    return input.pattern ? `pattern: ${input.pattern}` : '';
+                case 'Glob':
+                    return input.pattern || '';
+                default:
+                    return '';
+            }
+        }
+
+        function renderToolResult(block) {
+            let content = block.content;
+
+            // Handle different content types
+            if (typeof content === 'object' && content !== null) {
+                // Array of content blocks
+                if (Array.isArray(content)) {
+                    content = content.map(c => c.text || '').join('\n');
+                } else {
+                    content = JSON.stringify(content, null, 2);
+                }
+            }
+
+            if (!content) return '';
+
+            // Truncate very long results
+            const lines = content.split('\n');
+            const truncated = lines.length > 20;
+            const displayContent = truncated ? lines.slice(0, 20).join('\n') + '\n...' : content;
+
+            return `
+                <div class="tool-result">
+                    <div class="tool-result-header">📤 Tool Result</div>
+                    <div class="tool-result-content">${escapeHtml(displayContent)}</div>
                 </div>
             `;
         }
