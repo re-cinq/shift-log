@@ -10,9 +10,13 @@
     "dockerfile": "Dockerfile"
   },
   "containerEnv": {
+    "CHROME_BIN": "/usr/local/bin/chromium",
     "CLAUDE_CONFIG_DIR": "/home/node/.claude",
     "NODE_OPTIONS": "--max-old-space-size=4096",
-    "POWERLEVEL9K_DISABLE_GITSTATUS": "true"
+    "PLAYWRIGHT_BROWSERS_PATH": "/opt/ms-playwright",
+    "POWERLEVEL9K_DISABLE_GITSTATUS": "true",
+    "PUPPETEER_EXECUTABLE_PATH": "/usr/local/bin/chromium",
+    "PUPPETEER_SKIP_CHROMIUM_DOWNLOAD": "true"
   },
   "customizations": {
     "vscode": {

@@ -17,14 +17,32 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   unzip \
   gnupg2 \
   gh \
-
-
-
-
-
   jq \
   nano \
   vim \
+  && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Install dependencies for Chrome/Chromium (needed for chrome-devtools MCP server)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  libnss3 \
+  libnspr4 \
+  libatk1.0-0 \
+  libatk-bridge2.0-0 \
+  libcups2 \
+  libdrm2 \
+  libxkbcommon0 \
+  libxcomposite1 \
+  libxdamage1 \
+  libxfixes3 \
+  libxrandr2 \
+  libgbm1 \
+  libasound2 \
+  libpango-1.0-0 \
+  libcairo2 \
+  libatspi2.0-0 \
+  fonts-liberation \
+  libappindicator3-1 \
+  xdg-utils \
   && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Ensure default node user has access to /usr/local/share
@@ -65,6 +83,32 @@ RUN ARCH=$(dpkg --print-architecture) && \
 ENV PATH=$PATH:/usr/local/go/bin
 ENV GOPATH=/home/node/go
 ENV PATH=$PATH:/home/node/go/bin
+
+# Install Playwright globally and set up Chromium for chrome-devtools MCP server
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+RUN npm install -g playwright && \
+  npx playwright install chromium && \
+  chmod -R 755 /opt/ms-playwright
+
+# Create the expected Chrome directory structure and symlink for MCP server
+RUN mkdir -p /opt/google/chrome && \
+  CHROMIUM_PATH=$(find /opt/ms-playwright -name chrome -type f 2>/dev/null | head -1) && \
+  ln -s "$CHROMIUM_PATH" /opt/google/chrome/chrome
+
+# Create a script to locate and run Chromium
+RUN echo '#!/bin/bash\n\
+CHROMIUM_PATH=$(find /opt/ms-playwright -name chrome -type f 2>/dev/null | head -1)\n\
+if [ -z "$CHROMIUM_PATH" ]; then\n\
+  echo "Chromium not found" >&2\n\
+  exit 1\n\
+fi\n\
+exec "$CHROMIUM_PATH" "$@"' > /usr/local/bin/chromium && \
+  chmod +x /usr/local/bin/chromium
+
+# Set environment variables for Chromium
+ENV CHROME_BIN=/usr/local/bin/chromium
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/local/bin/chromium
 
 # Set up non-root user
 USER node
