@@ -132,3 +132,41 @@ func (t *Transcript) ToJSONL() ([]byte, error) {
 func (t *Transcript) MessageCount() int {
 	return len(t.Entries)
 }
+
+// GetLastEntryUUID returns the UUID of the last entry in the transcript
+func (t *Transcript) GetLastEntryUUID() string {
+	if len(t.Entries) == 0 {
+		return ""
+	}
+	return t.Entries[len(t.Entries)-1].UUID
+}
+
+// FindEntryIndex finds the index of an entry by UUID, returns -1 if not found
+func (t *Transcript) FindEntryIndex(uuid string) int {
+	for i, entry := range t.Entries {
+		if entry.UUID == uuid {
+			return i
+		}
+	}
+	return -1
+}
+
+// GetEntriesSince returns entries that come after the given UUID
+// If uuid is empty, returns all entries (handles initial commit case)
+func (t *Transcript) GetEntriesSince(lastUUID string) []TranscriptEntry {
+	if lastUUID == "" {
+		return t.Entries
+	}
+
+	idx := t.FindEntryIndex(lastUUID)
+	if idx == -1 {
+		// UUID not found - return all entries (different session or data mismatch)
+		return t.Entries
+	}
+
+	// Return entries after the found UUID
+	if idx+1 >= len(t.Entries) {
+		return nil // No new entries
+	}
+	return t.Entries[idx+1:]
+}

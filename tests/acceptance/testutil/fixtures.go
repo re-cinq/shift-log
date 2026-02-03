@@ -98,3 +98,50 @@ func SampleHookInputNonBash(sessionID string) string {
 	data, _ := json.Marshal(input)
 	return string(data)
 }
+
+// SampleTranscriptWithIDs returns a sample JSONL transcript with specified UUIDs
+// Useful for testing incremental conversation display
+func SampleTranscriptWithIDs(uuids []string, messages []string) string {
+	var entries []map[string]interface{}
+	for i, uuid := range uuids {
+		msg := "Message " + uuid
+		if i < len(messages) {
+			msg = messages[i]
+		}
+
+		entryType := "user"
+		role := "user"
+		if i%2 == 1 {
+			entryType = "assistant"
+			role = "assistant"
+		}
+
+		parentUUID := ""
+		if i > 0 {
+			parentUUID = uuids[i-1]
+		}
+
+		entries = append(entries, map[string]interface{}{
+			"uuid":       uuid,
+			"parentUuid": parentUUID,
+			"type":       entryType,
+			"timestamp":  time.Now().Format(time.RFC3339),
+			"message": map[string]interface{}{
+				"role": role,
+				"content": []map[string]interface{}{
+					{"type": "text", "text": msg},
+				},
+			},
+		})
+	}
+
+	var result string
+	for i, entry := range entries {
+		data, _ := json.Marshal(entry)
+		if i > 0 {
+			result += "\n"
+		}
+		result += string(data)
+	}
+	return result
+}

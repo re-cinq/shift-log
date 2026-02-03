@@ -53,7 +53,7 @@ var _ = Describe("Show Command", func() {
 
 			// Should contain conversation header
 			Expect(stdout).To(ContainSubstring(commitSHA[:7]))
-			Expect(stdout).To(ContainSubstring("Messages:"))
+			Expect(stdout).To(ContainSubstring("Showing:"))
 		})
 
 		It("shows conversation for HEAD when no ref provided", func() {
@@ -146,6 +146,154 @@ var _ = Describe("Show Command", func() {
 			_, stderr, err := testutil.RunClauditInDir(tmpDir, "show")
 			Expect(err).To(HaveOccurred())
 			Expect(stderr).To(ContainSubstring("not inside a git repository"))
+		})
+	})
+
+	Describe("incremental display", func() {
+		var sessionID string
+
+		BeforeEach(func() {
+			sessionID = "session-incremental-test"
+		})
+
+		// Helper to store a conversation with specific UUIDs
+		storeConversationWithUUIDs := func(uuids []string, messages []string) string {
+			transcriptPath := filepath.Join(repo.Path, "transcript.jsonl")
+			transcript := testutil.SampleTranscriptWithIDs(uuids, messages)
+			Expect(os.WriteFile(transcriptPath, []byte(transcript), 0644)).To(Succeed())
+
+			head, err := repo.GetHead()
+			Expect(err).NotTo(HaveOccurred())
+
+			hookInput := testutil.SampleHookInput(sessionID, transcriptPath, "git commit -m 'test'")
+			_, _, err = testutil.RunClauditInDirWithStdin(repo.Path, hookInput, "store")
+			Expect(err).NotTo(HaveOccurred())
+
+			return head
+		}
+
+		It("shows only entries since parent commit by default", func() {
+			// First commit with entries 1-4
+			firstUUIDs := []string{"uuid-1", "uuid-2", "uuid-3", "uuid-4"}
+			firstMessages := []string{"First user message", "First assistant response", "Second user message", "Second assistant response"}
+			storeConversationWithUUIDs(firstUUIDs, firstMessages)
+
+			// Create second commit
+			Expect(repo.WriteFile("file2.txt", "content")).To(Succeed())
+			Expect(repo.Commit("Second commit")).To(Succeed())
+
+			// Second commit with entries 1-6 (includes all previous plus 2 new)
+			secondUUIDs := []string{"uuid-1", "uuid-2", "uuid-3", "uuid-4", "uuid-5", "uuid-6"}
+			secondMessages := []string{"First user message", "First assistant response", "Second user message", "Second assistant response", "Third user message", "Third assistant response"}
+			storeConversationWithUUIDs(secondUUIDs, secondMessages)
+
+			// Show should only display entries after uuid-4 (the last entry from first commit)
+			stdout, _, err := testutil.RunClauditInDir(repo.Path, "show")
+			Expect(err).NotTo(HaveOccurred())
+
+			// Should contain the new messages
+			Expect(stdout).To(ContainSubstring("Third user message"))
+			Expect(stdout).To(ContainSubstring("Third assistant response"))
+
+			// Should NOT contain the old messages
+			Expect(stdout).NotTo(ContainSubstring("First user message"))
+			Expect(stdout).NotTo(ContainSubstring("Second user message"))
+
+			// Should indicate incremental display
+			Expect(stdout).To(ContainSubstring("since"))
+			Expect(stdout).To(ContainSubstring("2 entries"))
+		})
+
+		It("shows full session with --full flag", func() {
+			// First commit
+			firstUUIDs := []string{"uuid-1", "uuid-2"}
+			firstMessages := []string{"First user message", "First assistant response"}
+			storeConversationWithUUIDs(firstUUIDs, firstMessages)
+
+			// Second commit
+			Expect(repo.WriteFile("file2.txt", "content")).To(Succeed())
+			Expect(repo.Commit("Second commit")).To(Succeed())
+
+			secondUUIDs := []string{"uuid-1", "uuid-2", "uuid-3", "uuid-4"}
+			secondMessages := []string{"First user message", "First assistant response", "Second user message", "Second assistant response"}
+			storeConversationWithUUIDs(secondUUIDs, secondMessages)
+
+			// Show with --full should display all entries
+			stdout, _, err := testutil.RunClauditInDir(repo.Path, "show", "--full")
+			Expect(err).NotTo(HaveOccurred())
+
+			// Should contain all messages
+			Expect(stdout).To(ContainSubstring("First user message"))
+			Expect(stdout).To(ContainSubstring("Second user message"))
+			Expect(stdout).To(ContainSubstring("full session"))
+		})
+
+		It("shows full session for first commit (no parent)", func() {
+			// Only one commit with conversation
+			uuids := []string{"uuid-1", "uuid-2"}
+			messages := []string{"First user message", "First assistant response"}
+			storeConversationWithUUIDs(uuids, messages)
+
+			stdout, _, err := testutil.RunClauditInDir(repo.Path, "show")
+			Expect(err).NotTo(HaveOccurred())
+
+			// Should show full session since no parent conversation exists
+			Expect(stdout).To(ContainSubstring("First user message"))
+			Expect(stdout).To(ContainSubstring("full session"))
+		})
+
+		It("shows full session when parent has no conversation", func() {
+			// First commit without conversation
+			// (already created in BeforeEach with initial commit)
+
+			// Second commit with conversation
+			Expect(repo.WriteFile("file2.txt", "content")).To(Succeed())
+			Expect(repo.Commit("Second commit")).To(Succeed())
+
+			uuids := []string{"uuid-1", "uuid-2"}
+			messages := []string{"First user message", "First assistant response"}
+			storeConversationWithUUIDs(uuids, messages)
+
+			stdout, _, err := testutil.RunClauditInDir(repo.Path, "show")
+			Expect(err).NotTo(HaveOccurred())
+
+			// Should show full session since parent has no conversation
+			Expect(stdout).To(ContainSubstring("First user message"))
+			Expect(stdout).To(ContainSubstring("full session"))
+		})
+
+		It("shows full session when session ID differs from parent", func() {
+			// First commit with one session ID
+			firstUUIDs := []string{"uuid-1", "uuid-2"}
+			firstMessages := []string{"First user message", "First assistant response"}
+
+			transcriptPath := filepath.Join(repo.Path, "transcript.jsonl")
+			transcript := testutil.SampleTranscriptWithIDs(firstUUIDs, firstMessages)
+			Expect(os.WriteFile(transcriptPath, []byte(transcript), 0644)).To(Succeed())
+
+			hookInput := testutil.SampleHookInput("session-A", transcriptPath, "git commit -m 'test'")
+			_, _, err := testutil.RunClauditInDirWithStdin(repo.Path, hookInput, "store")
+			Expect(err).NotTo(HaveOccurred())
+
+			// Second commit with different session ID
+			Expect(repo.WriteFile("file2.txt", "content")).To(Succeed())
+			Expect(repo.Commit("Second commit")).To(Succeed())
+
+			secondUUIDs := []string{"uuid-new-1", "uuid-new-2"}
+			secondMessages := []string{"New session message", "New session response"}
+			transcript = testutil.SampleTranscriptWithIDs(secondUUIDs, secondMessages)
+			Expect(os.WriteFile(transcriptPath, []byte(transcript), 0644)).To(Succeed())
+
+			hookInput = testutil.SampleHookInput("session-B", transcriptPath, "git commit -m 'test'")
+			_, _, err = testutil.RunClauditInDirWithStdin(repo.Path, hookInput, "store")
+			Expect(err).NotTo(HaveOccurred())
+
+			stdout, _, err := testutil.RunClauditInDir(repo.Path, "show")
+			Expect(err).NotTo(HaveOccurred())
+
+			// Should show full session since session IDs differ
+			Expect(stdout).To(ContainSubstring("New session message"))
+			Expect(stdout).To(ContainSubstring("full session"))
 		})
 	})
 })

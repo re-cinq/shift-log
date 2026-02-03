@@ -42,8 +42,13 @@ func (r *Renderer) color(code string) string {
 
 // RenderTranscript renders the full transcript to the writer
 func (r *Renderer) RenderTranscript(t *Transcript) error {
+	return r.RenderEntries(t.Entries)
+}
+
+// RenderEntries renders a slice of transcript entries to the writer
+func (r *Renderer) RenderEntries(entries []TranscriptEntry) error {
 	hadPrevious := false
-	for _, entry := range t.Entries {
+	for _, entry := range entries {
 		if r.shouldRender(&entry) {
 			if hadPrevious {
 				fmt.Fprintln(r.w)

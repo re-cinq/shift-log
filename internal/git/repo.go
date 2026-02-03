@@ -103,6 +103,33 @@ func Checkout(ref string) error {
 	return cmd.Run()
 }
 
+// GetParentCommits returns the parent commit SHA(s) for a given commit
+func GetParentCommits(commitSHA string) ([]string, error) {
+	cmd := exec.Command("git", "rev-parse", commitSHA+"^@")
+	output, err := cmd.Output()
+	if err != nil {
+		// No parents (initial commit) - not an error
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 128 {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	trimmed := strings.TrimSpace(string(output))
+	if trimmed == "" {
+		return nil, nil
+	}
+
+	parents := strings.Split(trimmed, "\n")
+	var result []string
+	for _, p := range parents {
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	return result, nil
+}
+
 // GetCommitInfo returns the commit message and author date for a commit
 func GetCommitInfo(commitSHA string) (message string, date string, err error) {
 	// Get commit message (first line)
