@@ -2,6 +2,7 @@ package integration_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -375,6 +376,104 @@ func TestClaudeCodeIntegration_MissingClaudit(t *testing.T) {
 	if strings.Contains(string(claudeOutput), "claudit") {
 		t.Logf("Claude output mentions claudit (hook may have tried to run): %s", string(claudeOutput))
 	}
+}
+
+// TestStoreCommandFailureHandling tests that the store command returns errors instead of exiting silently
+// This test should FAIL with the current implementation (bug) and PASS after we fix it
+func TestStoreCommandFailureHandling(t *testing.T) {
+	clauditPath := os.Getenv("CLAUDIT_BINARY")
+	if clauditPath == "" {
+		clauditPath = filepath.Join(getWorkspaceRoot(), "claudit")
+	}
+	if _, err := os.Stat(clauditPath); err != nil {
+		t.Fatalf("claudit binary not found at %s", clauditPath)
+	}
+
+	// Create temporary git repo
+	tmpDir, err := os.MkdirTemp("", "claudit-store-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Initialize git repo with a commit
+	runGit(t, tmpDir, "init")
+	runGit(t, tmpDir, "config", "user.email", "test@example.com")
+	runGit(t, tmpDir, "config", "user.name", "Test User")
+	if err := os.WriteFile(filepath.Join(tmpDir, "test.txt"), []byte("test"), 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+	runGit(t, tmpDir, "add", "test.txt")
+	runGit(t, tmpDir, "commit", "-m", "Initial commit")
+
+	t.Run("missing transcript file should fail", func(t *testing.T) {
+		hookInput := `{
+			"session_id": "test-session",
+			"transcript_path": "/nonexistent/transcript.jsonl",
+			"tool_name": "Bash",
+			"tool_input": {
+				"command": "git commit -m 'test'"
+			}
+		}`
+
+		cmd := exec.Command(clauditPath, "store")
+		cmd.Dir = tmpDir
+		cmd.Stdin = strings.NewReader(hookInput)
+		output, err := cmd.CombinedOutput()
+
+		// BUG: This currently exits with 0 (success) even though it failed
+		// After fix: should exit with non-zero code
+		if err == nil {
+			t.Errorf("FAIL: store command succeeded when it should have failed (missing transcript)\nThis is the bug! It exits with code 0 instead of returning an error.\nOutput: %s", output)
+		} else {
+			t.Logf("✓ Correctly failed with error: %v", err)
+		}
+
+		// Should log a warning
+		if !strings.Contains(string(output), "warning") && !strings.Contains(string(output), "failed") {
+			t.Errorf("Expected warning message in output, got: %s", output)
+		}
+	})
+
+	t.Run("invalid commit SHA should fail", func(t *testing.T) {
+		// Create a valid transcript file
+		transcriptPath := filepath.Join(tmpDir, "transcript.jsonl")
+		transcriptData := `{"type":"session_start","id":"test"}
+{"type":"user","content":"test message"}`
+		if err := os.WriteFile(transcriptPath, []byte(transcriptData), 0644); err != nil {
+			t.Fatalf("Failed to write transcript: %v", err)
+		}
+
+		// But point to a repo with no HEAD (empty repo)
+		emptyDir, err := os.MkdirTemp("", "empty-repo-*")
+		if err != nil {
+			t.Fatalf("Failed to create empty dir: %v", err)
+		}
+		defer os.RemoveAll(emptyDir)
+		runGit(t, emptyDir, "init")
+
+		hookInput := fmt.Sprintf(`{
+			"session_id": "test-session",
+			"transcript_path": "%s",
+			"tool_name": "Bash",
+			"tool_input": {
+				"command": "git commit -m 'test'"
+			}
+		}`, transcriptPath)
+
+		cmd := exec.Command(clauditPath, "store")
+		cmd.Dir = emptyDir // Empty repo with no HEAD
+		cmd.Stdin = strings.NewReader(hookInput)
+		output, err := cmd.CombinedOutput()
+
+		// BUG: This currently exits with 0 (success) even though there's no HEAD
+		// After fix: should exit with non-zero code
+		if err == nil {
+			t.Errorf("FAIL: store command succeeded when it should have failed (no HEAD commit)\nThis is the bug! It exits with code 0 instead of returning an error.\nOutput: %s", output)
+		} else {
+			t.Logf("✓ Correctly failed with error: %v", err)
+		}
+	})
 }
 
 // getWorkspaceRoot finds the workspace root by looking for go.mod

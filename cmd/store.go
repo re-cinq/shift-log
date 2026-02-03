@@ -62,22 +62,22 @@ func runStore(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	// Beyond this point, we're processing a git commit in a git repo.
+	// All failures are critical and should return errors.
+
 	// Read and parse transcript
 	if hook.TranscriptPath == "" {
-		logWarning("no transcript path provided")
-		return nil
+		return fmt.Errorf("no transcript path provided in hook data")
 	}
 
 	transcriptData, err := os.ReadFile(hook.TranscriptPath)
 	if err != nil {
-		logWarning("failed to read transcript: %v", err)
-		return nil
+		return fmt.Errorf("failed to read transcript: %w", err)
 	}
 
 	transcript, err := claude.ParseTranscript(strings.NewReader(string(transcriptData)))
 	if err != nil {
-		logWarning("failed to parse transcript: %v", err)
-		return nil
+		return fmt.Errorf("failed to parse transcript: %w", err)
 	}
 
 	// Get git context
@@ -85,8 +85,7 @@ func runStore(cmd *cobra.Command, args []string) error {
 	branch, _ := git.GetCurrentBranch()
 	headCommit, err := git.GetHeadCommit()
 	if err != nil {
-		logWarning("failed to get HEAD commit: %v", err)
-		return nil
+		return fmt.Errorf("failed to get HEAD commit: %w", err)
 	}
 
 	// Create stored conversation
@@ -98,20 +97,17 @@ func runStore(cmd *cobra.Command, args []string) error {
 		transcriptData,
 	)
 	if err != nil {
-		logWarning("failed to create stored conversation: %v", err)
-		return nil
+		return fmt.Errorf("failed to create stored conversation: %w", err)
 	}
 
 	// Marshal and store as git note
 	noteContent, err := stored.Marshal()
 	if err != nil {
-		logWarning("failed to marshal conversation: %v", err)
-		return nil
+		return fmt.Errorf("failed to marshal conversation: %w", err)
 	}
 
 	if err := git.AddNote(headCommit, noteContent); err != nil {
-		logWarning("failed to add git note: %v", err)
-		return nil
+		return fmt.Errorf("failed to add git note: %w", err)
 	}
 
 	logInfo("stored conversation for commit %s", headCommit[:8])

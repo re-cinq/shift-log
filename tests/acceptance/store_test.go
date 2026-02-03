@@ -145,12 +145,13 @@ var _ = Describe("Store Command", func() {
 	})
 
 	Describe("with missing transcript file", func() {
-		It("exits with warning but no error", func() {
+		It("exits with error when transcript is missing", func() {
 			hookInput := testutil.SampleHookInput("session-123", "/nonexistent/path.jsonl", "git commit -m 'test'")
 
 			_, stderr, err := testutil.RunClauditInDirWithStdin(repo.Path, hookInput, "store")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(stderr).To(ContainSubstring("warning"))
+			// After fix: should return error instead of exiting silently
+			Expect(err).To(HaveOccurred())
+			Expect(stderr).To(ContainSubstring("failed to read transcript"))
 		})
 	})
 })
