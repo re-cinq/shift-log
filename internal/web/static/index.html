@@ -652,12 +652,14 @@
             // Show incremental info
             if (data.is_incremental && hasParent) {
                 const parentSha = data.parent_commit_sha.substring(0, 7);
-                const count = data.incremental_count || data.transcript?.length || 0;
+                // Count only displayed entries (user/assistant messages, excluding tool results)
+                const displayedCount = countDisplayedMessages(data.transcript);
                 info.style.display = 'flex';
-                infoText.innerHTML = `Showing ${count} entries since <span class="parent-link" onclick="selectCommit('${data.parent_commit_sha}')">${parentSha}</span>`;
+                infoText.innerHTML = `Showing ${displayedCount} messages since <span class="parent-link" onclick="selectCommit('${data.parent_commit_sha}')">${parentSha}</span>`;
             } else if (viewMode === 'full' && hasParent) {
                 info.style.display = 'flex';
-                infoText.textContent = `Showing full session (${data.message_count || data.transcript?.length || 0} entries)`;
+                const displayedCount = countDisplayedMessages(data.transcript);
+                infoText.textContent = `Showing full session (${displayedCount} messages)`;
             } else {
                 info.style.display = 'none';
             }
@@ -920,6 +922,22 @@
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
+        }
+
+        function countDisplayedMessages(transcript) {
+            if (!transcript) return 0;
+            return transcript.filter(entry => {
+                if (entry.type === 'assistant') return true;
+                if (entry.type === 'user') {
+                    // Exclude tool result messages, count only actual user input
+                    const content = entry.message?.content;
+                    if (typeof content === 'string') return true;
+                    if (Array.isArray(content)) {
+                        return !content.some(c => c.type === 'tool_result');
+                    }
+                }
+                return false;
+            }).length;
         }
 
         function formatDate(dateStr) {
