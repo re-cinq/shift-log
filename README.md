@@ -20,12 +20,20 @@ Claudit is feature-complete with full conversation storage, session resume, and 
 ### `claudit init` - Set up repository
 ```bash
 cd your-project
-claudit init
+claudit init                                    # Interactive ref selection
+claudit init --notes-ref=refs/notes/commits     # Use default ref (recommended)
+claudit init --notes-ref=refs/notes/claude-conversations  # Use custom ref
 ```
 
 Configures:
+- Git notes ref selection (default or custom namespace)
+- Git settings for notes visibility (displayRef, rewriteRef)
 - Claude Code's PostToolUse hook to capture conversations on commit
 - Git hooks (pre-push, post-merge, post-checkout) for automatic note syncing
+
+**Notes ref options:**
+- `refs/notes/commits` (default) - Standard git notes ref, works with `git notes show HEAD` and `git log`
+- `refs/notes/claude-conversations` (custom) - Separate namespace, requires `--ref` flag for manual git commands
 
 ### `claudit store` - Capture conversation (automatic)
 
@@ -75,7 +83,7 @@ claudit sync push --remote upstream  # Push to different remote
 
 1. **Hook Integration** - When Claude Code runs a git commit, the PostToolUse hook triggers `claudit store`
 2. **Compression** - The conversation transcript is gzip compressed and base64 encoded
-3. **Storage** - Stored as a Git Note in `refs/notes/claude-conversations` namespace
+3. **Storage** - Stored as a Git Note on your configured ref (default: `refs/notes/commits`)
 4. **Sync** - Git hooks automatically sync notes when you push/pull
 5. **Resume** - Restores session files to Claude's expected location and launches with `--resume`
 

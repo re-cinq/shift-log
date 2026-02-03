@@ -57,7 +57,7 @@ var _ = Describe("Init Command", func() {
 
 	Describe("claudit init in a git repository", func() {
 		It("creates .claude/settings.local.json", func() {
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "init")
+			stdout, _, err := testutil.RunClauditInDir(repo.Path, "init", "--notes-ref=refs/notes/commits")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stdout).To(ContainSubstring("Configured Claude PostToolUse hook"))
 
@@ -65,7 +65,7 @@ var _ = Describe("Init Command", func() {
 		})
 
 		It("configures PostToolUse hook correctly", func() {
-			_, _, err := testutil.RunClauditInDir(repo.Path, "init")
+			_, _, err := testutil.RunClauditInDir(repo.Path, "init", "--notes-ref=refs/notes/commits")
 			Expect(err).NotTo(HaveOccurred())
 
 			content, err := repo.ReadFile(".claude/settings.local.json")
@@ -78,7 +78,7 @@ var _ = Describe("Init Command", func() {
 		})
 
 		It("produces valid Claude Code hook JSON structure", func() {
-			_, _, err := testutil.RunClauditInDir(repo.Path, "init")
+			_, _, err := testutil.RunClauditInDir(repo.Path, "init", "--notes-ref=refs/notes/commits")
 			Expect(err).NotTo(HaveOccurred())
 
 			content, err := repo.ReadFile(".claude/settings.local.json")
@@ -110,7 +110,7 @@ var _ = Describe("Init Command", func() {
 		})
 
 		It("installs git hooks", func() {
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "init")
+			stdout, _, err := testutil.RunClauditInDir(repo.Path, "init", "--notes-ref=refs/notes/commits")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stdout).To(ContainSubstring("Installed git hooks"))
 
@@ -128,7 +128,7 @@ var _ = Describe("Init Command", func() {
 			Expect(os.MkdirAll(repo.Path+"/.claude", 0755)).To(Succeed())
 			Expect(repo.WriteFile(".claude/settings.local.json", `{"existingKey": "existingValue"}`)).To(Succeed())
 
-			_, _, err := testutil.RunClauditInDir(repo.Path, "init")
+			_, _, err := testutil.RunClauditInDir(repo.Path, "init", "--notes-ref=refs/notes/commits")
 			Expect(err).NotTo(HaveOccurred())
 
 			content, err := repo.ReadFile(".claude/settings.local.json")
@@ -145,7 +145,7 @@ var _ = Describe("Init Command", func() {
 			Expect(err).NotTo(HaveOccurred())
 			defer os.RemoveAll(tmpDir)
 
-			_, stderr, err := testutil.RunClauditInDir(tmpDir, "init")
+			_, stderr, err := testutil.RunClauditInDir(tmpDir, "init", "--notes-ref=refs/notes/commits")
 			Expect(err).To(HaveOccurred())
 			Expect(stderr).To(ContainSubstring("not a git repository"))
 		})

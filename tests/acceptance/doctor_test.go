@@ -35,7 +35,7 @@ var _ = Describe("Doctor Command", func() {
 
 		It("passes all checks after init", func() {
 			// Initialize first
-			_, _, err := testutil.RunClauditInDir(repo.Path, "init")
+			_, _, err := testutil.RunClauditInDir(repo.Path, "init", "--notes-ref=refs/notes/commits")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Doctor should pass (except PATH check which we can't control in test)

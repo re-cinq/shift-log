@@ -34,7 +34,7 @@ var _ = Describe("End-to-End Store Flow", func() {
 
 	It("full flow: init repo, simulate Claude hook, verify note stored, push/pull", func() {
 		// Step 1: Initialize claudit
-		stdout, _, err := testutil.RunClauditInDir(local.Path, "init")
+		stdout, _, err := testutil.RunClauditInDir(local.Path, "init", "--notes-ref=refs/notes/commits")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(stdout).To(ContainSubstring("Claudit is now configured"))
 
@@ -61,9 +61,9 @@ var _ = Describe("End-to-End Store Flow", func() {
 		Expect(stderr).To(ContainSubstring("stored conversation"))
 
 		// Step 4: Verify note was created
-		Expect(local.HasNote("refs/notes/claude-conversations", head)).To(BeTrue())
+		Expect(local.HasNote("refs/notes/commits", head)).To(BeTrue())
 
-		noteContent, err := local.GetNote("refs/notes/claude-conversations", head)
+		noteContent, err := local.GetNote("refs/notes/commits", head)
 		Expect(err).NotTo(HaveOccurred())
 
 		var stored map[string]interface{}
@@ -85,7 +85,7 @@ var _ = Describe("End-to-End Store Flow", func() {
 		Expect(clone.Run("git", "checkout", "-b", "master", "origin/master")).To(Succeed())
 
 		// Clone should not have notes yet
-		Expect(clone.HasNote("refs/notes/claude-conversations", head)).To(BeFalse())
+		Expect(clone.HasNote("refs/notes/commits", head)).To(BeFalse())
 
 		// Pull notes
 		stdout, _, err = testutil.RunClauditInDir(clone.Path, "sync", "pull")
@@ -93,9 +93,9 @@ var _ = Describe("End-to-End Store Flow", func() {
 		Expect(stdout).To(ContainSubstring("Fetched"))
 
 		// Verify note is now available
-		Expect(clone.HasNote("refs/notes/claude-conversations", head)).To(BeTrue())
+		Expect(clone.HasNote("refs/notes/commits", head)).To(BeTrue())
 
-		clonedNote, err := clone.GetNote("refs/notes/claude-conversations", head)
+		clonedNote, err := clone.GetNote("refs/notes/commits", head)
 		Expect(err).NotTo(HaveOccurred())
 
 		var clonedStored map[string]interface{}

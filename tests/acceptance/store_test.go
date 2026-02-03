@@ -48,7 +48,7 @@ var _ = Describe("Store Command", func() {
 			Expect(stderr).To(ContainSubstring("stored conversation"))
 
 			// Verify note was created
-			Expect(repo.HasNote("refs/notes/claude-conversations", head)).To(BeTrue())
+			Expect(repo.HasNote("refs/notes/commits", head)).To(BeTrue())
 		})
 
 		It("stores note with expected metadata", func() {
@@ -62,7 +62,7 @@ var _ = Describe("Store Command", func() {
 			_, _, err = testutil.RunClauditInDirWithStdin(repo.Path, hookInput, "store")
 			Expect(err).NotTo(HaveOccurred())
 
-			noteContent, err := repo.GetNote("refs/notes/claude-conversations", head)
+			noteContent, err := repo.GetNote("refs/notes/commits", head)
 			Expect(err).NotTo(HaveOccurred())
 
 			var stored map[string]interface{}
@@ -86,7 +86,7 @@ var _ = Describe("Store Command", func() {
 			_, _, err = testutil.RunClauditInDirWithStdin(repo.Path, hookInput, "store")
 			Expect(err).NotTo(HaveOccurred())
 
-			noteContent, err := repo.GetNote("refs/notes/claude-conversations", head)
+			noteContent, err := repo.GetNote("refs/notes/commits", head)
 			Expect(err).NotTo(HaveOccurred())
 
 			var stored map[string]interface{}
@@ -117,7 +117,7 @@ var _ = Describe("Store Command", func() {
 			Expect(stderr).To(BeEmpty())
 
 			// Note should NOT be created
-			Expect(repo.HasNote("refs/notes/claude-conversations", head)).To(BeFalse())
+			Expect(repo.HasNote("refs/notes/commits", head)).To(BeFalse())
 		})
 	})
 
@@ -132,7 +132,7 @@ var _ = Describe("Store Command", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stderr).To(BeEmpty())
 
-			Expect(repo.HasNote("refs/notes/claude-conversations", head)).To(BeFalse())
+			Expect(repo.HasNote("refs/notes/commits", head)).To(BeFalse())
 		})
 	})
 

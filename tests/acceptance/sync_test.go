@@ -25,7 +25,7 @@ var _ = Describe("Git Hooks Auto-Sync", func() {
 		Expect(local.Run("git", "push", "-u", "origin", "master")).To(Succeed())
 
 		// Initialize claudit (installs hooks)
-		_, _, err = testutil.RunClauditInDir(local.Path, "init")
+		_, _, err = testutil.RunClauditInDir(local.Path, "init", "--notes-ref=refs/notes/commits")
 		Expect(err).NotTo(HaveOccurred())
 
 		// Make sure hooks can find claudit binary
@@ -55,10 +55,10 @@ var _ = Describe("Git Hooks Auto-Sync", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Verify local has the note
-			Expect(local.HasNote("refs/notes/claude-conversations", head)).To(BeTrue())
+			Expect(local.HasNote("refs/notes/commits", head)).To(BeTrue())
 
 			// Remote should NOT have the note yet
-			Expect(remote.HasNote("refs/notes/claude-conversations", head)).To(BeFalse())
+			Expect(remote.HasNote("refs/notes/commits", head)).To(BeFalse())
 
 			// Make a change and push (triggers pre-push hook)
 			Expect(local.WriteFile("new-file.txt", "content")).To(Succeed())
@@ -66,7 +66,7 @@ var _ = Describe("Git Hooks Auto-Sync", func() {
 			Expect(local.Run("git", "push", "origin", "master")).To(Succeed())
 
 			// Now remote SHOULD have the note (hook pushed it)
-			Expect(remote.HasNote("refs/notes/claude-conversations", head)).To(BeTrue())
+			Expect(remote.HasNote("refs/notes/commits", head)).To(BeTrue())
 		})
 	})
 
@@ -102,12 +102,12 @@ var _ = Describe("Git Hooks Auto-Sync", func() {
 
 			// Initialize claudit on clone (installs hooks) - this won't conflict
 			// because we already have .claude committed
-			_, _, err = testutil.RunClauditInDir(clone.Path, "init")
+			_, _, err = testutil.RunClauditInDir(clone.Path, "init", "--notes-ref=refs/notes/commits")
 			Expect(err).NotTo(HaveOccurred())
 			clone.SetBinaryPath(testutil.BinaryPath())
 
 			// Clone should not have notes yet
-			Expect(clone.HasNote("refs/notes/claude-conversations", head)).To(BeFalse())
+			Expect(clone.HasNote("refs/notes/commits", head)).To(BeFalse())
 
 			// Push a new commit from local so clone has something to pull
 			Expect(local.WriteFile("another.txt", "content")).To(Succeed())
@@ -118,7 +118,7 @@ var _ = Describe("Git Hooks Auto-Sync", func() {
 			Expect(clone.Run("git", "pull", "origin", "master")).To(Succeed())
 
 			// Now clone should have the note (hook fetched it)
-			Expect(clone.HasNote("refs/notes/claude-conversations", head)).To(BeTrue())
+			Expect(clone.HasNote("refs/notes/commits", head)).To(BeTrue())
 		})
 	})
 })
@@ -185,10 +185,10 @@ var _ = Describe("Sync Command", func() {
 			Expect(stdout).To(ContainSubstring("Pushed"))
 
 			// Verify upstream has the notes ref
-			Expect(upstream.HasNote("refs/notes/claude-conversations", head)).To(BeTrue())
+			Expect(upstream.HasNote("refs/notes/commits", head)).To(BeTrue())
 
 			// Verify origin does NOT have the notes ref (we didn't push there)
-			Expect(remote.HasNote("refs/notes/claude-conversations", head)).To(BeFalse())
+			Expect(remote.HasNote("refs/notes/commits", head)).To(BeFalse())
 		})
 
 		It("pulls notes from non-origin remote with --remote flag", func() {
@@ -215,7 +215,7 @@ var _ = Describe("Sync Command", func() {
 			Expect(clone.Run("git", "checkout", "-b", "master", "upstream/master")).To(Succeed())
 
 			// Clone should not have notes yet
-			Expect(clone.HasNote("refs/notes/claude-conversations", head)).To(BeFalse())
+			Expect(clone.HasNote("refs/notes/commits", head)).To(BeFalse())
 
 			// Pull notes from upstream
 			stdout, _, err := testutil.RunClauditInDir(clone.Path, "sync", "pull", "--remote=upstream")
@@ -223,7 +223,7 @@ var _ = Describe("Sync Command", func() {
 			Expect(stdout).To(ContainSubstring("Fetched"))
 
 			// Now clone should have the note
-			Expect(clone.HasNote("refs/notes/claude-conversations", head)).To(BeTrue())
+			Expect(clone.HasNote("refs/notes/commits", head)).To(BeTrue())
 		})
 	})
 
@@ -247,7 +247,7 @@ var _ = Describe("Sync Command", func() {
 			Expect(stdout).To(ContainSubstring("Pushed"))
 
 			// Verify remote has the notes ref
-			output, err := remote.RunOutput("git", "notes", "--ref", "refs/notes/claude-conversations", "list")
+			output, err := remote.RunOutput("git", "notes", "--ref", "refs/notes/commits", "list")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(output).To(ContainSubstring(head))
 		})
@@ -278,7 +278,7 @@ var _ = Describe("Sync Command", func() {
 			Expect(clone.Run("git", "checkout", "-b", "master", "origin/master")).To(Succeed())
 
 			// Clone should not have notes yet
-			Expect(clone.HasNote("refs/notes/claude-conversations", head)).To(BeFalse())
+			Expect(clone.HasNote("refs/notes/commits", head)).To(BeFalse())
 
 			// Pull notes
 			stdout, _, err := testutil.RunClauditInDir(clone.Path, "sync", "pull")
@@ -286,7 +286,7 @@ var _ = Describe("Sync Command", func() {
 			Expect(stdout).To(ContainSubstring("Fetched"))
 
 			// Now clone should have the note
-			Expect(clone.HasNote("refs/notes/claude-conversations", head)).To(BeTrue())
+			Expect(clone.HasNote("refs/notes/commits", head)).To(BeTrue())
 		})
 	})
 
@@ -304,7 +304,7 @@ var _ = Describe("Sync Command", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Get original note content
-			originalNote, err := local.GetNote("refs/notes/claude-conversations", head)
+			originalNote, err := local.GetNote("refs/notes/commits", head)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Push to remote
@@ -324,7 +324,7 @@ var _ = Describe("Sync Command", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Compare notes
-			clonedNote, err := clone.GetNote("refs/notes/claude-conversations", head)
+			clonedNote, err := clone.GetNote("refs/notes/commits", head)
 			Expect(err).NotTo(HaveOccurred())
 
 			var original, cloned map[string]interface{}

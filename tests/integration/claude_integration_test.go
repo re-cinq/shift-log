@@ -77,7 +77,7 @@ func TestClaudeCodeIntegration(t *testing.T) {
 	runGit(t, tmpDir, "commit", "-m", "Initial commit")
 
 	// Initialize claudit
-	cmd := exec.Command(clauditPath, "init")
+	cmd := exec.Command(clauditPath, "init", "--notes-ref=refs/notes/commits")
 	cmd.Dir = tmpDir
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("claudit init failed: %v\nOutput: %s", err, output)
@@ -189,7 +189,7 @@ func TestClaudeCodeIntegration(t *testing.T) {
 
 	// CRITICAL TEST: If commit was made, note MUST exist
 	// This is the core assertion that will catch silent storage failures
-	cmd = exec.Command("git", "notes", "--ref=refs/notes/claude-conversations", "list")
+	cmd = exec.Command("git", "notes", "--ref=refs/notes/commits", "list")
 	cmd.Dir = tmpDir
 	notesOutput, err := cmd.CombinedOutput()
 	if err != nil {
@@ -204,7 +204,7 @@ func TestClaudeCodeIntegration(t *testing.T) {
 	t.Logf("Notes: %s", notesOutput)
 
 	// Verify note content is valid JSON
-	cmd = exec.Command("git", "notes", "--ref=refs/notes/claude-conversations", "show", "HEAD")
+	cmd = exec.Command("git", "notes", "--ref=refs/notes/commits", "show", "HEAD")
 	cmd.Dir = tmpDir
 	noteContent, err := cmd.CombinedOutput()
 	if err != nil {
@@ -359,7 +359,7 @@ func TestClaudeCodeIntegration_MissingClaudit(t *testing.T) {
 
 	// THIS IS THE KEY TEST: Commit was made, but note should NOT exist
 	// because claudit was not in PATH
-	cmd = exec.Command("git", "notes", "--ref=refs/notes/claude-conversations", "list")
+	cmd = exec.Command("git", "notes", "--ref=refs/notes/commits", "list")
 	cmd.Dir = tmpDir
 	notesOutput, err := cmd.CombinedOutput()
 

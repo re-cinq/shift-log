@@ -3,32 +3,45 @@ package git
 import (
 	"os/exec"
 	"strings"
+
+	"github.com/DanielJonesEB/claudit/internal/config"
 )
 
-// NotesRef is the git notes ref used for storing conversations
-const NotesRef = "refs/notes/claude-conversations"
+// GetNotesRef returns the configured git notes ref
+func GetNotesRef() string {
+	cfg, err := config.Read()
+	if err != nil {
+		// Fallback to default ref on error
+		return config.DefaultNotesRef
+	}
+	return cfg.NotesRef
+}
 
 // AddNote adds a note to a commit
 func AddNote(commitSHA string, content []byte) error {
-	cmd := exec.Command("git", "notes", "--ref", NotesRef, "add", "-f", "-m", string(content), commitSHA)
+	ref := GetNotesRef()
+	cmd := exec.Command("git", "notes", "--ref", ref, "add", "-f", "-m", string(content), commitSHA)
 	return cmd.Run()
 }
 
 // GetNote retrieves a note from a commit
 func GetNote(commitSHA string) ([]byte, error) {
-	cmd := exec.Command("git", "notes", "--ref", NotesRef, "show", commitSHA)
+	ref := GetNotesRef()
+	cmd := exec.Command("git", "notes", "--ref", ref, "show", commitSHA)
 	return cmd.Output()
 }
 
 // HasNote checks if a commit has a conversation note
 func HasNote(commitSHA string) bool {
-	cmd := exec.Command("git", "notes", "--ref", NotesRef, "show", commitSHA)
+	ref := GetNotesRef()
+	cmd := exec.Command("git", "notes", "--ref", ref, "show", commitSHA)
 	return cmd.Run() == nil
 }
 
 // ListCommitsWithNotes returns a list of commit SHAs that have conversation notes
 func ListCommitsWithNotes() ([]string, error) {
-	cmd := exec.Command("git", "notes", "--ref", NotesRef, "list")
+	ref := GetNotesRef()
+	cmd := exec.Command("git", "notes", "--ref", ref, "list")
 	output, err := cmd.Output()
 	if err != nil {
 		// No notes exist yet - this is not an error
@@ -56,13 +69,15 @@ func ListCommitsWithNotes() ([]string, error) {
 
 // PushNotes pushes notes to the remote
 func PushNotes(remote string) error {
+	ref := GetNotesRef()
 	// Use --no-verify to prevent pre-push hook from triggering recursively
-	cmd := exec.Command("git", "push", "--no-verify", remote, NotesRef)
+	cmd := exec.Command("git", "push", "--no-verify", remote, ref)
 	return cmd.Run()
 }
 
 // FetchNotes fetches notes from the remote
 func FetchNotes(remote string) error {
-	cmd := exec.Command("git", "fetch", remote, NotesRef+":"+NotesRef)
+	ref := GetNotesRef()
+	cmd := exec.Command("git", "fetch", remote, ref+":"+ref)
 	return cmd.Run()
 }
