@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/anthropics/claudit/internal/claude"
-	"github.com/anthropics/claudit/internal/git"
+	"github.com/DanielJonesEB/claudit/internal/claude"
+	"github.com/DanielJonesEB/claudit/internal/git"
 	"github.com/spf13/cobra"
 )
 

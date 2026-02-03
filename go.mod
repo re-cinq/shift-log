@@ -1,4 +1,4 @@
-module github.com/anthropics/claudit
+module github.com/DanielJonesEB/claudit
 
 go 1.21.5
 

@@ -8,7 +8,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/anthropics/claudit/tests/acceptance/testutil"
+	"github.com/DanielJonesEB/claudit/tests/acceptance/testutil"
 )
 
 var _ = Describe("Store Command", func() {

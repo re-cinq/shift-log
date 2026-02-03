@@ -3,8 +3,8 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/anthropics/claudit/internal/git"
-	"github.com/anthropics/claudit/internal/storage"
+	"github.com/DanielJonesEB/claudit/internal/git"
+	"github.com/DanielJonesEB/claudit/internal/storage"
 	"github.com/spf13/cobra"
 )
 
