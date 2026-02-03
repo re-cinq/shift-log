@@ -46,8 +46,19 @@
   - Test: Multi-line content is properly indented
   - Verify: `go test ./internal/claude/...` passes
 
-## 3. Version Bump
+## 3. Web View Consistency
 
-- [x] **3.1** Bump minor version
+- [x] **3.1** Apply same rendering rules to web view
+  - Show tool inputs with formatted summary
+  - Display tool results with actual content
+  - Add thinking block rendering (collapsible)
+  - Filter progress/file-history-snapshot entries
+  - Handle string content for first user message
+  - Add system message rendering
+  - Verify: Web UI shows same information as terminal
+
+## 4. Version Bump
+
+- [x] **4.1** Bump minor version
   - Update version constant in code
   - Verify: `claudit --version` shows new version

@@ -44,3 +44,23 @@ The terminal output SHALL be formatted for readability with clear visual separat
 #### Scenario: System messages displayed
 - **WHEN** conversation contains system messages
 - **THEN** they are displayed with a "System:" prefix (can be filtered with flags in future)
+
+#### Scenario: Thinking blocks displayed
+- **WHEN** conversation contains assistant thinking blocks
+- **THEN** they are displayed in a collapsible/summarized format
+- **AND** first 3 lines are shown by default with option to expand
+
+### Requirement: Web View Consistency
+The web view SHALL use the same rendering rules as the terminal view for consistency.
+
+#### Scenario: Web view shows tool inputs
+- **WHEN** viewing conversation in web UI
+- **THEN** tool inputs are shown with the same formatting as terminal (command summary, file paths)
+
+#### Scenario: Web view shows tool results
+- **WHEN** viewing conversation in web UI
+- **THEN** tool results show actual content, not placeholders
+
+#### Scenario: Web view filters internal entries
+- **WHEN** viewing conversation in web UI
+- **THEN** progress and file-history-snapshot entries are filtered out
