@@ -42,7 +42,34 @@ type TranscriptEntry struct {
 // Message represents a message content structure
 type Message struct {
 	Role    string         `json:"role,omitempty"`
-	Content []ContentBlock `json:"content,omitempty"`
+	Content []ContentBlock `json:"-"` // Custom unmarshal handles string or array
+	RawContent json.RawMessage `json:"content,omitempty"`
+}
+
+// UnmarshalJSON handles content being either a string or array of blocks
+func (m *Message) UnmarshalJSON(data []byte) error {
+	// Use an alias to avoid recursion
+	type Alias Message
+	aux := &struct {
+		*Alias
+	}{
+		Alias: (*Alias)(m),
+	}
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+
+	// Try to unmarshal content as array of blocks
+	if len(m.RawContent) > 0 {
+		if err := json.Unmarshal(m.RawContent, &m.Content); err != nil {
+			// If that fails, try as a string
+			var text string
+			if err := json.Unmarshal(m.RawContent, &text); err == nil {
+				m.Content = []ContentBlock{{Type: "text", Text: text}}
+			}
+		}
+	}
+	return nil
 }
 
 // Transcript represents a parsed Claude Code transcript

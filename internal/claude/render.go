@@ -1,6 +1,7 @@
 package claude
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -41,19 +42,31 @@ func (r *Renderer) color(code string) string {
 
 // RenderTranscript renders the full transcript to the writer
 func (r *Renderer) RenderTranscript(t *Transcript) error {
-	for i, entry := range t.Entries {
-		if i > 0 {
-			fmt.Fprintln(r.w)
-		}
-		if err := r.RenderEntry(&entry); err != nil {
-			return err
+	hadPrevious := false
+	for _, entry := range t.Entries {
+		if r.shouldRender(&entry) {
+			if hadPrevious {
+				fmt.Fprintln(r.w)
+			}
+			r.RenderEntry(&entry)
+			hadPrevious = true
 		}
 	}
 	return nil
 }
 
+// shouldRender returns true if the entry type should be rendered
+func (r *Renderer) shouldRender(entry *TranscriptEntry) bool {
+	switch entry.Type {
+	case MessageTypeUser, MessageTypeAssistant, MessageTypeSystem:
+		return true
+	default:
+		return false
+	}
+}
+
 // RenderEntry renders a single transcript entry
-func (r *Renderer) RenderEntry(entry *TranscriptEntry) error {
+func (r *Renderer) RenderEntry(entry *TranscriptEntry) {
 	switch entry.Type {
 	case MessageTypeUser:
 		r.renderUser(entry)
@@ -61,10 +74,7 @@ func (r *Renderer) RenderEntry(entry *TranscriptEntry) error {
 		r.renderAssistant(entry)
 	case MessageTypeSystem:
 		r.renderSystem(entry)
-	default:
-		// Skip unknown types
 	}
-	return nil
 }
 
 func (r *Renderer) renderUser(entry *TranscriptEntry) {
@@ -131,8 +141,126 @@ func (r *Renderer) renderThinking(thinking string) {
 
 func (r *Renderer) renderToolUse(block ContentBlock) {
 	fmt.Fprintf(r.w, "  %s[tool: %s]%s\n", r.color(colorCyan), block.Name, r.color(colorReset))
+
+	if len(block.Input) == 0 {
+		return
+	}
+
+	// Parse input based on tool type
+	var input map[string]interface{}
+	if err := json.Unmarshal(block.Input, &input); err != nil {
+		return
+	}
+
+	switch block.Name {
+	case "Bash":
+		if cmd, ok := input["command"].(string); ok {
+			r.renderToolInput("command", cmd)
+		}
+	case "Write":
+		if path, ok := input["file_path"].(string); ok {
+			r.renderToolInput("file", path)
+		}
+		if content, ok := input["content"].(string); ok {
+			r.renderToolInput("content", content)
+		}
+	case "Read":
+		if path, ok := input["file_path"].(string); ok {
+			r.renderToolInput("file", path)
+		}
+	case "Edit":
+		if path, ok := input["file_path"].(string); ok {
+			r.renderToolInput("file", path)
+		}
+		if old, ok := input["old_string"].(string); ok {
+			r.renderToolInput("old", old)
+		}
+		if new, ok := input["new_string"].(string); ok {
+			r.renderToolInput("new", new)
+		}
+	case "Grep":
+		if pattern, ok := input["pattern"].(string); ok {
+			r.renderToolInput("pattern", pattern)
+		}
+		if path, ok := input["path"].(string); ok {
+			r.renderToolInput("path", path)
+		}
+	case "Glob":
+		if pattern, ok := input["pattern"].(string); ok {
+			r.renderToolInput("pattern", pattern)
+		}
+	default:
+		// For unknown tools, show all string inputs
+		for k, v := range input {
+			if s, ok := v.(string); ok && s != "" {
+				r.renderToolInput(k, s)
+			}
+		}
+	}
+}
+
+func (r *Renderer) renderToolInput(label, value string) {
+	lines := strings.Split(value, "\n")
+	if len(lines) == 1 {
+		// Single line - show inline, truncate if long
+		display := value
+		if len(display) > 100 {
+			display = display[:100] + "..."
+		}
+		fmt.Fprintf(r.w, "  %s%s: %s%s\n", r.color(colorDim), label, display, r.color(colorReset))
+	} else {
+		// Multi-line - show indented block
+		fmt.Fprintf(r.w, "  %s%s:%s\n", r.color(colorDim), label, r.color(colorReset))
+		maxLines := 10
+		for i, line := range lines {
+			if i >= maxLines {
+				fmt.Fprintf(r.w, "    %s... (%d more lines)%s\n", r.color(colorDim), len(lines)-maxLines, r.color(colorReset))
+				break
+			}
+			fmt.Fprintf(r.w, "    %s%s%s\n", r.color(colorDim), line, r.color(colorReset))
+		}
+	}
 }
 
 func (r *Renderer) renderToolResult(block ContentBlock) {
 	fmt.Fprintf(r.w, "  %s[tool result]%s\n", r.color(colorDim), r.color(colorReset))
+
+	if len(block.Content) == 0 {
+		return
+	}
+
+	// Try to unmarshal as a string first (most common case)
+	var content string
+	if err := json.Unmarshal(block.Content, &content); err == nil {
+		r.renderToolResultContent(content)
+		return
+	}
+
+	// Try as array of content blocks (for complex results)
+	var blocks []ContentBlock
+	if err := json.Unmarshal(block.Content, &blocks); err == nil {
+		for _, b := range blocks {
+			if b.Type == "text" && b.Text != "" {
+				r.renderToolResultContent(b.Text)
+			}
+		}
+		return
+	}
+
+	// Fallback: show raw content (truncated)
+	raw := string(block.Content)
+	if len(raw) > 200 {
+		raw = raw[:200] + "..."
+	}
+	fmt.Fprintf(r.w, "  %s%s%s\n", r.color(colorDim), raw, r.color(colorReset))
+}
+
+func (r *Renderer) renderToolResultContent(content string) {
+	if content == "" {
+		return
+	}
+	lines := strings.Split(content, "\n")
+	for _, line := range lines {
+		fmt.Fprintf(r.w, "  %s%s%s\n", r.color(colorDim), line, r.color(colorReset))
+	}
 }

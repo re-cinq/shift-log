@@ -28,8 +28,26 @@
   - Test: Output contains User/Assistant prefixes
   - Verify: `ginkgo tests/acceptance` passes
 
-## 2. Version Bump
+## 2. Enhanced Tool Display
 
-- [x] **2.1** Bump minor version
+- [x] **2.1** Show tool call inputs
+  - Display tool inputs (command for Bash, file_path/content for Write, etc.)
+  - Handle multi-line inputs with indentation and truncation
+  - Verify: Unit tests pass
+
+- [x] **2.2** Show tool result content
+  - Display actual tool result content instead of placeholder
+  - Handle both string and array content formats
+  - Verify: Unit tests pass
+
+- [x] **2.3** Add unit tests for tool display
+  - Test: Tool use renders with input parameters
+  - Test: Tool result renders with content
+  - Test: Multi-line content is properly indented
+  - Verify: `go test ./internal/claude/...` passes
+
+## 3. Version Bump
+
+- [x] **3.1** Bump minor version
   - Update version constant in code
   - Verify: `claudit --version` shows new version

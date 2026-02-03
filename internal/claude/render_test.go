@@ -2,6 +2,7 @@ package claude
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -21,10 +22,7 @@ func TestRendererUserMessage(t *testing.T) {
 		},
 	}
 
-	err := r.RenderEntry(entry)
-	if err != nil {
-		t.Fatalf("RenderEntry failed: %v", err)
-	}
+	r.RenderEntry(entry)
 
 	output := buf.String()
 	if !strings.Contains(output, "User:") {
@@ -49,10 +47,7 @@ func TestRendererAssistantMessage(t *testing.T) {
 		},
 	}
 
-	err := r.RenderEntry(entry)
-	if err != nil {
-		t.Fatalf("RenderEntry failed: %v", err)
-	}
+	r.RenderEntry(entry)
 
 	output := buf.String()
 	if !strings.Contains(output, "Assistant:") {
@@ -76,10 +71,7 @@ func TestRendererSystemMessage(t *testing.T) {
 		},
 	}
 
-	err := r.RenderEntry(entry)
-	if err != nil {
-		t.Fatalf("RenderEntry failed: %v", err)
-	}
+	r.RenderEntry(entry)
 
 	output := buf.String()
 	if !strings.Contains(output, "System:") {
@@ -101,10 +93,7 @@ func TestRendererToolUse(t *testing.T) {
 		},
 	}
 
-	err := r.RenderEntry(entry)
-	if err != nil {
-		t.Fatalf("RenderEntry failed: %v", err)
-	}
+	r.RenderEntry(entry)
 
 	output := buf.String()
 	if !strings.Contains(output, "[tool: Read]") {
@@ -177,5 +166,198 @@ func TestRendererTranscript(t *testing.T) {
 	}
 	if !strings.Contains(output, "Hi!") {
 		t.Errorf("Output should contain assistant message")
+	}
+}
+
+func TestRendererToolUseWithBashInput(t *testing.T) {
+	var buf bytes.Buffer
+	r := NewRenderer(&buf)
+
+	input, _ := json.Marshal(map[string]string{
+		"command":     "ls -la",
+		"description": "List files",
+	})
+
+	entry := &TranscriptEntry{
+		Type: MessageTypeAssistant,
+		Message: &Message{
+			Role: "assistant",
+			Content: []ContentBlock{
+				{Type: "tool_use", Name: "Bash", Input: input},
+			},
+		},
+	}
+
+	r.RenderEntry(entry)
+
+	output := buf.String()
+	if !strings.Contains(output, "[tool: Bash]") {
+		t.Errorf("Output should contain tool name, got: %s", output)
+	}
+	if !strings.Contains(output, "command: ls -la") {
+		t.Errorf("Output should contain command, got: %s", output)
+	}
+}
+
+func TestRendererToolUseWithWriteInput(t *testing.T) {
+	var buf bytes.Buffer
+	r := NewRenderer(&buf)
+
+	input, _ := json.Marshal(map[string]string{
+		"file_path": "/path/to/file.txt",
+		"content":   "Hello, world!\n",
+	})
+
+	entry := &TranscriptEntry{
+		Type: MessageTypeAssistant,
+		Message: &Message{
+			Role: "assistant",
+			Content: []ContentBlock{
+				{Type: "tool_use", Name: "Write", Input: input},
+			},
+		},
+	}
+
+	r.RenderEntry(entry)
+
+	output := buf.String()
+	if !strings.Contains(output, "[tool: Write]") {
+		t.Errorf("Output should contain tool name, got: %s", output)
+	}
+	if !strings.Contains(output, "file: /path/to/file.txt") {
+		t.Errorf("Output should contain file path, got: %s", output)
+	}
+	if !strings.Contains(output, "Hello, world!") {
+		t.Errorf("Output should contain file content, got: %s", output)
+	}
+}
+
+func TestRendererToolUseMultilineCommand(t *testing.T) {
+	var buf bytes.Buffer
+	r := NewRenderer(&buf)
+
+	input, _ := json.Marshal(map[string]string{
+		"command": "git add file.txt && git commit -m \"$(cat <<'EOF'\nAdd file\n\nCo-Authored-By: Claude\nEOF\n)\"",
+	})
+
+	entry := &TranscriptEntry{
+		Type: MessageTypeAssistant,
+		Message: &Message{
+			Role: "assistant",
+			Content: []ContentBlock{
+				{Type: "tool_use", Name: "Bash", Input: input},
+			},
+		},
+	}
+
+	r.RenderEntry(entry)
+
+	output := buf.String()
+	if !strings.Contains(output, "command:") {
+		t.Errorf("Output should contain command label, got: %s", output)
+	}
+	if !strings.Contains(output, "git add file.txt") {
+		t.Errorf("Output should contain git command, got: %s", output)
+	}
+	// Multi-line should be indented
+	if !strings.Contains(output, "    ") {
+		t.Errorf("Multi-line content should be indented, got: %s", output)
+	}
+}
+
+func TestRendererToolResultWithContent(t *testing.T) {
+	var buf bytes.Buffer
+	r := NewRenderer(&buf)
+
+	content, _ := json.Marshal("total 0\ndrwxr-xr-x 5 user staff 160 Jan 1 10:00 .")
+
+	entry := &TranscriptEntry{
+		Type: MessageTypeUser,
+		Message: &Message{
+			Role: "user",
+			Content: []ContentBlock{
+				{Type: "tool_result", ToolUseID: "toolu_123", Content: content},
+			},
+		},
+	}
+
+	r.RenderEntry(entry)
+
+	output := buf.String()
+	if !strings.Contains(output, "[tool result]") {
+		t.Errorf("Output should contain tool result marker, got: %s", output)
+	}
+	if !strings.Contains(output, "total 0") {
+		t.Errorf("Output should contain result content, got: %s", output)
+	}
+	if !strings.Contains(output, "drwxr-xr-x") {
+		t.Errorf("Output should contain directory listing, got: %s", output)
+	}
+}
+
+func TestRendererToolResultFileCreation(t *testing.T) {
+	var buf bytes.Buffer
+	r := NewRenderer(&buf)
+
+	content, _ := json.Marshal("File created successfully at: /path/to/file.txt")
+
+	entry := &TranscriptEntry{
+		Type: MessageTypeUser,
+		Message: &Message{
+			Role: "user",
+			Content: []ContentBlock{
+				{Type: "tool_result", ToolUseID: "toolu_456", Content: content},
+			},
+		},
+	}
+
+	r.RenderEntry(entry)
+
+	output := buf.String()
+	if !strings.Contains(output, "File created successfully") {
+		t.Errorf("Output should contain file creation message, got: %s", output)
+	}
+}
+
+func TestRendererSkipsProgressEntries(t *testing.T) {
+	var buf bytes.Buffer
+	r := NewRenderer(&buf)
+
+	transcript := &Transcript{
+		Entries: []TranscriptEntry{
+			{
+				Type: MessageTypeUser,
+				Message: &Message{
+					Content: []ContentBlock{{Type: "text", Text: "Hello"}},
+				},
+			},
+			{
+				Type: "progress", // Should be skipped
+			},
+			{
+				Type: "file-history-snapshot", // Should be skipped
+			},
+			{
+				Type: MessageTypeAssistant,
+				Message: &Message{
+					Content: []ContentBlock{{Type: "text", Text: "Hi!"}},
+				},
+			},
+		},
+	}
+
+	r.RenderTranscript(transcript)
+
+	output := buf.String()
+	// Should have content from user and assistant
+	if !strings.Contains(output, "Hello") {
+		t.Errorf("Output should contain user message")
+	}
+	if !strings.Contains(output, "Hi!") {
+		t.Errorf("Output should contain assistant message")
+	}
+	// Should not have excessive blank lines from skipped entries
+	if strings.Contains(output, "\n\n\n\n") {
+		t.Errorf("Output should not have excessive blank lines from skipped entries")
 	}
 }

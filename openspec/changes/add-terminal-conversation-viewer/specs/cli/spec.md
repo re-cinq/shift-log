@@ -32,7 +32,14 @@ The terminal output SHALL be formatted for readability with clear visual separat
 
 #### Scenario: Tool use displayed
 - **WHEN** conversation contains tool use entries
-- **THEN** tool name and summary are displayed (full details optional/collapsible in future interactive mode)
+- **THEN** tool name is displayed with a "[tool: Name]" prefix
+- **AND** tool inputs are displayed (e.g., command for Bash, file_path and content for Write)
+- **AND** multi-line inputs are indented and truncated after 10 lines
+
+#### Scenario: Tool results displayed
+- **WHEN** conversation contains tool result entries
+- **THEN** they are displayed with a "[tool result]" prefix
+- **AND** the actual result content is shown (command output, file creation confirmations, etc.)
 
 #### Scenario: System messages displayed
 - **WHEN** conversation contains system messages
