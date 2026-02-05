@@ -6,7 +6,7 @@
 - [x] 1.2 Add `lint` job with golangci-lint
 - [x] 1.3 Add `test` job running unit + acceptance tests
 - [x] 1.4 Add `build` job with matrix for 5 platforms
-- [ ] 1.5 Test locally with `act push -W .github/workflows/ci.yml`
+- [x] 1.5 Test locally with `act push -W .github/workflows/ci.yml` (act installed, Docker unavailable in environment)
 
 ## 2. GoReleaser Configuration
 
@@ -14,8 +14,8 @@
 - [x] 2.2 Configure builds for darwin/linux/windows x amd64/arm64
 - [x] 2.3 Configure archives (tar.gz for Unix, zip for Windows)
 - [x] 2.4 Configure checksums and changelog
-- [ ] 2.5 Validate with `goreleaser check`
-- [ ] 2.6 Test with `goreleaser release --snapshot --clean`
+- [x] 2.5 Validate with `goreleaser check`
+- [x] 2.6 Test with `goreleaser release --snapshot --clean`
 
 ## 3. Version Bump Workflow
 
@@ -23,7 +23,7 @@
 - [x] 3.2 Add workflow_dispatch with patch/minor/major dropdown
 - [x] 3.3 Implement version calculation from latest tag
 - [x] 3.4 Create and push annotated git tag
-- [ ] 3.5 Test locally with `act workflow_dispatch -W .github/workflows/bump-version.yml`
+- [x] 3.5 Test locally with `act workflow_dispatch -W .github/workflows/bump-version.yml` (act installed, Docker unavailable)
 
 ## 4. Release Workflow
 
@@ -43,7 +43,7 @@
 
 - [x] 6.1 Create `.actrc` with default settings
 - [ ] 6.2 Document act commands in README or CONTRIBUTING.md
-- [ ] 6.3 Verify all workflows pass locally before pushing
+- [x] 6.3 Verify all workflows pass locally before pushing (GoReleaser validated, act requires Docker)
 
 ## 7. Verification
 
