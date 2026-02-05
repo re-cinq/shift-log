@@ -1,50 +1,58 @@
 package git
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 )
 
+// ErrNotGitRepo is returned when an operation requires a git repository
+var ErrNotGitRepo = errors.New("not inside a git repository")
+
+// RunGitCommand executes a git command and returns the trimmed output.
+// This is a helper to avoid repeating the exec.Command + TrimSpace pattern.
+func RunGitCommand(args ...string) (string, error) {
+	cmd := exec.Command("git", args...)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
 // IsInsideWorkTree returns true if the current directory is inside a git repository
 func IsInsideWorkTree() bool {
-	cmd := exec.Command("git", "rev-parse", "--is-inside-work-tree")
-	output, err := cmd.Output()
+	output, err := RunGitCommand("rev-parse", "--is-inside-work-tree")
 	if err != nil {
 		return false
 	}
-	return strings.TrimSpace(string(output)) == "true"
+	return output == "true"
+}
+
+// RequireGitRepo returns ErrNotGitRepo if not inside a git repository.
+// Use this at the start of commands that require a git repository.
+func RequireGitRepo() error {
+	if !IsInsideWorkTree() {
+		return ErrNotGitRepo
+	}
+	return nil
 }
 
 // GetRepoRoot returns the root directory of the git repository
 func GetRepoRoot() (string, error) {
-	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
-	output, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(output)), nil
+	return RunGitCommand("rev-parse", "--show-toplevel")
 }
 
 // GetCurrentBranch returns the name of the current branch
 func GetCurrentBranch() (string, error) {
-	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
-	output, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(output)), nil
+	return RunGitCommand("rev-parse", "--abbrev-ref", "HEAD")
 }
 
 // GetHeadCommit returns the SHA of HEAD
 func GetHeadCommit() (string, error) {
-	cmd := exec.Command("git", "rev-parse", "HEAD")
-	output, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(output)), nil
+	return RunGitCommand("rev-parse", "HEAD")
 }
 
 // EnsureGitDir returns the path to the .git directory, handling worktrees
@@ -78,23 +86,16 @@ func EnsureGitDir() (string, error) {
 
 // ResolveRef resolves a git reference (branch, tag, SHA, relative) to a full commit SHA
 func ResolveRef(ref string) (string, error) {
-	cmd := exec.Command("git", "rev-parse", ref)
-	output, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(output)), nil
+	return RunGitCommand("rev-parse", ref)
 }
 
 // HasUncommittedChanges returns true if there are uncommitted changes in the working directory
 func HasUncommittedChanges() (bool, error) {
-	// Check for staged or unstaged changes
-	cmd := exec.Command("git", "status", "--porcelain")
-	output, err := cmd.Output()
+	output, err := RunGitCommand("status", "--porcelain")
 	if err != nil {
 		return false, err
 	}
-	return len(strings.TrimSpace(string(output))) > 0, nil
+	return len(output) > 0, nil
 }
 
 // Checkout checks out a commit or branch
@@ -105,8 +106,7 @@ func Checkout(ref string) error {
 
 // GetParentCommits returns the parent commit SHA(s) for a given commit
 func GetParentCommits(commitSHA string) ([]string, error) {
-	cmd := exec.Command("git", "rev-parse", commitSHA+"^@")
-	output, err := cmd.Output()
+	output, err := RunGitCommand("rev-parse", commitSHA+"^@")
 	if err != nil {
 		// No parents (initial commit) - not an error
 		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 128 {
@@ -115,12 +115,11 @@ func GetParentCommits(commitSHA string) ([]string, error) {
 		return nil, err
 	}
 
-	trimmed := strings.TrimSpace(string(output))
-	if trimmed == "" {
+	if output == "" {
 		return nil, nil
 	}
 
-	parents := strings.Split(trimmed, "\n")
+	parents := strings.Split(output, "\n")
 	var result []string
 	for _, p := range parents {
 		if p != "" {
@@ -133,20 +132,16 @@ func GetParentCommits(commitSHA string) ([]string, error) {
 // GetCommitInfo returns the commit message and author date for a commit
 func GetCommitInfo(commitSHA string) (message string, date string, err error) {
 	// Get commit message (first line)
-	cmd := exec.Command("git", "log", "-1", "--format=%s", commitSHA)
-	msgOutput, err := cmd.Output()
+	message, err = RunGitCommand("log", "-1", "--format=%s", commitSHA)
 	if err != nil {
 		return "", "", err
 	}
-	message = strings.TrimSpace(string(msgOutput))
 
 	// Get commit date
-	cmd = exec.Command("git", "log", "-1", "--format=%ci", commitSHA)
-	dateOutput, err := cmd.Output()
+	date, err = RunGitCommand("log", "-1", "--format=%ci", commitSHA)
 	if err != nil {
 		return "", "", err
 	}
-	date = strings.TrimSpace(string(dateOutput))
 
 	return message, date, nil
 }

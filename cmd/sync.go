@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/DanielJonesEB/claudit/internal/cli"
 	"github.com/DanielJonesEB/claudit/internal/git"
 	"github.com/spf13/cobra"
 )
@@ -36,13 +37,13 @@ func init() {
 }
 
 func runSyncPush(cmd *cobra.Command, args []string) error {
-	if !git.IsInsideWorkTree() {
-		return fmt.Errorf("not a git repository")
+	if err := git.RequireGitRepo(); err != nil {
+		return err
 	}
 
 	if err := git.PushNotes(syncRemote); err != nil {
 		// Don't fail if there are no notes to push or remote doesn't exist
-		logWarning("could not push notes: %v", err)
+		cli.LogWarning("could not push notes: %v", err)
 		return nil
 	}
 
@@ -51,13 +52,13 @@ func runSyncPush(cmd *cobra.Command, args []string) error {
 }
 
 func runSyncPull(cmd *cobra.Command, args []string) error {
-	if !git.IsInsideWorkTree() {
-		return fmt.Errorf("not a git repository")
+	if err := git.RequireGitRepo(); err != nil {
+		return err
 	}
 
 	if err := git.FetchNotes(syncRemote); err != nil {
 		// Don't fail if there are no notes to fetch or remote doesn't exist
-		logWarning("could not fetch notes: %v", err)
+		cli.LogWarning("could not fetch notes: %v", err)
 		return nil
 	}
 

@@ -198,7 +198,7 @@ func (s *Server) handleCommitDetail(w http.ResponseWriter, r *http.Request) {
 
 	if incremental {
 		var lastEntryUUID string
-		parentSHA, lastEntryUUID = findParentConversationBoundary(fullSHA, stored.SessionID)
+		parentSHA, lastEntryUUID = storage.FindParentConversationBoundary(fullSHA, stored.SessionID)
 		if lastEntryUUID != "" {
 			entries = transcript.GetEntriesSince(lastEntryUUID)
 			isIncremental = true
@@ -222,52 +222,6 @@ func (s *Server) handleCommitDetail(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
-}
-
-// findParentConversationBoundary finds the most recent parent commit with a conversation
-// and returns its SHA and the last entry UUID from that conversation.
-func findParentConversationBoundary(commitSHA, currentSessionID string) (parentSHA, lastEntryUUID string) {
-	parents, err := git.GetParentCommits(commitSHA)
-	if err != nil || len(parents) == 0 {
-		return "", ""
-	}
-
-	for _, parent := range parents {
-		if !git.HasNote(parent) {
-			continue
-		}
-
-		noteContent, err := git.GetNote(parent)
-		if err != nil {
-			continue
-		}
-
-		stored, err := storage.UnmarshalStoredConversation(noteContent)
-		if err != nil {
-			continue
-		}
-
-		if stored.SessionID != currentSessionID {
-			return "", ""
-		}
-
-		transcriptData, err := stored.GetTranscript()
-		if err != nil {
-			continue
-		}
-
-		transcript, err := claude.ParseTranscript(strings.NewReader(string(transcriptData)))
-		if err != nil {
-			continue
-		}
-
-		lastUUID := transcript.GetLastEntryUUID()
-		if lastUUID != "" {
-			return parent, lastUUID
-		}
-	}
-
-	return "", ""
 }
 
 // handleGraph returns the commit graph data

@@ -45,8 +45,8 @@ func runResume(cmd *cobra.Command, args []string) error {
 	ref := args[0]
 
 	// Verify we're in a git repository
-	if !git.IsInsideWorkTree() {
-		return fmt.Errorf("not inside a git repository")
+	if err := git.RequireGitRepo(); err != nil {
+		return err
 	}
 
 	// Resolve the commit reference

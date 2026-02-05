@@ -1,10 +1,7 @@
 package cmd
 
 import (
-	"encoding/json"
-	"io"
-	"os"
-
+	"github.com/DanielJonesEB/claudit/internal/cli"
 	"github.com/DanielJonesEB/claudit/internal/session"
 	"github.com/spf13/cobra"
 )
@@ -31,26 +28,18 @@ func init() {
 }
 
 func runSessionEnd(cmd *cobra.Command, args []string) error {
-	// Read hook input from stdin
-	input, err := io.ReadAll(os.Stdin)
-	if err != nil {
-		logWarning("failed to read stdin: %v", err)
-		return nil // Exit silently to not disrupt workflow
-	}
-
 	var hook SessionEndInput
-	if err := json.Unmarshal(input, &hook); err != nil {
-		logWarning("failed to parse hook JSON: %v", err)
-		return nil // Exit silently
+	if err := cli.ReadHookInput(&hook); err != nil {
+		return nil // Exit silently to not disrupt workflow
 	}
 
 	// Clear active session file
 	if err := session.ClearActiveSession(); err != nil {
 		// Log but don't fail - don't disrupt user's workflow
-		logWarning("failed to clear active session: %v", err)
+		cli.LogWarning("failed to clear active session: %v", err)
 		return nil
 	}
 
-	logInfo("session ended: %s (%s)", hook.SessionID[:8], hook.Reason)
+	cli.LogInfo("session ended: %s (%s)", hook.SessionID[:8], hook.Reason)
 	return nil
 }

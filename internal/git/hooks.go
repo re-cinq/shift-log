@@ -105,13 +105,3 @@ func InstallAllHooks(gitDir string) error {
 
 	return nil
 }
-
-// HookExists checks if a hook file exists and is executable
-func HookExists(gitDir string, hookType HookType) bool {
-	hookPath := filepath.Join(gitDir, "hooks", string(hookType))
-	info, err := os.Stat(hookPath)
-	if err != nil {
-		return false
-	}
-	return info.Mode()&0111 != 0 // Check if executable
-}

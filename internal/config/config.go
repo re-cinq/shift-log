@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
+
+	"github.com/DanielJonesEB/claudit/internal/util"
 )
 
 // DefaultNotesRef is the default git notes ref (standard git behavior)
@@ -70,7 +70,7 @@ func Write(cfg *Config) error {
 
 	// Ensure .claudit directory exists
 	configDir := filepath.Dir(configPath)
-	if err := os.MkdirAll(configDir, 0755); err != nil {
+	if err := util.EnsureDir(configDir); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
@@ -97,18 +97,9 @@ func defaultConfig() *Config {
 
 // getConfigPath returns the path to .claudit/config
 func getConfigPath() (string, error) {
-	// Get git repository root
-	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
-	output, err := cmd.Output()
+	root, err := util.GetProjectRoot()
 	if err != nil {
-		// Fall back to current directory if not in a git repo
-		cwd, err := os.Getwd()
-		if err != nil {
-			return "", fmt.Errorf("failed to get working directory: %w", err)
-		}
-		return filepath.Join(cwd, ".claudit", "config"), nil
+		return "", fmt.Errorf("failed to get project root: %w", err)
 	}
-
-	repoRoot := strings.TrimSpace(string(output))
-	return filepath.Join(repoRoot, ".claudit", "config"), nil
+	return filepath.Join(root, ".claudit", "config"), nil
 }

@@ -40,8 +40,8 @@ func init() {
 
 func runServe(cmd *cobra.Command, args []string) error {
 	// Verify we're in a git repository
-	if !git.IsInsideWorkTree() {
-		return fmt.Errorf("not inside a git repository")
+	if err := git.RequireGitRepo(); err != nil {
+		return err
 	}
 
 	repoDir, err := git.GetRepoRoot()

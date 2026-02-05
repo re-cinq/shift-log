@@ -1,13 +1,12 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 
 	"github.com/DanielJonesEB/claudit/internal/claude"
+	"github.com/DanielJonesEB/claudit/internal/cli"
 	"github.com/DanielJonesEB/claudit/internal/git"
 	"github.com/DanielJonesEB/claudit/internal/session"
 	"github.com/DanielJonesEB/claudit/internal/storage"
@@ -53,17 +52,9 @@ func runStore(cmd *cobra.Command, args []string) error {
 
 // runHookStore handles the PostToolUse hook mode
 func runHookStore() error {
-	// Read hook input from stdin
-	input, err := io.ReadAll(os.Stdin)
-	if err != nil {
-		logWarning("failed to read stdin: %v", err)
-		return nil // Exit silently to not disrupt workflow
-	}
-
 	var hook HookInput
-	if err := json.Unmarshal(input, &hook); err != nil {
-		logWarning("failed to parse hook JSON: %v", err)
-		return nil // Exit silently
+	if err := cli.ReadHookInput(&hook); err != nil {
+		return nil // Exit silently to not disrupt workflow
 	}
 
 	// Check if this is a git commit command
@@ -73,7 +64,7 @@ func runHookStore() error {
 
 	// Verify we're in a git repository
 	if !git.IsInsideWorkTree() {
-		logWarning("not inside a git repository")
+		cli.LogWarning("not inside a git repository")
 		return nil
 	}
 
@@ -118,7 +109,7 @@ func storeConversation(sessionID, transcriptPath string) error {
 			existing, err := storage.UnmarshalStoredConversation(existingNote)
 			if err == nil && existing.SessionID == sessionID {
 				// Same session - already stored (idempotent)
-				logInfo("conversation already stored for commit %s", headCommit[:8])
+				cli.LogInfo("conversation already stored for commit %s", headCommit[:8])
 				return nil
 			}
 			// Different session - will overwrite
@@ -166,7 +157,7 @@ func storeConversation(sessionID, transcriptPath string) error {
 		return fmt.Errorf("failed to add git note: %w", err)
 	}
 
-	logInfo("stored conversation for commit %s", headCommit[:8])
+	cli.LogInfo("stored conversation for commit %s", headCommit[:8])
 	return nil
 }
 
@@ -176,12 +167,4 @@ func isGitCommitCommand(command string) bool {
 	// This handles: git commit, git commit -m, git commit -am, etc.
 	return strings.Contains(command, "git commit") ||
 		strings.Contains(command, "git-commit")
-}
-
-func logWarning(format string, args ...interface{}) {
-	fmt.Fprintf(os.Stderr, "claudit: warning: "+format+"\n", args...)
-}
-
-func logInfo(format string, args ...interface{}) {
-	fmt.Fprintf(os.Stderr, "claudit: "+format+"\n", args...)
 }

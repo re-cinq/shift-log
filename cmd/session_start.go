@@ -1,11 +1,9 @@
 package cmd
 
 import (
-	"encoding/json"
-	"io"
-	"os"
 	"time"
 
+	"github.com/DanielJonesEB/claudit/internal/cli"
 	"github.com/DanielJonesEB/claudit/internal/session"
 	"github.com/spf13/cobra"
 )
@@ -31,22 +29,14 @@ func init() {
 }
 
 func runSessionStart(cmd *cobra.Command, args []string) error {
-	// Read hook input from stdin
-	input, err := io.ReadAll(os.Stdin)
-	if err != nil {
-		logWarning("failed to read stdin: %v", err)
-		return nil // Exit silently to not disrupt workflow
-	}
-
 	var hook SessionStartInput
-	if err := json.Unmarshal(input, &hook); err != nil {
-		logWarning("failed to parse hook JSON: %v", err)
-		return nil // Exit silently
+	if err := cli.ReadHookInput(&hook); err != nil {
+		return nil // Exit silently to not disrupt workflow
 	}
 
 	// Validate required fields
 	if hook.SessionID == "" || hook.TranscriptPath == "" {
-		logWarning("missing required fields in hook data")
+		cli.LogWarning("missing required fields in hook data")
 		return nil
 	}
 
@@ -61,10 +51,10 @@ func runSessionStart(cmd *cobra.Command, args []string) error {
 	// Write active session file
 	if err := session.WriteActiveSession(activeSession); err != nil {
 		// Log but don't fail - don't disrupt user's workflow
-		logWarning("failed to write active session: %v", err)
+		cli.LogWarning("failed to write active session: %v", err)
 		return nil
 	}
 
-	logInfo("session started: %s", hook.SessionID[:8])
+	cli.LogInfo("session started: %s", hook.SessionID[:8])
 	return nil
 }
