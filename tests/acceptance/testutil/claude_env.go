@@ -109,6 +109,7 @@ func (e *ClaudeEnv) SessionsIndexExists(projectPath string) bool {
 }
 
 // encodeProjectPath converts an absolute path to Claude's encoded format
+// This must match the production EncodeProjectPath in internal/claude/session.go
 func encodeProjectPath(path string) string {
 	// Replace path separators with dashes
 	encoded := ""
@@ -118,6 +119,11 @@ func encodeProjectPath(path string) string {
 		} else {
 			encoded += string(c)
 		}
+	}
+	// Ensure it starts with a dash (the root "/" becomes the leading dash)
+	// This matches the production behavior in internal/claude/session.go:41-43
+	if len(encoded) > 0 && encoded[0] != '-' {
+		encoded = "-" + encoded
 	}
 	return encoded
 }
