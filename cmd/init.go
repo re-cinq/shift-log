@@ -1,9 +1,7 @@
 package cmd
 
 import (
-	"bufio"
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -11,6 +9,7 @@ import (
 	"github.com/DanielJonesEB/claudit/internal/claude"
 	"github.com/DanielJonesEB/claudit/internal/config"
 	"github.com/DanielJonesEB/claudit/internal/git"
+	"github.com/DanielJonesEB/claudit/internal/storage"
 	"github.com/spf13/cobra"
 )
 
@@ -24,16 +23,19 @@ var initCmd = &cobra.Command{
 	Long: `Configures the current git repository for conversation capture.
 
 This command:
-- Prompts for git notes ref choice (or uses --notes-ref flag)
+- Uses refs/notes/commits by default (or --notes-ref for custom location)
 - Creates/updates .claude/settings.local.json with PostToolUse hook
 - Installs git hooks for automatic note syncing
-- Configures git settings for notes visibility`,
+- Configures git settings for notes visibility
+
+If existing notes are found that were not written by Claudit, initialization
+will abort with a warning. Use a different --notes-ref to avoid conflicts.`,
 	RunE: runInit,
 }
 
 func init() {
 	rootCmd.AddCommand(initCmd)
-	initCmd.Flags().StringVar(&notesRefFlag, "notes-ref", "", "Git notes ref to use (refs/notes/commits or refs/notes/claude-conversations)")
+	initCmd.Flags().StringVar(&notesRefFlag, "notes-ref", "", "Git notes ref to use (default: refs/notes/commits)")
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
@@ -50,6 +52,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// Determine notes ref to use
 	notesRef, err := determineNotesRef()
 	if err != nil {
+		return err
+	}
+
+	// Check for existing non-Claudit notes
+	if err := checkExistingNotes(notesRef); err != nil {
 		return err
 	}
 
@@ -132,43 +139,63 @@ func determineNotesRef() (string, error) {
 		return notesRefFlag, nil
 	}
 
-	// Interactive prompt
-	return promptForNotesRef()
+	// Default to refs/notes/commits
+	return config.DefaultNotesRef, nil
 }
 
-// validateNotesRef validates that the ref is one of the allowed values
+// validateNotesRef validates that the ref looks like a valid git notes ref
 func validateNotesRef(ref string) error {
-	if ref != config.DefaultNotesRef && ref != config.CustomNotesRef {
-		return fmt.Errorf("invalid notes ref: %s (must be %s or %s)",
-			ref, config.DefaultNotesRef, config.CustomNotesRef)
+	if !strings.HasPrefix(ref, "refs/notes/") {
+		return fmt.Errorf("invalid notes ref: %s (must start with refs/notes/)", ref)
 	}
 	return nil
 }
 
-// promptForNotesRef prompts the user to choose a git notes ref
-func promptForNotesRef() (string, error) {
-	fmt.Println()
-	fmt.Println("Which git notes ref should claudit use?")
-	fmt.Println()
-	fmt.Printf("  1. %s (default - works with standard git commands)\n", config.DefaultNotesRef)
-	fmt.Printf("  2. %s (custom - separate namespace)\n", config.CustomNotesRef)
-	fmt.Println()
-	fmt.Print("Enter choice [1]: ")
-
-	reader := bufio.NewReader(os.Stdin)
-	input, err := reader.ReadString('\n')
+// checkExistingNotes checks for existing notes at the given ref that were not written by Claudit
+func checkExistingNotes(notesRef string) error {
+	// List all notes at this ref
+	cmd := exec.Command("git", "notes", "--ref", notesRef, "list")
+	output, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("failed to read input: %w", err)
+		// No notes exist yet - this is fine
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+			return nil
+		}
+		// Other error - also fine, ref might not exist
+		return nil
 	}
 
-	choice := strings.TrimSpace(input)
-	if choice == "" || choice == "1" {
-		return config.DefaultNotesRef, nil
-	} else if choice == "2" {
-		return config.CustomNotesRef, nil
+	// Parse the notes list
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		// Format: "note_sha commit_sha"
+		parts := strings.Fields(line)
+		if len(parts) < 2 {
+			continue
+		}
+		noteSHA := parts[0]
+
+		// Read the note content
+		noteCmd := exec.Command("git", "cat-file", "-p", noteSHA)
+		noteContent, err := noteCmd.Output()
+		if err != nil {
+			continue // Skip notes we can't read
+		}
+
+		// Try to parse as a Claudit note
+		_, err = storage.UnmarshalStoredConversation(noteContent)
+		if err != nil {
+			// This note is not a valid Claudit note
+			return fmt.Errorf("existing notes found at %s that were not written by Claudit.\n"+
+				"Use --notes-ref to specify a different location, e.g.:\n"+
+				"  claudit init --notes-ref=refs/notes/claude-conversations", notesRef)
+		}
 	}
 
-	return "", fmt.Errorf("invalid choice: %s (must be 1 or 2)", choice)
+	return nil
 }
 
 // configureGitSettings configures git settings for notes visibility

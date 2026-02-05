@@ -149,6 +149,11 @@ func (r *GitRepo) FileExists(name string) bool {
 	return err == nil
 }
 
+// RemoveFile removes a file from the repository
+func (r *GitRepo) RemoveFile(name string) error {
+	return os.Remove(filepath.Join(r.Path, name))
+}
+
 // Commit creates a commit with the given message
 func (r *GitRepo) Commit(message string) error {
 	if err := r.Run("git", "add", "-A"); err != nil {

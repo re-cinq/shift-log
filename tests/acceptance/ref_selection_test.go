@@ -47,10 +47,21 @@ var _ = Describe("Notes Ref Selection", func() {
 			Expect(config).To(ContainSubstring(`"notes_ref": "refs/notes/claude-conversations"`))
 		})
 
-		It("rejects invalid ref", func() {
-			_, stderr, err := testutil.RunClauditInDir(repo.Path, "init", "--notes-ref=refs/notes/invalid")
+		It("rejects ref that doesn't start with refs/notes/", func() {
+			_, stderr, err := testutil.RunClauditInDir(repo.Path, "init", "--notes-ref=refs/heads/main")
 			Expect(err).To(HaveOccurred())
 			Expect(stderr).To(ContainSubstring("invalid notes ref"))
+		})
+
+		It("accepts any custom ref under refs/notes/", func() {
+			stdout, _, err := testutil.RunClauditInDir(repo.Path, "init", "--notes-ref=refs/notes/my-custom-notes")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(stdout).To(ContainSubstring("Configured notes ref: refs/notes/my-custom-notes"))
+
+			// Verify config was created
+			config, err := repo.ReadFile(".claudit/config")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(config).To(ContainSubstring(`"notes_ref": "refs/notes/my-custom-notes"`))
 		})
 	})
 
@@ -95,6 +106,75 @@ var _ = Describe("Notes Ref Selection", func() {
 			config, err := repo.ReadFile(".claudit/config")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(config).To(ContainSubstring(`"notes_ref": "refs/notes/claude-conversations"`))
+		})
+	})
+
+	Describe("existing notes detection", func() {
+		It("allows init when no notes exist", func() {
+			_, _, err := testutil.RunClauditInDir(repo.Path, "init")
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("allows init when existing notes are from Claudit", func() {
+			// First init and create a valid Claudit note
+			_, _, err := testutil.RunClauditInDir(repo.Path, "init", "--notes-ref=refs/notes/commits")
+			Expect(err).NotTo(HaveOccurred())
+
+			// Create a commit with a Claudit note
+			Expect(repo.WriteFile("test.txt", "content")).To(Succeed())
+			Expect(repo.Commit("Test commit")).To(Succeed())
+
+			transcriptPath := repo.Path + "/transcript.jsonl"
+			Expect(repo.WriteFile("transcript.jsonl", testutil.SampleTranscript())).To(Succeed())
+
+			hookInput := testutil.SampleHookInput("test-session", transcriptPath, "git commit -m 'test'")
+			_, _, err = testutil.RunClauditInDirWithStdin(repo.Path, hookInput, "store")
+			Expect(err).NotTo(HaveOccurred())
+
+			// Remove config to simulate fresh init
+			Expect(repo.RemoveFile(".claudit/config")).To(Succeed())
+
+			// Init again should succeed (existing note is from Claudit)
+			stdout, _, err := testutil.RunClauditInDir(repo.Path, "init")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(stdout).To(ContainSubstring("Configured notes ref"))
+		})
+
+		It("rejects init when existing notes are not from Claudit", func() {
+			// Create a commit
+			Expect(repo.WriteFile("test.txt", "content")).To(Succeed())
+			Expect(repo.Commit("Test commit")).To(Succeed())
+
+			// Add a non-Claudit note directly
+			head, err := repo.GetHead()
+			Expect(err).NotTo(HaveOccurred())
+			cmd := exec.Command("git", "notes", "--ref=refs/notes/commits", "add", "-m", "This is not a Claudit note", head)
+			cmd.Dir = repo.Path
+			Expect(cmd.Run()).To(Succeed())
+
+			// Init should fail
+			_, stderr, err := testutil.RunClauditInDir(repo.Path, "init")
+			Expect(err).To(HaveOccurred())
+			Expect(stderr).To(ContainSubstring("existing notes found"))
+			Expect(stderr).To(ContainSubstring("not written by Claudit"))
+		})
+
+		It("allows init with different ref when default has non-Claudit notes", func() {
+			// Create a commit
+			Expect(repo.WriteFile("test.txt", "content")).To(Succeed())
+			Expect(repo.Commit("Test commit")).To(Succeed())
+
+			// Add a non-Claudit note on default ref
+			head, err := repo.GetHead()
+			Expect(err).NotTo(HaveOccurred())
+			cmd := exec.Command("git", "notes", "--ref=refs/notes/commits", "add", "-m", "Not a Claudit note", head)
+			cmd.Dir = repo.Path
+			Expect(cmd.Run()).To(Succeed())
+
+			// Init with different ref should succeed
+			stdout, _, err := testutil.RunClauditInDir(repo.Path, "init", "--notes-ref=refs/notes/claude-conversations")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(stdout).To(ContainSubstring("Configured notes ref: refs/notes/claude-conversations"))
 		})
 	})
 
