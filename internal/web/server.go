@@ -51,7 +51,7 @@ func (s *Server) Start(openBrowser bool) error {
 	fmt.Println("Press Ctrl+C to stop")
 
 	if openBrowser {
-		go openURL(url)
+		go openURL(url) //nolint:errcheck // Fire and forget
 	}
 
 	return http.ListenAndServe(addr, s.mux)

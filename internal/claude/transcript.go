@@ -93,7 +93,7 @@ func ParseTranscript(r io.Reader) (*Transcript, error) {
 		}
 
 		var entry TranscriptEntry
-		json.Unmarshal(line, &entry)
+		_ = json.Unmarshal(line, &entry) // Skip malformed lines
 		entry.Raw = json.RawMessage(line)
 		entries = append(entries, entry)
 	}

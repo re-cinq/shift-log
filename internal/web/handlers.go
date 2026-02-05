@@ -127,7 +127,7 @@ func (s *Server) handleCommits(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	_ = json.NewEncoder(w).Encode(result)
 }
 
 // handleCommitDetail returns the full conversation for a specific commit
@@ -160,7 +160,7 @@ func (s *Server) handleCommitDetail(w http.ResponseWriter, r *http.Request) {
 	if !git.HasNote(fullSHA) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(map[string]string{"error": "no conversation found"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "no conversation found"})
 		return
 	}
 
@@ -221,7 +221,7 @@ func (s *Server) handleCommitDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	_ = json.NewEncoder(w).Encode(response)
 }
 
 // handleGraph returns the commit graph data
@@ -255,7 +255,7 @@ func (s *Server) handleGraph(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(nodes)
+	_ = json.NewEncoder(w).Encode(nodes)
 }
 
 // handleResume triggers a session resume
@@ -279,14 +279,14 @@ func (s *Server) handleResume(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "failed to check working directory"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to check working directory"})
 		return
 	}
 
 	if hasChanges {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusConflict)
-		json.NewEncoder(w).Encode(map[string]string{
+		_ = json.NewEncoder(w).Encode(map[string]string{
 			"error": "uncommitted changes in working directory",
 		})
 		return
@@ -297,7 +297,7 @@ func (s *Server) handleResume(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "invalid commit reference"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid commit reference"})
 		return
 	}
 
@@ -305,7 +305,7 @@ func (s *Server) handleResume(w http.ResponseWriter, r *http.Request) {
 	if !git.HasNote(fullSHA) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(map[string]string{"error": "no conversation found"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "no conversation found"})
 		return
 	}
 
@@ -314,7 +314,7 @@ func (s *Server) handleResume(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "failed to read conversation"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to read conversation"})
 		return
 	}
 
@@ -322,7 +322,7 @@ func (s *Server) handleResume(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "failed to parse conversation"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to parse conversation"})
 		return
 	}
 
@@ -331,7 +331,7 @@ func (s *Server) handleResume(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "failed to decompress transcript"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to decompress transcript"})
 		return
 	}
 
@@ -347,7 +347,7 @@ func (s *Server) handleResume(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to restore session: %v", err)})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to restore session: %v", err)})
 		return
 	}
 
@@ -355,7 +355,7 @@ func (s *Server) handleResume(w http.ResponseWriter, r *http.Request) {
 	if err := git.Checkout(fullSHA); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to checkout: %v", err)})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to checkout: %v", err)})
 		return
 	}
 
@@ -365,12 +365,12 @@ func (s *Server) handleResume(w http.ResponseWriter, r *http.Request) {
 	if err := claudeCmd.Start(); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to launch claude: %v", err)})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to launch claude: %v", err)})
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	_ = json.NewEncoder(w).Encode(map[string]string{
 		"status":     "success",
 		"session_id": stored.SessionID,
 	})

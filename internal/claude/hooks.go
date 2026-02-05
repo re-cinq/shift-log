@@ -55,7 +55,7 @@ func ReadSettings(claudeDir string) (*Settings, error) {
 
 	if hooks, ok := raw["hooks"]; ok {
 		hookBytes, _ := json.Marshal(hooks)
-		json.Unmarshal(hookBytes, &settings.Hooks)
+		_ = json.Unmarshal(hookBytes, &settings.Hooks) // Best effort parse
 		delete(raw, "hooks")
 	}
 
