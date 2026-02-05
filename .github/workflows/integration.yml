@@ -1,0 +1,41 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [master]
+  schedule:
+    # Run weekly on Monday at 6 AM UTC
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+jobs:
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    # Skip on fork PRs (no secrets available)
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Install Claude Code CLI
+        run: |
+          npm install -g @anthropic-ai/claude-code
+
+      - name: Build binary
+        run: CGO_ENABLED=0 go build -o claudit .
+
+      - name: Run integration tests
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          CLAUDIT_BINARY: ${{ github.workspace }}/claudit
+        run: |
+          if [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
+            echo "CLAUDE_CODE_OAUTH_TOKEN not set, skipping integration tests"
+            exit 0
+          fi
+          go test ./tests/integration/... -v -timeout 120s
