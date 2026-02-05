@@ -68,17 +68,18 @@ var _ = Describe("Manual Store Command", func() {
 			sessionData, _ := json.MarshalIndent(activeSession, "", "  ")
 			os.WriteFile(filepath.Join(clauditDir, "active-session.json"), sessionData, 0644)
 
-			// Make a commit
+			// Make a commit - the post-commit hook will run store --manual automatically
 			repo.WriteFile("test.txt", "content")
 			repo.Run("git", "add", "test.txt")
 			repo.Run("git", "commit", "-m", "test commit")
 
-			// Run manual store
+			// Run manual store again - should report "already stored" since hook ran
 			_, stderr, err := testutil.RunClauditInDir(repo.Path, "store", "--manual")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(stderr).To(ContainSubstring("stored conversation"))
+			// Accept either "stored conversation" (first time) or "already stored" (hook already ran)
+			Expect(stderr).To(Or(ContainSubstring("stored conversation"), ContainSubstring("already stored")))
 
-			// Verify note was created
+			// Verify note was created (this is the key assertion)
 			noteOutput, _ := repo.RunOutput("git", "notes", "--ref=refs/notes/commits", "show", "HEAD")
 			Expect(noteOutput).To(ContainSubstring("test-session-123"))
 		})
@@ -103,17 +104,18 @@ var _ = Describe("Manual Store Command", func() {
 			sessionData, _ := json.MarshalIndent(activeSession, "", "  ")
 			os.WriteFile(filepath.Join(clauditDir, "active-session.json"), sessionData, 0644)
 
-			// Make a commit
+			// Make a commit - the post-commit hook will run store --manual automatically
 			repo.WriteFile("test.txt", "content")
 			repo.Run("git", "add", "test.txt")
 			repo.Run("git", "commit", "-m", "test commit")
 
-			// First store
+			// First explicit store - may be "stored" or "already stored" depending on hook execution
 			_, stderr1, err := testutil.RunClauditInDir(repo.Path, "store", "--manual")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(stderr1).To(ContainSubstring("stored conversation"))
+			// Accept either message since hook may have already stored it
+			Expect(stderr1).To(Or(ContainSubstring("stored conversation"), ContainSubstring("already stored")))
 
-			// Second store with same session should be idempotent
+			// Second store with same session should definitely be idempotent
 			_, stderr2, err := testutil.RunClauditInDir(repo.Path, "store", "--manual")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stderr2).To(ContainSubstring("already stored"))

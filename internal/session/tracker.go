@@ -125,15 +125,26 @@ func DiscoverSession(projectPath string) (*ActiveSession, error) {
 }
 
 // discoverRecentSession looks for a recent session in Claude's sessions-index.json
+// or by scanning the session directory for recent .jsonl files
 func discoverRecentSession(projectPath string) (*ActiveSession, error) {
+	// First try sessions-index.json
 	index, err := claude.ReadSessionsIndex(projectPath)
-	if err != nil {
-		return nil, nil // Silent failure
+	if err == nil && len(index.Entries) > 0 {
+		session := findRecentSessionFromIndex(index, projectPath)
+		if session != nil {
+			return session, nil
+		}
 	}
 
+	// Fallback: scan for recent .jsonl files directly
+	// This handles the case where Claude Code doesn't create sessions-index.json
+	return scanForRecentSession(projectPath)
+}
+
+// findRecentSessionFromIndex finds a recent session from the sessions-index
+func findRecentSessionFromIndex(index *claude.SessionsIndex, projectPath string) *ActiveSession {
 	now := time.Now()
 
-	// Find the most recent session for this project
 	var bestEntry *claude.SessionEntry
 	var bestModified time.Time
 
@@ -168,7 +179,7 @@ func discoverRecentSession(projectPath string) (*ActiveSession, error) {
 	}
 
 	if bestEntry == nil {
-		return nil, nil
+		return nil
 	}
 
 	return &ActiveSession{
@@ -176,6 +187,65 @@ func discoverRecentSession(projectPath string) (*ActiveSession, error) {
 		TranscriptPath: bestEntry.FullPath,
 		StartedAt:      bestEntry.Created,
 		ProjectPath:    bestEntry.ProjectPath,
+	}
+}
+
+// scanForRecentSession scans Claude's session directory for recently modified .jsonl files
+func scanForRecentSession(projectPath string) (*ActiveSession, error) {
+	sessionDir, err := claude.GetSessionDir(projectPath)
+	if err != nil {
+		return nil, nil
+	}
+
+	entries, err := os.ReadDir(sessionDir)
+	if err != nil {
+		return nil, nil
+	}
+
+	now := time.Now()
+	var bestPath string
+	var bestSessionID string
+	var bestModTime time.Time
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".jsonl") {
+			continue
+		}
+
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+
+		modTime := info.ModTime()
+
+		// Check if within the recent timeout
+		if now.Sub(modTime) > recentSessionTimeout {
+			continue
+		}
+
+		// Keep track of most recent
+		if bestPath == "" || modTime.After(bestModTime) {
+			bestPath = filepath.Join(sessionDir, name)
+			bestSessionID = strings.TrimSuffix(name, ".jsonl")
+			bestModTime = modTime
+		}
+	}
+
+	if bestPath == "" {
+		return nil, nil
+	}
+
+	return &ActiveSession{
+		SessionID:      bestSessionID,
+		TranscriptPath: bestPath,
+		StartedAt:      bestModTime.Format(time.RFC3339),
+		ProjectPath:    projectPath,
 	}, nil
 }
 
