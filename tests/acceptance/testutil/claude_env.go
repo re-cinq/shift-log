@@ -58,6 +58,12 @@ func (e *ClaudeEnv) GetProjectsDir() string {
 
 // GetProjectDir returns the path to a specific project's session directory
 func (e *ClaudeEnv) GetProjectDir(projectPath string) string {
+	// Resolve symlinks to match production behavior (git rev-parse resolves symlinks)
+	// This is critical on macOS where /tmp is a symlink to /private/tmp
+	resolved, err := filepath.EvalSymlinks(projectPath)
+	if err == nil {
+		projectPath = resolved
+	}
 	// Encode the project path (replace / with -)
 	encoded := encodeProjectPath(projectPath)
 	return filepath.Join(e.TempHome, ".claude", "projects", encoded)
