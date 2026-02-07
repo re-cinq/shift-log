@@ -6,17 +6,6 @@ Automatically save Claude Code conversations as Git Notes on every commit.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/DanielJonesEB/claudit/master/scripts/install.sh | bash
-```
-
-Or with Go:
-
-```bash
-go install github.com/DanielJonesEB/claudit@latest
-```
-
-Then set up your repo:
-
-```bash
 claudit init
 ```
 
