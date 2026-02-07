@@ -9,9 +9,11 @@ import (
 // A custom ref keeps git log clean and avoids collisions with other notes.
 const NotesRef = "refs/notes/claude-conversations"
 
-// AddNote adds a note to a commit
+// AddNote adds a note to a commit.
+// Content is piped via stdin (-F -) to avoid ARG_MAX limits on large transcripts.
 func AddNote(commitSHA string, content []byte) error {
-	cmd := exec.Command("git", "notes", "--ref", NotesRef, "add", "-f", "-m", string(content), commitSHA)
+	cmd := exec.Command("git", "notes", "--ref", NotesRef, "add", "-f", "-F", "-", commitSHA)
+	cmd.Stdin = strings.NewReader(string(content))
 	return cmd.Run()
 }
 
