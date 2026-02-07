@@ -2,11 +2,14 @@ package cmd
 
 import (
 	"fmt"
+	"runtime/debug"
 
 	"github.com/spf13/cobra"
 )
 
-// version is set at build time via ldflags
+// version is set at build time via ldflags.
+// If not set (e.g. go install), we fall back to the module version
+// embedded by the Go toolchain.
 var version = "dev"
 
 var rootCmd = &cobra.Command{
@@ -22,6 +25,11 @@ func Execute() error {
 }
 
 func init() {
+	if version == "dev" {
+		if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+			version = info.Main.Version
+		}
+	}
 	rootCmd.Version = version
 	rootCmd.SetVersionTemplate(fmt.Sprintf("claudit version %s\n", version))
 }
