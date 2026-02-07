@@ -1,9 +1,12 @@
 package cmd
 
 import (
+	"bufio"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/DanielJonesEB/claudit/internal/claude"
 	"github.com/DanielJonesEB/claudit/internal/cli"
@@ -78,6 +81,14 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	fmt.Println("✓ Installed git hooks (pre-push, post-merge, post-checkout, post-commit)")
 
+	// Add .claudit/ to .gitignore
+	cli.LogDebug("init: ensuring .claudit/ is in .gitignore")
+	if err := ensureGitignoreEntry(repoRoot, ".claudit/"); err != nil {
+		return fmt.Errorf("failed to update .gitignore: %w", err)
+	}
+
+	fmt.Println("✓ Added .claudit/ to .gitignore")
+
 	// Check if claudit is in PATH
 	if _, err := exec.LookPath("claudit"); err != nil {
 		fmt.Println()
@@ -91,6 +102,51 @@ func runInit(cmd *cobra.Command, args []string) error {
 	fmt.Printf("as git notes on %s when commits are made via Claude Code.\n", git.NotesRef)
 
 	return nil
+}
+
+// ensureGitignoreEntry adds an entry to the repo's .gitignore if not already present.
+func ensureGitignoreEntry(repoRoot, entry string) error {
+	gitignorePath := filepath.Join(repoRoot, ".gitignore")
+
+	// Check if the entry already exists
+	if f, err := os.Open(gitignorePath); err == nil {
+		defer f.Close()
+		scanner := bufio.NewScanner(f)
+		for scanner.Scan() {
+			if strings.TrimSpace(scanner.Text()) == entry {
+				cli.LogDebug("init: .gitignore already contains %s", entry)
+				return nil
+			}
+		}
+	}
+
+	// Append the entry
+	f, err := os.OpenFile(gitignorePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	// Ensure we start on a new line if the file doesn't end with one
+	info, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	prefix := ""
+	if info.Size() > 0 {
+		// Read last byte to check for trailing newline
+		buf := make([]byte, 1)
+		rf, _ := os.Open(gitignorePath)
+		rf.Seek(-1, 2)
+		rf.Read(buf)
+		rf.Close()
+		if buf[0] != '\n' {
+			prefix = "\n"
+		}
+	}
+
+	_, err = fmt.Fprintf(f, "%s%s\n", prefix, entry)
+	return err
 }
 
 // configureGitSettings configures git settings for notes visibility
