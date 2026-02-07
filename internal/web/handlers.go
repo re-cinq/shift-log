@@ -50,6 +50,34 @@ func writeJSONError(w http.ResponseWriter, status int, msg string) {
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }
 
+// buildNoteSet returns a set of commit SHAs that have conversation notes.
+func buildNoteSet() (map[string]bool, error) {
+	commitsWithNotes, err := git.ListCommitsWithNotes()
+	if err != nil {
+		return nil, err
+	}
+	noteSet := make(map[string]bool, len(commitsWithNotes))
+	for _, sha := range commitsWithNotes {
+		noteSet[sha] = true
+	}
+	return noteSet, nil
+}
+
+// getStoredOrWriteError retrieves a stored conversation for the given SHA,
+// writing an appropriate JSON error response and returning nil if not found or on error.
+func getStoredOrWriteError(w http.ResponseWriter, commitSHA string) *storage.StoredConversation {
+	stored, err := storage.GetStoredConversation(commitSHA)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "failed to read conversation")
+		return nil
+	}
+	if stored == nil {
+		writeJSONError(w, http.StatusNotFound, "no conversation found")
+		return nil
+	}
+	return stored
+}
+
 // handleCommits returns a list of commits with conversation metadata
 func (s *Server) handleCommits(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -76,16 +104,10 @@ func (s *Server) handleCommits(w http.ResponseWriter, r *http.Request) {
 		hasConversationFilter = true
 	}
 
-	// Get commits with notes
-	commitsWithNotes, err := git.ListCommitsWithNotes()
+	noteSet, err := buildNoteSet()
 	if err != nil {
 		http.Error(w, "Failed to list conversations", http.StatusInternalServerError)
 		return
-	}
-
-	noteSet := make(map[string]bool)
-	for _, sha := range commitsWithNotes {
-		noteSet[sha] = true
 	}
 
 	// Get all commits
@@ -161,14 +183,8 @@ func (s *Server) handleCommitDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get stored conversation
-	stored, err := storage.GetStoredConversation(fullSHA)
-	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "failed to read conversation")
-		return
-	}
+	stored := getStoredOrWriteError(w, fullSHA)
 	if stored == nil {
-		writeJSONError(w, http.StatusNotFound, "no conversation found")
 		return
 	}
 
@@ -219,16 +235,10 @@ func (s *Server) handleGraph(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get commits with notes
-	commitsWithNotes, err := git.ListCommitsWithNotes()
+	noteSet, err := buildNoteSet()
 	if err != nil {
 		http.Error(w, "Failed to list conversations", http.StatusInternalServerError)
 		return
-	}
-
-	noteSet := make(map[string]bool)
-	for _, sha := range commitsWithNotes {
-		noteSet[sha] = true
 	}
 
 	// Get graph data
@@ -281,14 +291,8 @@ func (s *Server) handleResume(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get stored conversation
-	stored, err := storage.GetStoredConversation(fullSHA)
-	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "failed to read conversation")
-		return
-	}
+	stored := getStoredOrWriteError(w, fullSHA)
 	if stored == nil {
-		writeJSONError(w, http.StatusNotFound, "no conversation found")
 		return
 	}
 
@@ -342,10 +346,15 @@ type CommitData struct {
 	Date    string
 }
 
+// fieldSep is the delimiter used to split git log output.
+// We use %x00 in git --format strings to emit a null byte, which avoids
+// collisions with commit messages that may contain pipes or other punctuation.
+const fieldSep = "\x00"
+
 // getCommitList returns a list of commits
 func getCommitList(limit int, repoDir string) ([]CommitData, error) {
 	cmd := exec.Command("git", "log", fmt.Sprintf("--max-count=%d", limit),
-		"--format=%H|%s|%an|%ci")
+		"--format=%H%x00%s%x00%an%x00%ci")
 	cmd.Dir = repoDir
 	output, err := cmd.Output()
 	if err != nil {
@@ -358,7 +367,7 @@ func getCommitList(limit int, repoDir string) ([]CommitData, error) {
 		if line == "" {
 			continue
 		}
-		parts := strings.SplitN(line, "|", 4)
+		parts := strings.SplitN(line, fieldSep, 4)
 		if len(parts) < 4 {
 			continue
 		}
@@ -376,7 +385,7 @@ func getCommitList(limit int, repoDir string) ([]CommitData, error) {
 // getGraphData returns commit graph data
 func getGraphData(limit int, repoDir string) ([]GraphNode, error) {
 	cmd := exec.Command("git", "log", fmt.Sprintf("--max-count=%d", limit),
-		"--format=%H|%P|%s")
+		"--format=%H%x00%P%x00%s")
 	cmd.Dir = repoDir
 	output, err := cmd.Output()
 	if err != nil {
@@ -389,7 +398,7 @@ func getGraphData(limit int, repoDir string) ([]GraphNode, error) {
 		if line == "" {
 			continue
 		}
-		parts := strings.SplitN(line, "|", 3)
+		parts := strings.SplitN(line, fieldSep, 3)
 		if len(parts) < 3 {
 			continue
 		}

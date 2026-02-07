@@ -13,8 +13,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// HookInput represents the PostToolUse hook JSON input from Claude Code
-type HookInput struct {
+// PostToolUseHookInput represents the JSON payload sent by Claude Code's PostToolUse hook
+type PostToolUseHookInput struct {
 	SessionID      string `json:"session_id"`
 	TranscriptPath string `json:"transcript_path"`
 	ToolName       string `json:"tool_name"`
@@ -54,7 +54,7 @@ func runStore(cmd *cobra.Command, args []string) error {
 // runHookStore handles the PostToolUse hook mode
 func runHookStore() error {
 	cli.LogDebug("store: reading hook input from stdin")
-	var hook HookInput
+	var hook PostToolUseHookInput
 	if err := cli.ReadHookInput(&hook); err != nil {
 		cli.LogDebug("store: failed to read hook input: %v", err)
 		return nil // Exit silently to not disrupt workflow

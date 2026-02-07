@@ -64,38 +64,27 @@ func (r *Renderer) RenderEntries(entries []TranscriptEntry) error {
 
 // shouldRender returns true if the entry type should be rendered
 func (r *Renderer) shouldRender(entry *TranscriptEntry) bool {
-	switch entry.Type {
-	case MessageTypeUser, MessageTypeAssistant, MessageTypeSystem:
-		return true
-	default:
-		return false
-	}
+	_, ok := messageStyles[entry.Type]
+	return ok
+}
+
+// messageStyles maps message types to their display label and color.
+var messageStyles = map[MessageType]struct {
+	label string
+	color string
+}{
+	MessageTypeUser:      {"User", colorBlue},
+	MessageTypeAssistant: {"Assistant", colorGreen},
+	MessageTypeSystem:    {"System", colorYellow},
 }
 
 // RenderEntry renders a single transcript entry
 func (r *Renderer) RenderEntry(entry *TranscriptEntry) {
-	switch entry.Type {
-	case MessageTypeUser:
-		r.renderUser(entry)
-	case MessageTypeAssistant:
-		r.renderAssistant(entry)
-	case MessageTypeSystem:
-		r.renderSystem(entry)
+	style, ok := messageStyles[entry.Type]
+	if !ok {
+		return
 	}
-}
-
-func (r *Renderer) renderUser(entry *TranscriptEntry) {
-	_, _ = fmt.Fprintf(r.w, "%s%sUser:%s\n", r.color(colorBold), r.color(colorBlue), r.color(colorReset))
-	r.renderMessageContent(entry.Message)
-}
-
-func (r *Renderer) renderAssistant(entry *TranscriptEntry) {
-	_, _ = fmt.Fprintf(r.w, "%s%sAssistant:%s\n", r.color(colorBold), r.color(colorGreen), r.color(colorReset))
-	r.renderMessageContent(entry.Message)
-}
-
-func (r *Renderer) renderSystem(entry *TranscriptEntry) {
-	_, _ = fmt.Fprintf(r.w, "%s%sSystem:%s\n", r.color(colorBold), r.color(colorYellow), r.color(colorReset))
+	_, _ = fmt.Fprintf(r.w, "%s%s%s:%s\n", r.color(colorBold), r.color(style.color), style.label, r.color(colorReset))
 	r.renderMessageContent(entry.Message)
 }
 
