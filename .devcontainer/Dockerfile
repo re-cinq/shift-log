@@ -146,3 +146,6 @@ ENV PATH=$PATH:/home/node/.local/bin
 RUN mkdir -p /home/node/.local/bin && \
     curl -fsSL https://raw.githubusercontent.com/steveyegge/beads/main/scripts/install.sh | bash
 
+# Install golangci-lint (overrides bundled version from beads to match Go version)
+RUN curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b /home/node/.local/bin latest
+
