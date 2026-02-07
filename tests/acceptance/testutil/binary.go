@@ -40,7 +40,7 @@ func BinaryPath() string {
 // CleanupBinary removes the built binary
 func CleanupBinary() {
 	if binaryPath != "" {
-		os.RemoveAll(filepath.Dir(binaryPath))
+		_ = os.RemoveAll(filepath.Dir(binaryPath))
 	}
 }
 

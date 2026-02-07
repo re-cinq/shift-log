@@ -106,12 +106,16 @@ func ParseTranscript(r io.Reader) (*Transcript, error) {
 }
 
 // ParseTranscriptFile parses a JSONL transcript from a file path
-func ParseTranscriptFile(path string) (*Transcript, error) {
+func ParseTranscriptFile(path string) (t *Transcript, err error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
 
 	return ParseTranscript(f)
 }

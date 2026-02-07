@@ -26,12 +26,16 @@ func Compress(data []byte) ([]byte, error) {
 }
 
 // Decompress decompresses gzip data
-func Decompress(data []byte) ([]byte, error) {
+func Decompress(data []byte) (result []byte, err error) {
 	r, err := gzip.NewReader(bytes.NewReader(data))
 	if err != nil {
 		return nil, err
 	}
-	defer r.Close()
+	defer func() {
+		if cerr := r.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
 
 	return io.ReadAll(r)
 }

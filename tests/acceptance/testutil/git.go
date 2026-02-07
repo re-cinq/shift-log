@@ -80,7 +80,7 @@ func NewGitRepoWithRemote() (*GitRepo, *GitRepo, error) {
 
 // Cleanup removes the temporary repository
 func (r *GitRepo) Cleanup() {
-	os.RemoveAll(r.Path)
+	_ = os.RemoveAll(r.Path)
 }
 
 // Run executes a command in the repository directory

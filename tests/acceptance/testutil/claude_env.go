@@ -32,13 +32,13 @@ func NewClaudeEnv() (*ClaudeEnv, error) {
 
 // Cleanup removes the temporary HOME directory and restores the original HOME
 func (e *ClaudeEnv) Cleanup() {
-	os.Setenv("HOME", e.OrigHome)
-	os.RemoveAll(e.TempHome)
+	_ = os.Setenv("HOME", e.OrigHome)
+	_ = os.RemoveAll(e.TempHome)
 }
 
 // Apply sets the HOME environment variable to the temporary directory
 func (e *ClaudeEnv) Apply() {
-	os.Setenv("HOME", e.TempHome)
+	_ = os.Setenv("HOME", e.TempHome)
 }
 
 // GetEnvVars returns environment variables for running commands with isolated HOME

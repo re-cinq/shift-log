@@ -51,7 +51,9 @@ func (r *Renderer) RenderEntries(entries []TranscriptEntry) error {
 	for _, entry := range entries {
 		if r.shouldRender(&entry) {
 			if hadPrevious {
-				fmt.Fprintln(r.w)
+				if _, err := fmt.Fprintln(r.w); err != nil {
+					return err
+				}
 			}
 			r.RenderEntry(&entry)
 			hadPrevious = true
@@ -83,17 +85,17 @@ func (r *Renderer) RenderEntry(entry *TranscriptEntry) {
 }
 
 func (r *Renderer) renderUser(entry *TranscriptEntry) {
-	fmt.Fprintf(r.w, "%s%sUser:%s\n", r.color(colorBold), r.color(colorBlue), r.color(colorReset))
+	_, _ = fmt.Fprintf(r.w, "%s%sUser:%s\n", r.color(colorBold), r.color(colorBlue), r.color(colorReset))
 	r.renderMessageContent(entry.Message)
 }
 
 func (r *Renderer) renderAssistant(entry *TranscriptEntry) {
-	fmt.Fprintf(r.w, "%s%sAssistant:%s\n", r.color(colorBold), r.color(colorGreen), r.color(colorReset))
+	_, _ = fmt.Fprintf(r.w, "%s%sAssistant:%s\n", r.color(colorBold), r.color(colorGreen), r.color(colorReset))
 	r.renderMessageContent(entry.Message)
 }
 
 func (r *Renderer) renderSystem(entry *TranscriptEntry) {
-	fmt.Fprintf(r.w, "%s%sSystem:%s\n", r.color(colorBold), r.color(colorYellow), r.color(colorReset))
+	_, _ = fmt.Fprintf(r.w, "%s%sSystem:%s\n", r.color(colorBold), r.color(colorYellow), r.color(colorReset))
 	r.renderMessageContent(entry.Message)
 }
 
@@ -123,7 +125,7 @@ func (r *Renderer) renderText(text string) {
 	// Indent the text for readability
 	lines := strings.Split(text, "\n")
 	for _, line := range lines {
-		fmt.Fprintf(r.w, "  %s\n", line)
+		_, _ = fmt.Fprintf(r.w, "  %s\n", line)
 	}
 }
 
@@ -131,21 +133,21 @@ func (r *Renderer) renderThinking(thinking string) {
 	if thinking == "" {
 		return
 	}
-	fmt.Fprintf(r.w, "  %s[thinking]%s\n", r.color(colorDim), r.color(colorReset))
+	_, _ = fmt.Fprintf(r.w, "  %s[thinking]%s\n", r.color(colorDim), r.color(colorReset))
 	lines := strings.Split(thinking, "\n")
 	// Show just a summary - first few lines
 	maxLines := 3
 	for i, line := range lines {
 		if i >= maxLines {
-			fmt.Fprintf(r.w, "  %s... (%d more lines)%s\n", r.color(colorDim), len(lines)-maxLines, r.color(colorReset))
+			_, _ = fmt.Fprintf(r.w, "  %s... (%d more lines)%s\n", r.color(colorDim), len(lines)-maxLines, r.color(colorReset))
 			break
 		}
-		fmt.Fprintf(r.w, "  %s%s%s\n", r.color(colorDim), line, r.color(colorReset))
+		_, _ = fmt.Fprintf(r.w, "  %s%s%s\n", r.color(colorDim), line, r.color(colorReset))
 	}
 }
 
 func (r *Renderer) renderToolUse(block ContentBlock) {
-	fmt.Fprintf(r.w, "  %s[tool: %s]%s\n", r.color(colorCyan), block.Name, r.color(colorReset))
+	_, _ = fmt.Fprintf(r.w, "  %s[tool: %s]%s\n", r.color(colorCyan), block.Name, r.color(colorReset))
 
 	if len(block.Input) == 0 {
 		return
@@ -212,23 +214,23 @@ func (r *Renderer) renderToolInput(label, value string) {
 		if len(display) > 100 {
 			display = display[:100] + "..."
 		}
-		fmt.Fprintf(r.w, "  %s%s: %s%s\n", r.color(colorDim), label, display, r.color(colorReset))
+		_, _ = fmt.Fprintf(r.w, "  %s%s: %s%s\n", r.color(colorDim), label, display, r.color(colorReset))
 	} else {
 		// Multi-line - show indented block
-		fmt.Fprintf(r.w, "  %s%s:%s\n", r.color(colorDim), label, r.color(colorReset))
+		_, _ = fmt.Fprintf(r.w, "  %s%s:%s\n", r.color(colorDim), label, r.color(colorReset))
 		maxLines := 10
 		for i, line := range lines {
 			if i >= maxLines {
-				fmt.Fprintf(r.w, "    %s... (%d more lines)%s\n", r.color(colorDim), len(lines)-maxLines, r.color(colorReset))
+				_, _ = fmt.Fprintf(r.w, "    %s... (%d more lines)%s\n", r.color(colorDim), len(lines)-maxLines, r.color(colorReset))
 				break
 			}
-			fmt.Fprintf(r.w, "    %s%s%s\n", r.color(colorDim), line, r.color(colorReset))
+			_, _ = fmt.Fprintf(r.w, "    %s%s%s\n", r.color(colorDim), line, r.color(colorReset))
 		}
 	}
 }
 
 func (r *Renderer) renderToolResult(block ContentBlock) {
-	fmt.Fprintf(r.w, "  %s[tool result]%s\n", r.color(colorDim), r.color(colorReset))
+	_, _ = fmt.Fprintf(r.w, "  %s[tool result]%s\n", r.color(colorDim), r.color(colorReset))
 
 	if len(block.Content) == 0 {
 		return
@@ -257,7 +259,7 @@ func (r *Renderer) renderToolResult(block ContentBlock) {
 	if len(raw) > 200 {
 		raw = raw[:200] + "..."
 	}
-	fmt.Fprintf(r.w, "  %s%s%s\n", r.color(colorDim), raw, r.color(colorReset))
+	_, _ = fmt.Fprintf(r.w, "  %s%s%s\n", r.color(colorDim), raw, r.color(colorReset))
 }
 
 func (r *Renderer) renderToolResultContent(content string) {
@@ -266,6 +268,6 @@ func (r *Renderer) renderToolResultContent(content string) {
 	}
 	lines := strings.Split(content, "\n")
 	for _, line := range lines {
-		fmt.Fprintf(r.w, "  %s%s%s\n", r.color(colorDim), line, r.color(colorReset))
+		_, _ = fmt.Fprintf(r.w, "  %s%s%s\n", r.color(colorDim), line, r.color(colorReset))
 	}
 }
