@@ -206,3 +206,8 @@ func NewGitRepoAsBare() (*GitRepo, error) {
 func (r *GitRepo) AddRemote(name, path string) error {
 	return r.Run("git", "remote", "add", name, path)
 }
+
+// AddNote adds a raw git note to a commit under the given ref
+func (r *GitRepo) AddNote(ref, commit, content string) error {
+	return r.Run("git", "notes", "--ref", ref, "add", "-f", "-m", content, commit)
+}

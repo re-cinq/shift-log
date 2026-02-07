@@ -1,12 +1,14 @@
 package acceptance_test
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/DanielJonesEB/claudit/internal/storage"
 	"github.com/DanielJonesEB/claudit/tests/acceptance/testutil"
 )
 
@@ -184,6 +186,191 @@ var _ = Describe("Resume Command", func() {
 			)
 
 			Expect(stdout).To(ContainSubstring("restored session"))
+		})
+	})
+
+	Describe("handling corrupt conversations", func() {
+		It("fails when note contains invalid JSON", func() {
+			head, err := repo.GetHead()
+			Expect(err).NotTo(HaveOccurred())
+
+			// Write garbage directly as a git note
+			repo.AddNote("refs/notes/claude-conversations", head, "not valid json at all")
+
+			_, stderr, err := testutil.RunClauditInDirWithEnv(
+				repo.Path,
+				claudeEnv.GetEnvVars(),
+				"resume", head, "--force",
+			)
+
+			Expect(err).To(HaveOccurred())
+			Expect(stderr).To(ContainSubstring("could not parse"))
+		})
+
+		It("warns on checksum mismatch but still restores", func() {
+			head, err := repo.GetHead()
+			Expect(err).NotTo(HaveOccurred())
+
+			// Create a valid stored conversation, then tamper with the checksum
+			transcript := []byte(testutil.SampleTranscript())
+			sc, err := storage.NewStoredConversation("session-tampered", repo.Path, "master", 4, transcript)
+			Expect(err).NotTo(HaveOccurred())
+
+			sc.Checksum = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+
+			noteData, err := sc.Marshal()
+			Expect(err).NotTo(HaveOccurred())
+			repo.AddNote("refs/notes/claude-conversations", head, string(noteData))
+
+			stdout, stderr, _ := testutil.RunClauditInDirWithEnv(
+				repo.Path,
+				claudeEnv.GetEnvVars(),
+				"resume", head, "--force",
+			)
+
+			// Should warn about checksum mismatch
+			Expect(stderr).To(ContainSubstring("checksum mismatch"))
+			// But should still restore the session
+			Expect(stdout).To(ContainSubstring("restored session"))
+		})
+
+		It("fails when transcript cannot be decompressed", func() {
+			head, err := repo.GetHead()
+			Expect(err).NotTo(HaveOccurred())
+
+			// Create a note with valid JSON structure but invalid transcript data
+			note := map[string]interface{}{
+				"version":       1,
+				"session_id":    "session-corrupt",
+				"timestamp":     "2025-01-01T00:00:00Z",
+				"project_path":  repo.Path,
+				"git_branch":    "master",
+				"message_count": 1,
+				"checksum":      "sha256:abcd",
+				"transcript":    "dGhpcyBpcyBub3QgZ3ppcCBkYXRh", // base64("this is not gzip data")
+			}
+			noteData, err := json.Marshal(note)
+			Expect(err).NotTo(HaveOccurred())
+			repo.AddNote("refs/notes/claude-conversations", head, string(noteData))
+
+			_, stderr, err := testutil.RunClauditInDirWithEnv(
+				repo.Path,
+				claudeEnv.GetEnvVars(),
+				"resume", head, "--force",
+			)
+
+			Expect(err).To(HaveOccurred())
+			Expect(stderr).To(ContainSubstring("could not decompress"))
+		})
+
+		It("fails when transcript field is not valid base64", func() {
+			head, err := repo.GetHead()
+			Expect(err).NotTo(HaveOccurred())
+
+			note := map[string]interface{}{
+				"version":       1,
+				"session_id":    "session-bad-b64",
+				"timestamp":     "2025-01-01T00:00:00Z",
+				"project_path":  repo.Path,
+				"git_branch":    "master",
+				"message_count": 1,
+				"checksum":      "sha256:abcd",
+				"transcript":    "!!!not-base64!!!",
+			}
+			noteData, err := json.Marshal(note)
+			Expect(err).NotTo(HaveOccurred())
+			repo.AddNote("refs/notes/claude-conversations", head, string(noteData))
+
+			_, stderr, err := testutil.RunClauditInDirWithEnv(
+				repo.Path,
+				claudeEnv.GetEnvVars(),
+				"resume", head, "--force",
+			)
+
+			Expect(err).To(HaveOccurred())
+			// Integrity check fails first (decode error), then decompress fails
+			Expect(stderr).To(SatisfyAny(
+				ContainSubstring("could not verify transcript integrity"),
+				ContainSubstring("could not decompress"),
+			))
+		})
+	})
+
+	Describe("resolving relative references", func() {
+		It("resolves HEAD~1 to parent commit", func() {
+			// Store conversation on first commit
+			storeConversation("session-parent")
+
+			// Create a second commit (no conversation)
+			Expect(repo.WriteFile("second.txt", "content")).To(Succeed())
+			Expect(repo.Commit("Second commit")).To(Succeed())
+
+			// Resume HEAD~1 should find the first commit's conversation
+			stdout, _, _ := testutil.RunClauditInDirWithEnv(
+				repo.Path,
+				claudeEnv.GetEnvVars(),
+				"resume", "HEAD~1", "--force",
+			)
+
+			Expect(stdout).To(ContainSubstring("restored session"))
+			Expect(stdout).To(ContainSubstring("session-parent"))
+		})
+	})
+
+	Describe("session content verification", func() {
+		It("restores the original transcript content", func() {
+			originalTranscript := testutil.SampleTranscript()
+			commitSHA := storeConversation("session-content-verify")
+
+			testutil.RunClauditInDirWithEnv(
+				repo.Path,
+				claudeEnv.GetEnvVars(),
+				"resume", commitSHA, "--force",
+			)
+
+			// Read back the restored session file and verify content matches
+			content, err := claudeEnv.ReadSessionFile(repo.Path, "session-content-verify")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(string(content)).To(Equal(originalTranscript))
+		})
+
+		It("populates sessions-index.json with correct metadata", func() {
+			commitSHA := storeConversation("session-meta-check")
+
+			testutil.RunClauditInDirWithEnv(
+				repo.Path,
+				claudeEnv.GetEnvVars(),
+				"resume", commitSHA, "--force",
+			)
+
+			// Read and parse the sessions index
+			indexPath := claudeEnv.GetSessionsIndexPath(repo.Path)
+			indexData, err := os.ReadFile(indexPath)
+			Expect(err).NotTo(HaveOccurred())
+
+			var index map[string]interface{}
+			Expect(json.Unmarshal(indexData, &index)).To(Succeed())
+
+			entries := index["entries"].([]interface{})
+			Expect(entries).To(HaveLen(1))
+
+			entry := entries[0].(map[string]interface{})
+			Expect(entry["sessionId"]).To(Equal("session-meta-check"))
+			Expect(entry["firstPrompt"]).To(Equal("Hello, can you help me with a task?"))
+			Expect(entry["messageCount"]).To(BeEquivalentTo(4))
+		})
+	})
+
+	Describe("requires arguments", func() {
+		It("fails when no commit argument is provided", func() {
+			_, stderr, err := testutil.RunClauditInDirWithEnv(
+				repo.Path,
+				claudeEnv.GetEnvVars(),
+				"resume",
+			)
+
+			Expect(err).To(HaveOccurred())
+			Expect(stderr).To(ContainSubstring("accepts 1 arg"))
 		})
 	})
 })
