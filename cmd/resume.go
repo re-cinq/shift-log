@@ -19,8 +19,9 @@ var (
 )
 
 var resumeCmd = &cobra.Command{
-	Use:   "resume <commit>",
-	Short: "Resume a Claude session from a commit",
+	Use:     "resume <commit>",
+	Short:   "Resume a Claude session from a commit",
+	GroupID: "human",
 	Long: `Restores a Claude Code session from a commit with a stored conversation,
 checks out the commit, and launches Claude Code with the restored session.
 

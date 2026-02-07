@@ -9,8 +9,9 @@ import (
 )
 
 var listCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List commits with stored conversations",
+	Use:     "list",
+	Short:   "List commits with stored conversations",
+	GroupID: "human",
 	Long: `Lists all commits in the repository that have associated Claude Code
 conversations stored as Git Notes.
 

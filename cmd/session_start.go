@@ -16,8 +16,9 @@ type SessionStartInput struct {
 }
 
 var sessionStartCmd = &cobra.Command{
-	Use:   "session-start",
-	Short: "Handle Claude Code SessionStart hook",
+	Use:     "session-start",
+	Short:   "Handle Claude Code SessionStart hook",
+	GroupID: "hooks",
 	Long: `Reads SessionStart hook JSON from stdin and records the active session.
 
 This command is designed to be called by Claude Code's SessionStart hook.`,

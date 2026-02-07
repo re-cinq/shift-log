@@ -14,8 +14,9 @@ var (
 )
 
 var debugCmd = &cobra.Command{
-	Use:   "debug",
-	Short: "Toggle debug logging for claudit",
+	Use:     "debug",
+	Short:   "Toggle debug logging for claudit",
+	GroupID: "human",
 	Long: `Controls debug logging output for claudit commands.
 
 When debug logging is enabled, claudit writes detailed diagnostic

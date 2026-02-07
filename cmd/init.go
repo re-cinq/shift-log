@@ -15,8 +15,9 @@ import (
 )
 
 var initCmd = &cobra.Command{
-	Use:   "init",
-	Short: "Initialize claudit in the current repository",
+	Use:     "init",
+	Short:   "Initialize claudit in the current repository",
+	GroupID: "human",
 	Long: `Configures the current git repository for conversation capture.
 
 This command:

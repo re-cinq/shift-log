@@ -9,9 +9,10 @@ import (
 )
 
 var syncCmd = &cobra.Command{
-	Use:   "sync",
-	Short: "Sync conversation notes with remote",
-	Long:  `Sync git notes containing conversations with the remote repository.`,
+	Use:     "sync",
+	Short:   "Sync conversation notes with remote",
+	GroupID: "hooks",
+	Long:    `Sync git notes containing conversations with the remote repository.`,
 }
 
 var syncPushCmd = &cobra.Command{

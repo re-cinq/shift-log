@@ -32,4 +32,10 @@ func init() {
 	}
 	rootCmd.Version = version
 	rootCmd.SetVersionTemplate(fmt.Sprintf("claudit version %s\n", version))
+
+	// Add command groups
+	rootCmd.AddGroup(
+		&cobra.Group{ID: "human", Title: "Commands for humans:"},
+		&cobra.Group{ID: "hooks", Title: "Commands mostly used by hooks:"},
+	)
 }

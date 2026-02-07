@@ -15,8 +15,9 @@ type SessionEndInput struct {
 }
 
 var sessionEndCmd = &cobra.Command{
-	Use:   "session-end",
-	Short: "Handle Claude Code SessionEnd hook",
+	Use:     "session-end",
+	Short:   "Handle Claude Code SessionEnd hook",
+	GroupID: "hooks",
 	Long: `Reads SessionEnd hook JSON from stdin and clears the active session.
 
 This command is designed to be called by Claude Code's SessionEnd hook.`,

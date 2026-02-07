@@ -14,8 +14,9 @@ var (
 )
 
 var serveCmd = &cobra.Command{
-	Use:   "serve",
-	Short: "Start the web visualization server",
+	Use:     "serve",
+	Short:   "Start the web visualization server",
+	GroupID: "human",
 	Long: `Starts a local web server for browsing commits and viewing conversation history.
 
 The web interface provides:

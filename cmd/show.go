@@ -14,8 +14,9 @@ import (
 var showFull bool
 
 var showCmd = &cobra.Command{
-	Use:   "show [ref]",
-	Short: "Show conversation history for a commit",
+	Use:     "show [ref]",
+	Short:   "Show conversation history for a commit",
+	GroupID: "human",
 	Long: `Displays the Claude Code conversation history stored for a commit.
 
 By default, shows only the conversation since the last commit (incremental view).

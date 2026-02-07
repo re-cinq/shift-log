@@ -13,8 +13,9 @@ import (
 )
 
 var doctorCmd = &cobra.Command{
-	Use:   "doctor",
-	Short: "Diagnose claudit configuration issues",
+	Use:     "doctor",
+	Short:   "Diagnose claudit configuration issues",
+	GroupID: "human",
 	Long: `Checks the claudit configuration and reports any issues that might
 prevent conversations from being stored.
 

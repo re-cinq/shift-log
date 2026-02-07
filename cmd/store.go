@@ -26,8 +26,9 @@ type HookInput struct {
 var manualFlag bool
 
 var storeCmd = &cobra.Command{
-	Use:   "store",
-	Short: "Store conversation from Claude Code hook",
+	Use:     "store",
+	Short:   "Store conversation from Claude Code hook",
+	GroupID: "hooks",
 	Long: `Reads PostToolUse hook JSON from stdin and stores the conversation
 as a Git Note if a git commit was detected.
 
