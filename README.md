@@ -50,13 +50,16 @@ To view notes directly with git: `git log --notes=claude-conversations`
 
 ## Commands
 
-| Command                   | Description                     |
-| ------------------------- | ------------------------------- |
-| `claudit init`            | Set up hooks in your repo       |
-| `claudit list`            | Show commits with conversations |
-| `claudit resume <commit>` | Resume a saved session          |
-| `claudit serve`           | Open web UI                     |
-| `claudit sync push/pull`  | Manual sync (usually automatic) |
+| Command                   | Description                                |
+| ------------------------- | ------------------------------------------ |
+| `claudit init`            | Initialize claudit in the current repo     |
+| `claudit list`            | List commits with stored conversations     |
+| `claudit show [ref]`      | Show conversation history for a commit     |
+| `claudit resume <commit>` | Resume a Claude session from a commit      |
+| `claudit serve`           | Start the web visualization server         |
+| `claudit doctor`          | Diagnose claudit configuration issues      |
+| `claudit debug`           | Toggle debug logging                       |
+| `claudit sync push/pull`  | Sync conversation notes with remote        |
 
 ## Requirements
 
