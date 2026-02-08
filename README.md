@@ -33,6 +33,12 @@ claudit resume HEAD~3    # By git ref
 claudit serve
 ```
 
+**Pull down conversations from a repo you cloned:**
+
+```bash
+claudit sync pull
+```
+
 ## Why?
 
 In order to understand _how_ and _why_ a commit was made, we need to see the conversation that led to it.
