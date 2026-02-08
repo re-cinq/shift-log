@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/DanielJonesEB/claudit/internal/claude"
-	"github.com/DanielJonesEB/claudit/internal/cli"
-	"github.com/DanielJonesEB/claudit/internal/git"
+	"github.com/re-cinq/claudit/internal/claude"
+	"github.com/re-cinq/claudit/internal/cli"
+	"github.com/re-cinq/claudit/internal/git"
 	"github.com/spf13/cobra"
 )
 
@@ -95,7 +95,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Println()
 		fmt.Println("⚠ Warning: 'claudit' is not in your PATH.")
 		fmt.Println("  The hook will not work until claudit is installed.")
-		fmt.Println("  Install with: go install github.com/DanielJonesEB/claudit@latest")
+		fmt.Println("  Install with: go install github.com/re-cinq/claudit@latest")
 	}
 
 	fmt.Println()

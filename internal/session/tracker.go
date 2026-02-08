@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DanielJonesEB/claudit/internal/claude"
-	"github.com/DanielJonesEB/claudit/internal/util"
+	"github.com/re-cinq/claudit/internal/claude"
+	"github.com/re-cinq/claudit/internal/util"
 )
 
 // ActiveSession represents the currently active Claude session

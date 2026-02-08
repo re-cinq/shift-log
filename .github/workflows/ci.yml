@@ -109,7 +109,7 @@ jobs:
           CGO_ENABLED: 0
         run: |
           VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
-          go build -ldflags "-X github.com/DanielJonesEB/claudit/cmd.version=${VERSION}" -o claudit-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goos == 'windows' && '.exe' || '' }} .
+          go build -ldflags "-X github.com/re-cinq/claudit/cmd.version=${VERSION}" -o claudit-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goos == 'windows' && '.exe' || '' }} .
 
   integration:
     name: Integration Tests

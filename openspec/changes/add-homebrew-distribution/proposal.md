@@ -5,7 +5,7 @@ Users currently must download release archives manually from GitHub and place th
 
 ## What Changes
 - Add a `brews` section to `.goreleaser.yml` that auto-publishes a Homebrew formula on each release
-- Create a new GitHub repository (`DanielJonesEB/homebrew-tap`) to host the formula
+- Create a new GitHub repository (`re-cinq/homebrew-tap`) to host the formula
 - Update README with Homebrew install instructions
 
 ## Impact

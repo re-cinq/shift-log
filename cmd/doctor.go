@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/DanielJonesEB/claudit/internal/git"
+	"github.com/re-cinq/claudit/internal/git"
 	"github.com/spf13/cobra"
 )
 
@@ -58,7 +58,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		fmt.Println("FAIL")
 		fmt.Println("  'claudit' is not in your PATH")
 		fmt.Println("  Claude Code hooks will not be able to find claudit")
-		fmt.Println("  Install with: go install github.com/DanielJonesEB/claudit@latest")
+		fmt.Println("  Install with: go install github.com/re-cinq/claudit@latest")
 		hasErrors = true
 	} else {
 		fmt.Println("OK")

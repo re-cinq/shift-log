@@ -1,4 +1,4 @@
-module github.com/DanielJonesEB/claudit
+module github.com/re-cinq/claudit
 
 go 1.24
 

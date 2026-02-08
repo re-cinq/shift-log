@@ -14,9 +14,9 @@ import (
 
 	"github.com/chromedp/chromedp"
 
-	"github.com/DanielJonesEB/claudit/internal/git"
-	"github.com/DanielJonesEB/claudit/internal/storage"
-	"github.com/DanielJonesEB/claudit/internal/web"
+	"github.com/re-cinq/claudit/internal/git"
+	"github.com/re-cinq/claudit/internal/storage"
+	"github.com/re-cinq/claudit/internal/web"
 )
 
 // testRepo is a temporary git repository for browser tests.

@@ -1,8 +1,8 @@
 package cmd
 
 import (
-	"github.com/DanielJonesEB/claudit/internal/cli"
-	"github.com/DanielJonesEB/claudit/internal/session"
+	"github.com/re-cinq/claudit/internal/cli"
+	"github.com/re-cinq/claudit/internal/session"
 	"github.com/spf13/cobra"
 )
 

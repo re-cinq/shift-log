@@ -16,7 +16,7 @@ echo "1. Checking prerequisites..."
 
 if ! command -v claudit &> /dev/null; then
     echo "   ERROR: 'claudit' not found in PATH"
-    echo "   Install with: go install github.com/DanielJonesEB/claudit@latest"
+    echo "   Install with: go install github.com/re-cinq/claudit@latest"
     exit 1
 fi
 echo "   ✓ claudit is in PATH"

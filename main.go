@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/DanielJonesEB/claudit/cmd"
+	"github.com/re-cinq/claudit/cmd"
 )
 
 func main() {

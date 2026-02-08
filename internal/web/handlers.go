@@ -8,9 +8,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/DanielJonesEB/claudit/internal/claude"
-	"github.com/DanielJonesEB/claudit/internal/git"
-	"github.com/DanielJonesEB/claudit/internal/storage"
+	"github.com/re-cinq/claudit/internal/claude"
+	"github.com/re-cinq/claudit/internal/git"
+	"github.com/re-cinq/claudit/internal/storage"
 )
 
 // CommitInfo represents commit data for the API

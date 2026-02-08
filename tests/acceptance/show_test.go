@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/DanielJonesEB/claudit/tests/acceptance/testutil"
+	"github.com/re-cinq/claudit/tests/acceptance/testutil"
 )
 
 var _ = Describe("Show Command", func() {

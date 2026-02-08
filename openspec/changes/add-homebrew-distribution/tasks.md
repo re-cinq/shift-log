@@ -1,5 +1,5 @@
 ## 1. Infrastructure Setup (manual, outside this repo)
-- [ ] 1.1 Create `DanielJonesEB/homebrew-tap` GitHub repository with a `Formula/` directory
+- [ ] 1.1 Create `re-cinq/homebrew-tap` GitHub repository with a `Formula/` directory
 - [ ] 1.2 Create a GitHub personal access token (or fine-grained token) with push access to the tap repo
 - [ ] 1.3 Add the token as `HOMEBREW_TAP_GITHUB_TOKEN` secret in the `claudit` repo's Actions settings
 
@@ -12,4 +12,4 @@
 ## 4. Validation
 - [ ] 4.1 Run `goreleaser check` to validate the updated config
 - [ ] 4.2 Trigger a release and verify the formula is pushed to the tap repo
-- [ ] 4.3 Test `brew install DanielJonesEB/tap/claudit` on a clean machine
+- [ ] 4.3 Test `brew install re-cinq/tap/claudit` on a clean machine

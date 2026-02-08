@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # claudit installation script
-# Usage: curl -fsSL https://raw.githubusercontent.com/DanielJonesEB/claudit/main/scripts/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/re-cinq/claudit/main/scripts/install.sh | bash
 #
 # This script must be EXECUTED, never SOURCED
 # WRONG: source install.sh (will exit your shell on errors)
@@ -11,9 +11,9 @@
 
 set -e
 
-GITHUB_REPO="DanielJonesEB/claudit"
+GITHUB_REPO="re-cinq/claudit"
 BINARY_NAME="claudit"
-GO_MODULE="github.com/DanielJonesEB/claudit"
+GO_MODULE="github.com/re-cinq/claudit"
 MIN_GO_MAJOR=1
 MIN_GO_MINOR=24
 

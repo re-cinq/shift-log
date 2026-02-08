@@ -5,7 +5,7 @@ Automatically save Claude Code conversations as Git Notes on every commit. Claud
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/DanielJonesEB/claudit/master/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/re-cinq/claudit/master/scripts/install.sh | bash
 claudit init
 ```
 

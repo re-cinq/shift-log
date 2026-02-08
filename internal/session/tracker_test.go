@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DanielJonesEB/claudit/internal/claude"
+	"github.com/re-cinq/claudit/internal/claude"
 )
 
 func TestWriteAndReadActiveSession(t *testing.T) {

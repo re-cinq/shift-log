@@ -1,10 +1,10 @@
 ## ADDED Requirements
 
 ### Requirement: Homebrew Tap Installation
-The project SHALL publish a Homebrew formula to a tap repository so that users can install claudit via `brew install DanielJonesEB/tap/claudit`.
+The project SHALL publish a Homebrew formula to a tap repository so that users can install claudit via `brew install re-cinq/tap/claudit`.
 
 #### Scenario: Fresh install via Homebrew
-- **WHEN** a user runs `brew install DanielJonesEB/tap/claudit`
+- **WHEN** a user runs `brew install re-cinq/tap/claudit`
 - **THEN** the latest released version of the claudit binary is installed and available on their PATH
 
 #### Scenario: Upgrade via Homebrew

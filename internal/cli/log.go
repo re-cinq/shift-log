@@ -5,7 +5,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/DanielJonesEB/claudit/internal/config"
+	"github.com/re-cinq/claudit/internal/config"
 )
 
 var (

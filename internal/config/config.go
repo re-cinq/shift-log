@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/DanielJonesEB/claudit/internal/util"
+	"github.com/re-cinq/claudit/internal/util"
 )
 
 const configFile = "config"

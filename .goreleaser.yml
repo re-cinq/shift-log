@@ -24,7 +24,7 @@ builds:
         goarch: arm64
     ldflags:
       - -s -w
-      - -X github.com/DanielJonesEB/claudit/cmd.version={{.Version}}
+      - -X github.com/re-cinq/claudit/cmd.version={{.Version}}
 
 archives:
   - id: default
@@ -57,7 +57,7 @@ changelog:
 
 release:
   github:
-    owner: DanielJonesEB
+    owner: re-cinq
     name: claudit
   draft: false
   prerelease: auto

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/DanielJonesEB/claudit/internal/claude"
-	"github.com/DanielJonesEB/claudit/internal/git"
+	"github.com/re-cinq/claudit/internal/claude"
+	"github.com/re-cinq/claudit/internal/git"
 )
 
 // GetStoredConversation retrieves and parses a stored conversation from a commit's git note.
