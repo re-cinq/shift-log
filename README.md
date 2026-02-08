@@ -68,4 +68,4 @@ To view notes directly with git: `git log --notes=claude-conversations`
 
 ## License
 
-See [LICENSE](LICENSE).
+[AI Native Application License (AINAL)](https://github.com/re-cinq/ai-native-application-license) — see [LICENSE](LICENSE).
