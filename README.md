@@ -6,6 +6,7 @@ Automatically save Claude Code conversations as Git Notes on every commit. Claud
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/re-cinq/claudit/master/scripts/install.sh | bash
+# ...In a Git repo
 claudit init
 ```
 
@@ -50,16 +51,16 @@ To view notes directly with git: `git log --notes=claude-conversations`
 
 ## Commands
 
-| Command                   | Description                                |
-| ------------------------- | ------------------------------------------ |
-| `claudit init`            | Initialize claudit in the current repo     |
-| `claudit list`            | List commits with stored conversations     |
-| `claudit show [ref]`      | Show conversation history for a commit     |
-| `claudit resume <commit>` | Resume a Claude session from a commit      |
-| `claudit serve`           | Start the web visualization server         |
-| `claudit doctor`          | Diagnose claudit configuration issues      |
-| `claudit debug`           | Toggle debug logging                       |
-| `claudit sync push/pull`  | Sync conversation notes with remote        |
+| Command                   | Description                            |
+| ------------------------- | -------------------------------------- |
+| `claudit init`            | Initialize claudit in the current repo |
+| `claudit list`            | List commits with stored conversations |
+| `claudit show [ref]`      | Show conversation history for a commit |
+| `claudit resume <commit>` | Resume a Claude session from a commit  |
+| `claudit serve`           | Start the web visualization server     |
+| `claudit doctor`          | Diagnose claudit configuration issues  |
+| `claudit debug`           | Toggle debug logging                   |
+| `claudit sync push/pull`  | Sync conversation notes with remote    |
 
 ## Requirements
 
