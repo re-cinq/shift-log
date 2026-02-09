@@ -86,6 +86,18 @@ claudit sync push   # Now succeeds
 
 In the rare case where two developers annotate the exact same commit SHA, both notes are preserved by concatenation — no data is lost.
 
+## Local Rebase
+
+Conversation notes automatically follow commits when you rebase. During `claudit init`, the `notes.rewriteRef` git config is set to `refs/notes/claude-conversations`, which tells git to remap notes to the new commit SHAs during rebase. No manual steps are needed.
+
+If you initialized before this config was added, run `claudit init` again or set it manually:
+
+```bash
+git config notes.rewriteRef refs/notes/claude-conversations
+```
+
+You can verify the config is set with `claudit doctor`.
+
 ## License
 
 [AI Native Application License (AINAL)](https://github.com/re-cinq/ai-native-application-license) — see [LICENSE](LICENSE).

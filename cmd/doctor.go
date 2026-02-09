@@ -22,6 +22,7 @@ prevent conversations from being stored.
 This command checks:
 - Git repository status
 - Claude Code hook configuration
+- Git notes.rewriteRef config (for rebase support)
 - Git hooks installation
 - PATH configuration`,
 	RunE: runDoctor,
@@ -138,7 +139,28 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Println()
 
-	// Check 4: Git hooks
+	// Check 4: notes.rewriteRef config
+	fmt.Print("Checking notes.rewriteRef config... ")
+	if repoRoot == "" {
+		fmt.Println("SKIP (not in git repo)")
+	} else {
+		rewriteRefCmd := exec.Command("git", "config", "notes.rewriteRef")
+		rewriteRefCmd.Dir = repoRoot
+		rewriteOut, err := rewriteRefCmd.Output()
+		if err != nil || strings.TrimSpace(string(rewriteOut)) != git.NotesRef {
+			fmt.Println("FAIL")
+			fmt.Printf("  notes.rewriteRef is not set to %s\n", git.NotesRef)
+			fmt.Println("  Notes will not follow commits during rebase")
+			fmt.Println("  Run 'claudit init' to fix")
+			hasErrors = true
+		} else {
+			fmt.Println("OK")
+			fmt.Println("  Notes will follow commits during rebase")
+		}
+	}
+	fmt.Println()
+
+	// Check 5: Git hooks
 	fmt.Print("Checking git hooks... ")
 	if repoRoot == "" {
 		fmt.Println("SKIP (not in git repo)")
