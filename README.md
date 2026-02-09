@@ -107,15 +107,18 @@ Claudit handles this automatically. After you pull a rebase-merged PR, the post-
 
 1. Finds notes on commits that are no longer on any branch (orphaned)
 2. Uses `git patch-id` to match each orphaned commit to its rebased counterpart by diff content
-3. Copies the note to the new commit SHA
+3. Copies the note to the new commit SHA (the original note is also kept)
 
-You can also run it manually:
+For this to work, the local feature branch must be deleted or pruned so the old commits become orphaned. If your GitHub repo is configured to auto-delete branches after merge, this happens naturally when you `git pull` with `fetch.prune=true` (or `git fetch --prune`). Otherwise, delete the branch manually first:
 
 ```bash
+git branch -D feature-branch
 claudit remap
 ```
 
-This reports how many notes were remapped and how many remain unmatched. Notes that cannot be matched (e.g. if the original commit was garbage collected) are left in place and reported but not deleted.
+You can also run `claudit remap` at any time — it reports how many notes were remapped and how many remain unmatched. Unmatched notes are left in place, not deleted.
+
+**Note:** Remap works with GitHub's "Rebase and merge" strategy. It does not support "Squash and merge", which combines all commits into one new commit with no 1:1 mapping to copy notes from.
 
 ## License
 
