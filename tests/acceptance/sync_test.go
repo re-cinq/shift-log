@@ -290,6 +290,119 @@ var _ = Describe("Sync Command", func() {
 		})
 	})
 
+	Describe("diverged notes merge", func() {
+		It("merges notes from two repos that annotated different commits", func() {
+			head, err := local.GetHead()
+			Expect(err).NotTo(HaveOccurred())
+
+			// Dev1 (local) adds a note on initial commit and pushes
+			local.AddNote("refs/notes/claude-conversations", head, "dev1-note-on-initial")
+			_, _, err = testutil.RunClauditInDir(local.Path, "sync", "push")
+			Expect(err).NotTo(HaveOccurred())
+
+			// Dev1 makes a second commit with a note
+			Expect(local.WriteFile("second.txt", "content")).To(Succeed())
+			Expect(local.Commit("second commit")).To(Succeed())
+			secondHead, err := local.GetHead()
+			Expect(err).NotTo(HaveOccurred())
+			local.AddNote("refs/notes/claude-conversations", secondHead, "dev1-note-on-second")
+			_, _, err = testutil.RunClauditInDir(local.Path, "sync", "push")
+			Expect(err).NotTo(HaveOccurred())
+
+			// Dev2 (clone) clones the repo and adds its own note on a third commit
+			clone, err := testutil.NewGitRepo()
+			Expect(err).NotTo(HaveOccurred())
+			defer clone.Cleanup()
+
+			Expect(clone.Run("git", "remote", "add", "origin", remote.Path)).To(Succeed())
+			Expect(clone.Run("git", "fetch", "origin")).To(Succeed())
+			Expect(clone.Run("git", "checkout", "-b", "master", "origin/master")).To(Succeed())
+
+			Expect(clone.WriteFile("third.txt", "content")).To(Succeed())
+			Expect(clone.Commit("third commit")).To(Succeed())
+			thirdHead, err := clone.GetHead()
+			Expect(err).NotTo(HaveOccurred())
+			clone.AddNote("refs/notes/claude-conversations", thirdHead, "dev2-note-on-third")
+
+			// Dev2 pulls — should merge dev1's notes in
+			stdout, _, err := testutil.RunClauditInDir(clone.Path, "sync", "pull")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(stdout).To(ContainSubstring("merged"))
+
+			// All three notes should be present
+			Expect(clone.HasNote("refs/notes/claude-conversations", head)).To(BeTrue())
+			Expect(clone.HasNote("refs/notes/claude-conversations", secondHead)).To(BeTrue())
+			Expect(clone.HasNote("refs/notes/claude-conversations", thirdHead)).To(BeTrue())
+		})
+
+		It("concatenates conflicting notes on the same commit SHA", func() {
+			head, err := local.GetHead()
+			Expect(err).NotTo(HaveOccurred())
+
+			// Dev1 adds a note and pushes
+			local.AddNote("refs/notes/claude-conversations", head, "dev1-note")
+			_, _, err = testutil.RunClauditInDir(local.Path, "sync", "push")
+			Expect(err).NotTo(HaveOccurred())
+
+			// Dev2 clones and adds a different note on the SAME commit
+			clone, err := testutil.NewGitRepo()
+			Expect(err).NotTo(HaveOccurred())
+			defer clone.Cleanup()
+
+			Expect(clone.Run("git", "remote", "add", "origin", remote.Path)).To(Succeed())
+			Expect(clone.Run("git", "fetch", "origin")).To(Succeed())
+			Expect(clone.Run("git", "checkout", "-b", "master", "origin/master")).To(Succeed())
+
+			clone.AddNote("refs/notes/claude-conversations", head, "dev2-note")
+
+			// Dev2 pulls — should merge via cat_sort_uniq
+			_, _, err = testutil.RunClauditInDir(clone.Path, "sync", "pull")
+			Expect(err).NotTo(HaveOccurred())
+
+			// Both notes should be present (concatenated)
+			note, err := clone.GetNote("refs/notes/claude-conversations", head)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(note).To(ContainSubstring("dev1-note"))
+			Expect(note).To(ContainSubstring("dev2-note"))
+		})
+	})
+
+	Describe("non-fast-forward push", func() {
+		It("rejects push when remote has diverged and advises pull", func() {
+			head, err := local.GetHead()
+			Expect(err).NotTo(HaveOccurred())
+
+			// Dev1 adds a note and pushes
+			local.AddNote("refs/notes/claude-conversations", head, "dev1-note")
+			_, _, err = testutil.RunClauditInDir(local.Path, "sync", "push")
+			Expect(err).NotTo(HaveOccurred())
+
+			// Dev2 clones and adds a conflicting note
+			clone, err := testutil.NewGitRepo()
+			Expect(err).NotTo(HaveOccurred())
+			defer clone.Cleanup()
+
+			Expect(clone.Run("git", "remote", "add", "origin", remote.Path)).To(Succeed())
+			Expect(clone.Run("git", "fetch", "origin")).To(Succeed())
+			Expect(clone.Run("git", "checkout", "-b", "master", "origin/master")).To(Succeed())
+
+			clone.AddNote("refs/notes/claude-conversations", head, "dev2-note")
+
+			// Dev2 tries to push — should fail
+			stdout, _, err := testutil.RunClauditInDir(clone.Path, "sync", "push")
+			Expect(err).To(HaveOccurred())
+			Expect(stdout).To(ContainSubstring("Push rejected"))
+			Expect(stdout).To(ContainSubstring("claudit sync pull"))
+
+			// Dev2 pulls first, then push succeeds
+			_, _, err = testutil.RunClauditInDir(clone.Path, "sync", "pull")
+			Expect(err).NotTo(HaveOccurred())
+
+			_, _, err = testutil.RunClauditInDir(clone.Path, "sync", "push")
+			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+
 	Describe("notes round-trip", func() {
 		It("preserves conversation through push/pull", func() {
 			// Store conversation locally

@@ -1,6 +1,7 @@
 package git
 
 import (
+	"errors"
 	"os/exec"
 	"strings"
 )
@@ -8,6 +9,12 @@ import (
 // NotesRef is the git notes ref used to store conversation notes.
 // A custom ref keeps git log clean and avoids collisions with other notes.
 const NotesRef = "refs/notes/claude-conversations"
+
+// NotesTrackingRef is the ref used to hold fetched remote notes before merging.
+const NotesTrackingRef = "refs/notes/claude-conversations-remote"
+
+// ErrNonFastForward is returned when a push fails because the remote has diverged.
+var ErrNonFastForward = errors.New("non-fast-forward update: remote notes have diverged, run 'claudit sync pull' first")
 
 // AddNote adds a note to a commit.
 // Content is piped via stdin (-F -) to avoid ARG_MAX limits on large transcripts.
@@ -82,15 +89,44 @@ func ListCommitsWithNotes() ([]string, error) {
 	return commits, nil
 }
 
-// PushNotes pushes notes to the remote
+// PushNotes pushes notes to the remote.
+// Returns ErrNonFastForward if the remote has diverged.
 func PushNotes(remote string) error {
 	// Use --no-verify to prevent pre-push hook from triggering recursively
 	cmd := exec.Command("git", "push", "--no-verify", remote, NotesRef)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		if strings.Contains(string(output), "non-fast-forward") ||
+			strings.Contains(string(output), "rejected") ||
+			strings.Contains(string(output), "fetch first") {
+			return ErrNonFastForward
+		}
+		return err
+	}
+	return nil
+}
+
+// FetchNotesToTracking fetches remote notes to the tracking ref without
+// touching the local notes ref. This is the first step of the
+// fetch-then-merge sync flow.
+func FetchNotesToTracking(remote string) error {
+	cmd := exec.Command("git", "fetch", remote, NotesRef+":"+NotesTrackingRef)
 	return cmd.Run()
 }
 
-// FetchNotes fetches notes from the remote
-func FetchNotes(remote string) error {
-	cmd := exec.Command("git", "fetch", remote, NotesRef+":"+NotesRef)
+// MergeNotes merges the tracking ref into the local notes ref using
+// git notes merge. The cat_sort_uniq strategy concatenates notes when
+// two developers have annotated the same commit SHA.
+func MergeNotes() error {
+	cmd := exec.Command("git", "notes", "--ref", NotesRef, "merge", "--strategy=cat_sort_uniq", NotesTrackingRef)
 	return cmd.Run()
+}
+
+// FetchNotes fetches remote notes and merges them into the local ref.
+// This is the high-level operation used by sync pull.
+func FetchNotes(remote string) error {
+	if err := FetchNotesToTracking(remote); err != nil {
+		return err
+	}
+	return MergeNotes()
 }

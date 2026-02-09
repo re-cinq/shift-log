@@ -29,15 +29,15 @@ claudit resume HEAD~3    # By git ref
 
 **View in your browser:**
 
-```bash
+````bash
 claudit serve
-```
+```Han
 
 **Pull down conversations from a repo you cloned:**
 
 ```bash
 claudit sync pull
-```
+````
 
 ## Why?
 
@@ -72,6 +72,19 @@ To view notes directly with git: `git log --notes=claude-conversations`
 
 - Git
 - Claude Code CLI (for resume)
+
+## Multi-Developer Sync
+
+When multiple developers use claudit on the same repository, each person's conversation notes are synced automatically via git push/pull hooks. Notes from different developers are merged seamlessly because they typically annotate different commits.
+
+If the remote notes ref has diverged (e.g. two developers pushed notes without pulling first), `claudit sync push` will reject the push and advise you to pull first:
+
+```bash
+claudit sync pull   # Fetches and merges remote notes
+claudit sync push   # Now succeeds
+```
+
+In the rare case where two developers annotate the exact same commit SHA, both notes are preserved by concatenation — no data is lost.
 
 ## License
 

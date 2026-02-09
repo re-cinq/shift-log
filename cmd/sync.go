@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/re-cinq/claudit/internal/cli"
@@ -45,6 +46,11 @@ func runSyncPush(cmd *cobra.Command, args []string) error {
 	cli.LogDebug("sync push: pushing notes to remote %s", syncRemote)
 
 	if err := git.PushNotes(syncRemote); err != nil {
+		if errors.Is(err, git.ErrNonFastForward) {
+			fmt.Println("Push rejected: remote notes have diverged.")
+			fmt.Println("Run 'claudit sync pull' first to merge, then push again.")
+			return err
+		}
 		// Don't fail if there are no notes to push or remote doesn't exist
 		cli.LogWarning("could not push notes: %v", err)
 		return nil
@@ -61,12 +67,18 @@ func runSyncPull(cmd *cobra.Command, args []string) error {
 
 	cli.LogDebug("sync pull: fetching notes from remote %s", syncRemote)
 
-	if err := git.FetchNotes(syncRemote); err != nil {
+	if err := git.FetchNotesToTracking(syncRemote); err != nil {
 		// Don't fail if there are no notes to fetch or remote doesn't exist
 		cli.LogWarning("could not fetch notes: %v", err)
 		return nil
 	}
 
-	fmt.Printf("Fetched conversation notes from %s\n", syncRemote)
+	cli.LogDebug("sync pull: merging remote notes into local ref")
+
+	if err := git.MergeNotes(); err != nil {
+		return fmt.Errorf("failed to merge notes: %w", err)
+	}
+
+	fmt.Printf("Fetched and merged conversation notes from %s\n", syncRemote)
 	return nil
 }
