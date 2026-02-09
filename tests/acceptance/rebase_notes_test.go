@@ -24,6 +24,9 @@ var _ = Describe("Local Rebase Notes Preservation", func() {
 
 	Describe("notes follow rebased commits", func() {
 		It("preserves notes when commits are rebased", func() {
+			// Set binary path so git hooks installed by init can find claudit
+			repo.SetBinaryPath(testutil.BinaryPath())
+
 			// Initialize claudit (sets notes.rewriteRef)
 			_, _, err := testutil.RunClauditInDir(repo.Path, "init")
 			Expect(err).NotTo(HaveOccurred())
