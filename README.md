@@ -67,6 +67,7 @@ To view notes directly with git: `git log --notes=claude-conversations`
 | `claudit doctor`          | Diagnose claudit configuration issues  |
 | `claudit debug`           | Toggle debug logging                   |
 | `claudit sync push/pull`  | Sync conversation notes with remote    |
+| `claudit remap`           | Remap orphaned notes to rebased commits|
 
 ## Requirements
 
@@ -97,6 +98,24 @@ git config notes.rewriteRef refs/notes/claude-conversations
 ```
 
 You can verify the config is set with `claudit doctor`.
+
+## GitHub Rebase Merge
+
+When a PR is merged via GitHub's "Rebase and merge" strategy, the commits get new SHAs on the target branch. Since this happens server-side, git's `notes.rewriteRef` does not apply and notes remain keyed to the original (now-orphaned) commit SHAs.
+
+Claudit handles this automatically. After you pull a rebase-merged PR, the post-merge hook runs `claudit remap`, which:
+
+1. Finds notes on commits that are no longer on any branch (orphaned)
+2. Uses `git patch-id` to match each orphaned commit to its rebased counterpart by diff content
+3. Copies the note to the new commit SHA
+
+You can also run it manually:
+
+```bash
+claudit remap
+```
+
+This reports how many notes were remapped and how many remain unmatched. Notes that cannot be matched (e.g. if the original commit was garbage collected) are left in place and reported but not deleted.
 
 ## License
 

@@ -92,7 +92,7 @@ func replaceClauditSection(content, newSection string) string {
 func InstallAllHooks(gitDir string) error {
 	hooks := map[HookType]string{
 		HookPrePush:      "claudit sync push",
-		HookPostMerge:    "claudit sync pull",
+		HookPostMerge:    "claudit sync pull\nclaudit remap",
 		HookPostCheckout: "claudit sync pull",
 		HookPostCommit:   "claudit store --manual",
 	}

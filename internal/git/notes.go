@@ -130,3 +130,129 @@ func FetchNotes(remote string) error {
 	}
 	return MergeNotes()
 }
+
+// CopyNote copies a note from one commit to another.
+// If the destination already has a note, the copy is forced (overwritten).
+func CopyNote(fromSHA, toSHA string) error {
+	cmd := exec.Command("git", "notes", "--ref", NotesRef, "copy", "-f", fromSHA, toSHA)
+	return cmd.Run()
+}
+
+// FindOrphanedNotes returns notes whose commits are not reachable from any branch.
+// Returns a map of commit SHA → note blob SHA.
+func FindOrphanedNotes() (map[string]string, error) {
+	// List all notes
+	cmd := exec.Command("git", "notes", "--ref", NotesRef, "list")
+	output, err := cmd.Output()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	orphaned := make(map[string]string)
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) < 2 {
+			continue
+		}
+		noteSHA := parts[0]
+		commitSHA := parts[1]
+
+		// Check if commit is reachable from any branch
+		cmd := exec.Command("git", "branch", "--contains", commitSHA)
+		branchOutput, err := cmd.Output()
+		if err != nil || strings.TrimSpace(string(branchOutput)) == "" {
+			// Not on any branch — check the object still exists
+			checkCmd := exec.Command("git", "cat-file", "-t", commitSHA)
+			if checkCmd.Run() == nil {
+				orphaned[commitSHA] = noteSHA
+			}
+		}
+	}
+
+	return orphaned, nil
+}
+
+// PatchID computes the git patch-id for a commit.
+// The patch-id is a stable hash of the commit's diff, independent of the SHA.
+func PatchID(commitSHA string) (string, error) {
+	diffCmd := exec.Command("git", "diff-tree", "-p", commitSHA)
+	patchCmd := exec.Command("git", "patch-id")
+
+	pipe, err := diffCmd.StdoutPipe()
+	if err != nil {
+		return "", err
+	}
+	patchCmd.Stdin = pipe
+
+	patchOut, err := patchCmd.StdoutPipe()
+	if err != nil {
+		return "", err
+	}
+
+	if err := diffCmd.Start(); err != nil {
+		return "", err
+	}
+	if err := patchCmd.Start(); err != nil {
+		return "", err
+	}
+
+	buf := make([]byte, 4096)
+	n, _ := patchOut.Read(buf)
+	output := strings.TrimSpace(string(buf[:n]))
+
+	// Wait for both to finish
+	_ = diffCmd.Wait()
+	_ = patchCmd.Wait()
+
+	if output == "" {
+		return "", nil
+	}
+
+	fields := strings.Fields(output)
+	if len(fields) < 1 {
+		return "", nil
+	}
+
+	return fields[0], nil
+}
+
+// ListCommitsInRange returns commit SHAs in the given range (e.g. "ORIG_HEAD..HEAD").
+func ListCommitsInRange(rangeSpec string) ([]string, error) {
+	cmd := exec.Command("git", "rev-list", rangeSpec)
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+
+	var commits []string
+	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
+		if line != "" {
+			commits = append(commits, line)
+		}
+	}
+	return commits, nil
+}
+
+// ListAllBranchCommits returns all commit SHAs reachable from any branch.
+func ListAllBranchCommits() ([]string, error) {
+	cmd := exec.Command("git", "rev-list", "--all")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+
+	var commits []string
+	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
+		if line != "" {
+			commits = append(commits, line)
+		}
+	}
+	return commits, nil
+}
