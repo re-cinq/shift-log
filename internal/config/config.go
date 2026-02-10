@@ -15,6 +15,7 @@ const clauditDir = ".claudit"
 type Config struct {
 	NotesRef string `json:"notes_ref"`
 	Debug    bool   `json:"debug"`
+	Agent    string `json:"agent,omitempty"` // coding agent name (empty = "claude" for backward compat)
 }
 
 // Read reads the config from .claudit/config in the project root.

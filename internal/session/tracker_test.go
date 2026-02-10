@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/re-cinq/claudit/internal/claude"
+	agentclaude "github.com/re-cinq/claudit/internal/agent/claude"
 )
 
 func TestWriteAndReadActiveSession(t *testing.T) {
@@ -633,9 +633,9 @@ func TestFindRecentSessionFromIndex(t *testing.T) {
 	now := time.Now()
 
 	// Create a sessions index with a recent entry
-	index := &claude.SessionsIndex{
+	index := &agentclaude.SessionsIndex{
 		Version: 1,
-		Entries: []claude.SessionEntry{
+		Entries: []agentclaude.SessionEntry{
 			{
 				SessionID:    "recent-indexed-session",
 				FullPath:     "/home/user/.claude/projects/-test-project/recent-indexed-session.jsonl",
@@ -664,9 +664,9 @@ func TestFindRecentSessionFromIndexOldEntry(t *testing.T) {
 	now := time.Now()
 
 	// Create a sessions index with an OLD entry (beyond recentSessionTimeout)
-	index := &claude.SessionsIndex{
+	index := &agentclaude.SessionsIndex{
 		Version: 1,
-		Entries: []claude.SessionEntry{
+		Entries: []agentclaude.SessionEntry{
 			{
 				SessionID:    "old-indexed-session",
 				FullPath:     "/home/user/.claude/projects/-test-project/old-indexed-session.jsonl",
@@ -690,9 +690,9 @@ func TestFindRecentSessionFromIndexWrongProject(t *testing.T) {
 	now := time.Now()
 
 	// Create a sessions index with entry for a DIFFERENT project
-	index := &claude.SessionsIndex{
+	index := &agentclaude.SessionsIndex{
 		Version: 1,
-		Entries: []claude.SessionEntry{
+		Entries: []agentclaude.SessionEntry{
 			{
 				SessionID:    "other-project-session",
 				FullPath:     "/home/user/.claude/projects/-other-project/session.jsonl",
@@ -717,9 +717,9 @@ func TestFindRecentSessionFromIndexPicksMostRecent(t *testing.T) {
 	now := time.Now()
 
 	// Create a sessions index with multiple entries, one older and one newer
-	index := &claude.SessionsIndex{
+	index := &agentclaude.SessionsIndex{
 		Version: 1,
-		Entries: []claude.SessionEntry{
+		Entries: []agentclaude.SessionEntry{
 			{
 				SessionID:    "older-session",
 				FullPath:     "/home/user/.claude/projects/-test-project/older-session.jsonl",
@@ -754,9 +754,9 @@ func TestFindRecentSessionFromIndexPicksMostRecent(t *testing.T) {
 
 func TestFindRecentSessionFromIndexEmptyIndex(t *testing.T) {
 	// Empty index
-	index := &claude.SessionsIndex{
+	index := &agentclaude.SessionsIndex{
 		Version: 1,
-		Entries: []claude.SessionEntry{},
+		Entries: []agentclaude.SessionEntry{},
 	}
 
 	// Should return nil
@@ -838,9 +838,9 @@ func TestDiscoverRecentSessionWithIndexAndScan(t *testing.T) {
 	}
 
 	// Create sessions-index.json with a recent entry
-	index := &claude.SessionsIndex{
+	index := &agentclaude.SessionsIndex{
 		Version: 1,
-		Entries: []claude.SessionEntry{
+		Entries: []agentclaude.SessionEntry{
 			{
 				SessionID:    "index-session",
 				FullPath:     filepath.Join(sessionDir, "index-session.jsonl"),

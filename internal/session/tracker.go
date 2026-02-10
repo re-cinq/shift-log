@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/re-cinq/claudit/internal/claude"
+	agentclaude "github.com/re-cinq/claudit/internal/agent/claude"
 	"github.com/re-cinq/claudit/internal/util"
 )
 
-// ActiveSession represents the currently active Claude session
+// ActiveSession represents the currently active coding agent session
 type ActiveSession struct {
 	SessionID      string `json:"session_id"`
 	TranscriptPath string `json:"transcript_path"`
@@ -128,7 +128,7 @@ func DiscoverSession(projectPath string) (*ActiveSession, error) {
 // or by scanning the session directory for recent .jsonl files
 func discoverRecentSession(projectPath string) (*ActiveSession, error) {
 	// First try sessions-index.json
-	index, err := claude.ReadSessionsIndex(projectPath)
+	index, err := agentclaude.ReadSessionsIndex(projectPath)
 	if err == nil && len(index.Entries) > 0 {
 		session := findRecentSessionFromIndex(index, projectPath)
 		if session != nil {
@@ -142,10 +142,10 @@ func discoverRecentSession(projectPath string) (*ActiveSession, error) {
 }
 
 // findRecentSessionFromIndex finds a recent session from the sessions-index
-func findRecentSessionFromIndex(index *claude.SessionsIndex, projectPath string) *ActiveSession {
+func findRecentSessionFromIndex(index *agentclaude.SessionsIndex, projectPath string) *ActiveSession {
 	now := time.Now()
 
-	var bestEntry *claude.SessionEntry
+	var bestEntry *agentclaude.SessionEntry
 	var bestModified time.Time
 
 	for i := range index.Entries {
@@ -192,7 +192,7 @@ func findRecentSessionFromIndex(index *claude.SessionsIndex, projectPath string)
 
 // scanForRecentSession scans Claude's session directory for recently modified .jsonl files
 func scanForRecentSession(projectPath string) (*ActiveSession, error) {
-	sessionDir, err := claude.GetSessionDir(projectPath)
+	sessionDir, err := agentclaude.GetSessionDir(projectPath)
 	if err != nil {
 		return nil, nil
 	}

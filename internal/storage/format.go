@@ -15,6 +15,7 @@ type StoredConversation struct {
 	MessageCount int    `json:"message_count"`
 	Checksum     string `json:"checksum"`
 	Transcript   string `json:"transcript"` // base64-encoded gzipped JSONL
+	Agent        string `json:"agent,omitempty"` // coding agent name (empty = "claude" for backward compat)
 }
 
 // NewStoredConversation creates a new StoredConversation from transcript data

@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/re-cinq/claudit/internal/claude"
+	"github.com/re-cinq/claudit/internal/agent"
+	agentclaude "github.com/re-cinq/claudit/internal/agent/claude"
 	"github.com/re-cinq/claudit/internal/git"
 )
 
@@ -29,12 +30,12 @@ func GetStoredConversation(commitSHA string) (*StoredConversation, error) {
 }
 
 // ParseTranscript decompresses the stored transcript and parses it into a Transcript.
-func (sc *StoredConversation) ParseTranscript() (*claude.Transcript, error) {
+func (sc *StoredConversation) ParseTranscript() (*agent.Transcript, error) {
 	data, err := sc.GetTranscript()
 	if err != nil {
 		return nil, err
 	}
-	return claude.ParseTranscript(strings.NewReader(string(data)))
+	return agentclaude.ParseJSONLTranscript(strings.NewReader(string(data)))
 }
 
 // FindParentConversationBoundary finds the most recent parent commit with a conversation
@@ -46,7 +47,6 @@ func FindParentConversationBoundary(commitSHA, currentSessionID string) (parentS
 		return "", ""
 	}
 
-	// Check each parent for a conversation (use first one found)
 	for _, parent := range parents {
 		if !git.HasNote(parent) {
 			continue
@@ -62,7 +62,6 @@ func FindParentConversationBoundary(commitSHA, currentSessionID string) (parentS
 			continue
 		}
 
-		// If session ID differs, treat as new session (show full)
 		if stored.SessionID != currentSessionID {
 			return "", ""
 		}

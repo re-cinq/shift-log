@@ -8,11 +8,15 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/re-cinq/claudit/internal/claude"
+	"github.com/re-cinq/claudit/internal/agent"
+	_ "github.com/re-cinq/claudit/internal/agent/claude" // register Claude agent
 	"github.com/re-cinq/claudit/internal/cli"
+	"github.com/re-cinq/claudit/internal/config"
 	"github.com/re-cinq/claudit/internal/git"
 	"github.com/spf13/cobra"
 )
+
+var agentFlag string
 
 var initCmd = &cobra.Command{
 	Use:     "init",
@@ -22,13 +26,14 @@ var initCmd = &cobra.Command{
 
 This command:
 - Uses refs/notes/claude-conversations for note storage
-- Creates/updates .claude/settings.local.json with PostToolUse hook
+- Configures hooks for the specified coding agent (default: claude)
 - Installs git hooks for automatic note syncing
 - Configures git settings for notes visibility`,
 	RunE: runInit,
 }
 
 func init() {
+	initCmd.Flags().StringVar(&agentFlag, "agent", "claude", "Coding agent to configure (claude, gemini, opencode)")
 	rootCmd.AddCommand(initCmd)
 }
 
@@ -43,6 +48,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get repository root: %w", err)
 	}
 
+	// Resolve agent
+	ag, err := agent.Get(agent.Name(agentFlag))
+	if err != nil {
+		return fmt.Errorf("unsupported agent %q (supported: %s)", agentFlag, agent.SupportedNames())
+	}
+
 	// Configure git settings for notes visibility
 	cli.LogDebug("init: configuring git settings for notes ref %s", git.NotesRef)
 	if err := configureGitSettings(git.NotesRef); err != nil {
@@ -52,22 +63,13 @@ func runInit(cmd *cobra.Command, args []string) error {
 	fmt.Printf("✓ Configured notes ref: %s\n", git.NotesRef)
 	fmt.Println("✓ Configured git notes settings (displayRef, rewriteRef)")
 
-	// Configure Claude hooks
-	cli.LogDebug("init: configuring Claude hooks")
-	claudeDir := filepath.Join(repoRoot, ".claude")
-	settings, err := claude.ReadSettings(claudeDir)
-	if err != nil {
-		return fmt.Errorf("failed to read Claude settings: %w", err)
+	// Configure agent-specific hooks
+	cli.LogDebug("init: configuring %s hooks", ag.DisplayName())
+	if err := ag.ConfigureHooks(repoRoot); err != nil {
+		return fmt.Errorf("failed to configure %s hooks: %w", ag.DisplayName(), err)
 	}
 
-	claude.AddClauditHook(settings)
-	claude.AddSessionHooks(settings)
-
-	if err := claude.WriteSettings(claudeDir, settings); err != nil {
-		return fmt.Errorf("failed to write Claude settings: %w", err)
-	}
-
-	fmt.Println("✓ Configured Claude hooks (PostToolUse, SessionStart, SessionEnd)")
+	fmt.Printf("✓ Configured %s hooks\n", ag.DisplayName())
 
 	// Install git hooks
 	cli.LogDebug("init: installing git hooks")
@@ -90,6 +92,16 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	fmt.Println("✓ Added .claudit/ to .gitignore")
 
+	// Save agent to config
+	cfg, err := config.Read()
+	if err != nil {
+		cfg = &config.Config{}
+	}
+	cfg.Agent = string(ag.Name())
+	if err := config.Write(cfg); err != nil {
+		cli.LogDebug("init: failed to write config: %v", err)
+	}
+
 	// Check if claudit is in PATH
 	if _, err := exec.LookPath("claudit"); err != nil {
 		fmt.Println()
@@ -100,7 +112,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	fmt.Println()
 	fmt.Println("Claudit is now configured! Conversations will be stored")
-	fmt.Printf("as git notes on %s when commits are made via Claude Code.\n", git.NotesRef)
+	fmt.Printf("as git notes on %s when commits are made via %s.\n", git.NotesRef, ag.DisplayName())
 
 	return nil
 }
@@ -135,7 +147,6 @@ func ensureGitignoreEntry(repoRoot, entry string) error {
 	}
 	prefix := ""
 	if info.Size() > 0 {
-		// Read last byte to check for trailing newline
 		buf := make([]byte, 1)
 		if rf, err := os.Open(gitignorePath); err == nil {
 			if _, err := rf.Seek(-1, 2); err == nil {
@@ -155,13 +166,11 @@ func ensureGitignoreEntry(repoRoot, entry string) error {
 
 // configureGitSettings configures git settings for notes visibility
 func configureGitSettings(notesRef string) error {
-	// Configure notes.displayRef so git log shows notes
 	cmd := exec.Command("git", "config", "notes.displayRef", notesRef)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to set notes.displayRef: %w", err)
 	}
 
-	// Configure notes.rewriteRef so notes follow commits during rebase
 	cmd = exec.Command("git", "config", "notes.rewriteRef", notesRef)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to set notes.rewriteRef: %w", err)

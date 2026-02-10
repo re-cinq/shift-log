@@ -8,7 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/re-cinq/claudit/internal/claude"
+	"github.com/re-cinq/claudit/internal/agent"
+	agentclaude "github.com/re-cinq/claudit/internal/agent/claude"
 	"github.com/re-cinq/claudit/internal/git"
 	"github.com/re-cinq/claudit/internal/storage"
 )
@@ -29,7 +30,7 @@ type ConversationResponse struct {
 	SessionID        string                   `json:"session_id"`
 	Timestamp        string                   `json:"timestamp"`
 	MessageCount     int                      `json:"message_count"`
-	Transcript       []claude.TranscriptEntry `json:"transcript"`
+	Transcript       []agent.TranscriptEntry `json:"transcript"`
 	IsIncremental    bool                     `json:"is_incremental"`
 	ParentCommitSHA  string                   `json:"parent_commit_sha,omitempty"`
 	IncrementalCount int                      `json:"incremental_count,omitempty"`
@@ -196,7 +197,7 @@ func (s *Server) handleCommitDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Determine which entries to return
-	var entries []claude.TranscriptEntry
+	var entries []agent.TranscriptEntry
 	var parentSHA string
 	var isIncremental bool
 
@@ -303,15 +304,37 @@ func (s *Server) handleResume(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Restore session
-	err = claude.RestoreSession(
-		s.repoDir,
-		stored.SessionID,
-		stored.GitBranch,
-		transcriptData,
-		stored.MessageCount,
-		"Restored from web UI",
-	)
+	// Resolve agent for session restoration
+	agentName := stored.Agent
+	if agentName == "" {
+		agentName = "claude"
+	}
+	ag, agErr := agent.Get(agent.Name(agentName))
+
+	// Restore session using the agent
+	var restoreErr error
+	if agErr == nil {
+		restoreErr = ag.RestoreSession(
+			s.repoDir,
+			stored.SessionID,
+			stored.GitBranch,
+			transcriptData,
+			stored.MessageCount,
+			"Restored from web UI",
+		)
+	} else {
+		// Fallback to Claude agent directly
+		var claudeAgent agentclaude.Agent
+		restoreErr = claudeAgent.RestoreSession(
+			s.repoDir,
+			stored.SessionID,
+			stored.GitBranch,
+			transcriptData,
+			stored.MessageCount,
+			"Restored from web UI",
+		)
+	}
+	err = restoreErr
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("failed to restore session: %v", err))
 		return

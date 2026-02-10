@@ -1,13 +1,15 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/re-cinq/claudit/internal/agent"
+	_ "github.com/re-cinq/claudit/internal/agent/claude" // register Claude agent
+	"github.com/re-cinq/claudit/internal/config"
 	"github.com/re-cinq/claudit/internal/git"
 	"github.com/spf13/cobra"
 )
@@ -21,7 +23,7 @@ prevent conversations from being stored.
 
 This command checks:
 - Git repository status
-- Claude Code hook configuration
+- Coding agent hook configuration
 - Git notes.rewriteRef config (for rebase support)
 - Git hooks installation
 - PATH configuration`,
@@ -58,7 +60,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		fmt.Println("FAIL")
 		fmt.Println("  'claudit' is not in your PATH")
-		fmt.Println("  Claude Code hooks will not be able to find claudit")
+		fmt.Println("  Coding agent hooks will not be able to find claudit")
 		fmt.Println("  Install with: go install github.com/re-cinq/claudit@latest")
 		hasErrors = true
 	} else {
@@ -67,72 +69,46 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Println()
 
-	// Check 3: Claude settings file
-	fmt.Print("Checking Claude Code hook configuration... ")
+	// Resolve configured agent
+	agentName := "claude"
+	cfg, err := config.Read()
+	if err == nil && cfg.Agent != "" {
+		agentName = cfg.Agent
+	}
+	ag, agentErr := agent.Get(agent.Name(agentName))
+
+	// Check 3: Agent-specific hook configuration
 	repoRoot, _ := git.GetRepoRoot()
 	if repoRoot == "" {
-		fmt.Println("SKIP (not in git repo)")
+		fmt.Print("Checking coding agent hook configuration... SKIP (not in git repo)\n")
+	} else if agentErr != nil {
+		fmt.Printf("Checking coding agent hook configuration... FAIL\n")
+		fmt.Printf("  Unknown agent %q configured\n", agentName)
+		hasErrors = true
 	} else {
-		settingsPath := filepath.Join(repoRoot, ".claude", "settings.local.json")
-		data, err := os.ReadFile(settingsPath)
-		if err != nil {
-			fmt.Println("FAIL")
-			fmt.Println("  No .claude/settings.local.json found")
-			fmt.Println("  Run 'claudit init' to configure")
-			hasErrors = true
+		fmt.Printf("Checking %s hook configuration... ", ag.DisplayName())
+		checks := ag.DiagnoseHooks(repoRoot)
+		if len(checks) == 0 {
+			fmt.Println("OK")
 		} else {
-			// Check hook format
-			var settings map[string]interface{}
-			if err := json.Unmarshal(data, &settings); err != nil {
-				fmt.Println("FAIL")
-				fmt.Printf("  Invalid JSON in settings file: %v\n", err)
-				hasErrors = true
+			allOK := true
+			for _, check := range checks {
+				if !check.OK {
+					allOK = false
+					break
+				}
+			}
+			if allOK {
+				fmt.Println("OK")
 			} else {
-				// Check for correct nested structure
-				hooks, hasHooks := settings["hooks"].(map[string]interface{})
-				if !hasHooks {
-					fmt.Println("FAIL")
-					fmt.Println("  Missing 'hooks' key in settings")
-					fmt.Println("  Run 'claudit init' to fix")
-					hasErrors = true
+				fmt.Println("FAIL")
+				hasErrors = true
+			}
+			for _, check := range checks {
+				if check.OK {
+					fmt.Printf("  %s\n", check.Message)
 				} else {
-					postToolUse, hasPostToolUse := hooks["PostToolUse"]
-					if !hasPostToolUse {
-						fmt.Println("FAIL")
-						fmt.Println("  Missing 'hooks.PostToolUse' configuration")
-						fmt.Println("  Run 'claudit init' to fix")
-						hasErrors = true
-					} else {
-						// Check for claudit store command
-						foundClaudit := hasClauditCommand(postToolUse, "claudit store")
-						if !foundClaudit {
-							fmt.Println("FAIL")
-							fmt.Println("  'claudit store' hook not found in PostToolUse")
-							fmt.Println("  Run 'claudit init' to fix")
-							hasErrors = true
-						} else {
-							fmt.Println("OK")
-							fmt.Printf("  Found PostToolUse hook configuration\n")
-						}
-
-						// Check for SessionStart hook
-						sessionStart, hasSessionStart := hooks["SessionStart"]
-						if !hasSessionStart || !hasClauditCommand(sessionStart, "claudit session-start") {
-							fmt.Println("  WARN: Missing SessionStart hook (manual commit capture won't work)")
-							fmt.Println("        Run 'claudit init' to add")
-						} else {
-							fmt.Println("  Found SessionStart hook")
-						}
-
-						// Check for SessionEnd hook
-						sessionEnd, hasSessionEnd := hooks["SessionEnd"]
-						if !hasSessionEnd || !hasClauditCommand(sessionEnd, "claudit session-end") {
-							fmt.Println("  WARN: Missing SessionEnd hook (manual commit capture won't work)")
-							fmt.Println("        Run 'claudit init' to add")
-						} else {
-							fmt.Println("  Found SessionEnd hook")
-						}
-					}
+					fmt.Printf("  %s: %s\n", check.Name, check.Message)
 				}
 			}
 		}
@@ -202,25 +178,4 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 
 	fmt.Println("All checks passed! Claudit is properly configured.")
 	return nil
-}
-
-// hasClauditCommand checks if a hook list contains a specific claudit command
-func hasClauditCommand(hookConfig interface{}, command string) bool {
-	hookList, ok := hookConfig.([]interface{})
-	if !ok {
-		return false
-	}
-	for _, h := range hookList {
-		hookMap, _ := h.(map[string]interface{})
-		hookCmds, _ := hookMap["hooks"].([]interface{})
-		for _, hc := range hookCmds {
-			hcMap, _ := hc.(map[string]interface{})
-			if cmd, ok := hcMap["command"].(string); ok {
-				if strings.Contains(cmd, command) {
-					return true
-				}
-			}
-		}
-	}
-	return false
 }

@@ -25,7 +25,6 @@ func TestEncodeProjectPath(t *testing.T) {
 }
 
 func TestWriteAndReadSessionFile(t *testing.T) {
-	// Create temp directory as HOME
 	tempHome := t.TempDir()
 	origHome := os.Getenv("HOME")
 	os.Setenv("HOME", tempHome)
@@ -35,18 +34,15 @@ func TestWriteAndReadSessionFile(t *testing.T) {
 	sessionID := "test-session-123"
 	transcriptData := []byte(`{"uuid":"1","type":"user","message":{"content":[{"type":"text","text":"Hello"}]}}`)
 
-	// Write session file
 	sessionPath, err := WriteSessionFile(projectPath, sessionID, transcriptData)
 	if err != nil {
 		t.Fatalf("WriteSessionFile failed: %v", err)
 	}
 
-	// Verify file exists
 	if _, err := os.Stat(sessionPath); os.IsNotExist(err) {
 		t.Errorf("Session file was not created at %s", sessionPath)
 	}
 
-	// Verify content
 	content, err := os.ReadFile(sessionPath)
 	if err != nil {
 		t.Fatalf("Could not read session file: %v", err)
@@ -55,7 +51,6 @@ func TestWriteAndReadSessionFile(t *testing.T) {
 		t.Errorf("Session file content mismatch")
 	}
 
-	// Verify path structure
 	expectedPath := filepath.Join(tempHome, ".claude", "projects", "-test-project", sessionID+".jsonl")
 	if sessionPath != expectedPath {
 		t.Errorf("Session path = %q, expected %q", sessionPath, expectedPath)
@@ -63,7 +58,6 @@ func TestWriteAndReadSessionFile(t *testing.T) {
 }
 
 func TestSessionsIndex(t *testing.T) {
-	// Create temp directory as HOME
 	tempHome := t.TempDir()
 	origHome := os.Getenv("HOME")
 	os.Setenv("HOME", tempHome)
@@ -71,7 +65,6 @@ func TestSessionsIndex(t *testing.T) {
 
 	projectPath := "/test/project"
 
-	// Read non-existent index should return empty
 	index, err := ReadSessionsIndex(projectPath)
 	if err != nil {
 		t.Fatalf("ReadSessionsIndex failed: %v", err)
@@ -83,7 +76,6 @@ func TestSessionsIndex(t *testing.T) {
 		t.Errorf("Expected empty entries, got %d", len(index.Entries))
 	}
 
-	// Add an entry
 	entry := SessionEntry{
 		SessionID:    "session-1",
 		FullPath:     "/test/path.jsonl",
@@ -92,13 +84,11 @@ func TestSessionsIndex(t *testing.T) {
 	}
 	AddOrUpdateSessionEntry(index, entry)
 
-	// Write index
 	err = WriteSessionsIndex(projectPath, index)
 	if err != nil {
 		t.Fatalf("WriteSessionsIndex failed: %v", err)
 	}
 
-	// Read it back
 	index2, err := ReadSessionsIndex(projectPath)
 	if err != nil {
 		t.Fatalf("ReadSessionsIndex failed: %v", err)
@@ -110,7 +100,6 @@ func TestSessionsIndex(t *testing.T) {
 		t.Errorf("Session ID mismatch")
 	}
 
-	// Update existing entry
 	entry.MessageCount = 20
 	AddOrUpdateSessionEntry(index2, entry)
 	if len(index2.Entries) != 1 {
@@ -122,7 +111,6 @@ func TestSessionsIndex(t *testing.T) {
 }
 
 func TestRestoreSession(t *testing.T) {
-	// Create temp directory as HOME
 	tempHome := t.TempDir()
 	origHome := os.Getenv("HOME")
 	os.Setenv("HOME", tempHome)
@@ -136,19 +124,17 @@ func TestRestoreSession(t *testing.T) {
 	messageCount := 2
 	summary := "Test session"
 
-	// Restore session
-	err := RestoreSession(projectPath, sessionID, gitBranch, transcriptData, messageCount, summary)
+	ag := &Agent{}
+	err := ag.RestoreSession(projectPath, sessionID, gitBranch, transcriptData, messageCount, summary)
 	if err != nil {
 		t.Fatalf("RestoreSession failed: %v", err)
 	}
 
-	// Verify session file exists
 	sessionPath, _ := GetSessionFilePath(projectPath, sessionID)
 	if _, err := os.Stat(sessionPath); os.IsNotExist(err) {
 		t.Errorf("Session file was not created")
 	}
 
-	// Verify index was updated
 	index, err := ReadSessionsIndex(projectPath)
 	if err != nil {
 		t.Fatalf("Could not read sessions index: %v", err)
@@ -157,18 +143,18 @@ func TestRestoreSession(t *testing.T) {
 		t.Fatalf("Expected 1 entry in index, got %d", len(index.Entries))
 	}
 
-	entry := index.Entries[0]
-	if entry.SessionID != sessionID {
-		t.Errorf("Session ID mismatch: got %q, expected %q", entry.SessionID, sessionID)
+	e := index.Entries[0]
+	if e.SessionID != sessionID {
+		t.Errorf("Session ID mismatch: got %q, expected %q", e.SessionID, sessionID)
 	}
-	if entry.GitBranch != gitBranch {
+	if e.GitBranch != gitBranch {
 		t.Errorf("Git branch mismatch")
 	}
-	if entry.Summary != summary {
+	if e.Summary != summary {
 		t.Errorf("Summary mismatch")
 	}
-	if entry.FirstPrompt != "Hello world" {
-		t.Errorf("FirstPrompt mismatch: got %q", entry.FirstPrompt)
+	if e.FirstPrompt != "Hello world" {
+		t.Errorf("FirstPrompt mismatch: got %q", e.FirstPrompt)
 	}
 }
 

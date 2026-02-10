@@ -1,4 +1,4 @@
-package claude
+package agent
 
 import (
 	"encoding/json"
@@ -19,20 +19,19 @@ const (
 	colorCyan   = "\033[36m"
 )
 
-// Renderer renders transcript entries to the terminal
+// Renderer renders transcript entries to the terminal.
 type Renderer struct {
-	w        io.Writer
-	useColor bool
+	w           io.Writer
+	useColor    bool
+	toolAliases map[string]string
 }
 
-// NewRenderer creates a new terminal renderer
-func NewRenderer(w io.Writer) *Renderer {
-	// Respect NO_COLOR environment variable
+// NewRenderer creates a new terminal renderer with optional tool aliases.
+func NewRenderer(w io.Writer, toolAliases map[string]string) *Renderer {
 	useColor := os.Getenv("NO_COLOR") == ""
-	return &Renderer{w: w, useColor: useColor}
+	return &Renderer{w: w, useColor: useColor, toolAliases: toolAliases}
 }
 
-// color returns the ANSI code if colors are enabled, empty string otherwise
 func (r *Renderer) color(code string) string {
 	if r.useColor {
 		return code
@@ -40,12 +39,12 @@ func (r *Renderer) color(code string) string {
 	return ""
 }
 
-// RenderTranscript renders the full transcript to the writer
+// RenderTranscript renders the full transcript to the writer.
 func (r *Renderer) RenderTranscript(t *Transcript) error {
 	return r.RenderEntries(t.Entries)
 }
 
-// RenderEntries renders a slice of transcript entries to the writer
+// RenderEntries renders a slice of transcript entries to the writer.
 func (r *Renderer) RenderEntries(entries []TranscriptEntry) error {
 	hadPrevious := false
 	for _, entry := range entries {
@@ -62,13 +61,11 @@ func (r *Renderer) RenderEntries(entries []TranscriptEntry) error {
 	return nil
 }
 
-// shouldRender returns true if the entry type should be rendered
 func (r *Renderer) shouldRender(entry *TranscriptEntry) bool {
 	_, ok := messageStyles[entry.Type]
 	return ok
 }
 
-// messageStyles maps message types to their display label and color.
 var messageStyles = map[MessageType]struct {
 	label string
 	color string
@@ -78,7 +75,7 @@ var messageStyles = map[MessageType]struct {
 	MessageTypeSystem:    {"System", colorYellow},
 }
 
-// RenderEntry renders a single transcript entry
+// RenderEntry renders a single transcript entry.
 func (r *Renderer) RenderEntry(entry *TranscriptEntry) {
 	style, ok := messageStyles[entry.Type]
 	if !ok {
@@ -111,7 +108,6 @@ func (r *Renderer) renderText(text string) {
 	if text == "" {
 		return
 	}
-	// Indent the text for readability
 	lines := strings.Split(text, "\n")
 	for _, line := range lines {
 		_, _ = fmt.Fprintf(r.w, "  %s\n", line)
@@ -124,7 +120,6 @@ func (r *Renderer) renderThinking(thinking string) {
 	}
 	_, _ = fmt.Fprintf(r.w, "  %s[thinking]%s\n", r.color(colorDim), r.color(colorReset))
 	lines := strings.Split(thinking, "\n")
-	// Show just a summary - first few lines
 	maxLines := 3
 	for i, line := range lines {
 		if i >= maxLines {
@@ -135,20 +130,33 @@ func (r *Renderer) renderThinking(thinking string) {
 	}
 }
 
+// resolveToolName maps an agent-specific tool name to its canonical display name.
+func (r *Renderer) resolveToolName(name string) string {
+	if r.toolAliases != nil {
+		if alias, ok := r.toolAliases[name]; ok {
+			return alias
+		}
+	}
+	return name
+}
+
 func (r *Renderer) renderToolUse(block ContentBlock) {
-	_, _ = fmt.Fprintf(r.w, "  %s[tool: %s]%s\n", r.color(colorCyan), block.Name, r.color(colorReset))
+	displayName := r.resolveToolName(block.Name)
+	_, _ = fmt.Fprintf(r.w, "  %s[tool: %s]%s\n", r.color(colorCyan), displayName, r.color(colorReset))
 
 	if len(block.Input) == 0 {
 		return
 	}
 
-	// Parse input based on tool type
 	var input map[string]interface{}
 	if err := json.Unmarshal(block.Input, &input); err != nil {
 		return
 	}
 
-	switch block.Name {
+	// Resolve tool name for rendering rules
+	canonicalName := displayName
+
+	switch canonicalName {
 	case "Bash":
 		if cmd, ok := input["command"].(string); ok {
 			r.renderToolInput("command", cmd)
@@ -186,7 +194,6 @@ func (r *Renderer) renderToolUse(block ContentBlock) {
 			r.renderToolInput("pattern", pattern)
 		}
 	default:
-		// For unknown tools, show all string inputs
 		for k, v := range input {
 			if s, ok := v.(string); ok && s != "" {
 				r.renderToolInput(k, s)
@@ -198,14 +205,12 @@ func (r *Renderer) renderToolUse(block ContentBlock) {
 func (r *Renderer) renderToolInput(label, value string) {
 	lines := strings.Split(value, "\n")
 	if len(lines) == 1 {
-		// Single line - show inline, truncate if long
 		display := value
 		if len(display) > 100 {
 			display = display[:100] + "..."
 		}
 		_, _ = fmt.Fprintf(r.w, "  %s%s: %s%s\n", r.color(colorDim), label, display, r.color(colorReset))
 	} else {
-		// Multi-line - show indented block
 		_, _ = fmt.Fprintf(r.w, "  %s%s:%s\n", r.color(colorDim), label, r.color(colorReset))
 		maxLines := 10
 		for i, line := range lines {
@@ -225,14 +230,12 @@ func (r *Renderer) renderToolResult(block ContentBlock) {
 		return
 	}
 
-	// Try to unmarshal as a string first (most common case)
 	var content string
 	if err := json.Unmarshal(block.Content, &content); err == nil {
 		r.renderToolResultContent(content)
 		return
 	}
 
-	// Try as array of content blocks (for complex results)
 	var blocks []ContentBlock
 	if err := json.Unmarshal(block.Content, &blocks); err == nil {
 		for _, b := range blocks {
@@ -243,7 +246,6 @@ func (r *Renderer) renderToolResult(block ContentBlock) {
 		return
 	}
 
-	// Fallback: show raw content (truncated)
 	raw := string(block.Content)
 	if len(raw) > 200 {
 		raw = raw[:200] + "..."

@@ -7,7 +7,8 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/re-cinq/claudit/internal/claude"
+	"github.com/re-cinq/claudit/internal/agent"
+	_ "github.com/re-cinq/claudit/internal/agent/claude" // register Claude agent
 	"github.com/re-cinq/claudit/internal/cli"
 	"github.com/re-cinq/claudit/internal/git"
 	"github.com/re-cinq/claudit/internal/storage"
@@ -20,10 +21,10 @@ var (
 
 var resumeCmd = &cobra.Command{
 	Use:     "resume <commit>",
-	Short:   "Resume a Claude session from a commit",
+	Short:   "Resume a coding agent session from a commit",
 	GroupID: "human",
-	Long: `Restores a Claude Code session from a commit with a stored conversation,
-checks out the commit, and launches Claude Code with the restored session.
+	Long: `Restores a coding agent session from a commit with a stored conversation,
+checks out the commit, and launches the coding agent with the restored session.
 
 Accepts various git references:
   - Full or short SHA: abc123def456
@@ -72,6 +73,16 @@ func runResume(cmd *cobra.Command, args []string) error {
 
 	cli.LogDebug("resume: session=%s branch=%s messages=%d", stored.SessionID, stored.GitBranch, stored.MessageCount)
 
+	// Resolve agent from stored conversation
+	agentName := stored.Agent
+	if agentName == "" {
+		agentName = "claude"
+	}
+	ag, err := agent.Get(agent.Name(agentName))
+	if err != nil {
+		return fmt.Errorf("unsupported agent %q in stored conversation", agentName)
+	}
+
 	// Verify integrity
 	valid, err := stored.VerifyIntegrity()
 	if err != nil {
@@ -111,8 +122,8 @@ func runResume(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("could not determine project path: %w", err)
 	}
 
-	// Restore the session files
-	err = claude.RestoreSession(
+	// Restore the session files using the agent
+	err = ag.RestoreSession(
 		projectPath,
 		stored.SessionID,
 		stored.GitBranch,
@@ -133,13 +144,14 @@ func runResume(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("checked out %s\n", commitSHA[:8])
 
-	// Launch Claude with the session
-	fmt.Printf("launching claude --resume %s\n", stored.SessionID)
+	// Launch the coding agent with the session
+	binary, cmdArgs := ag.ResumeCommand(stored.SessionID)
+	fmt.Printf("launching %s %s\n", binary, strings.Join(cmdArgs, " "))
 
-	claudeCmd := exec.Command("claude", "--resume", stored.SessionID)
-	claudeCmd.Stdin = os.Stdin
-	claudeCmd.Stdout = os.Stdout
-	claudeCmd.Stderr = os.Stderr
+	agentCmd := exec.Command(binary, cmdArgs...)
+	agentCmd.Stdin = os.Stdin
+	agentCmd.Stdout = os.Stdout
+	agentCmd.Stderr = os.Stderr
 
-	return claudeCmd.Run()
+	return agentCmd.Run()
 }

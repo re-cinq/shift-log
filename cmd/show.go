@@ -5,7 +5,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/re-cinq/claudit/internal/claude"
+	"github.com/re-cinq/claudit/internal/agent"
+	_ "github.com/re-cinq/claudit/internal/agent/claude" // register Claude agent
 	"github.com/re-cinq/claudit/internal/git"
 	"github.com/re-cinq/claudit/internal/storage"
 	"github.com/spf13/cobra"
@@ -17,7 +18,7 @@ var showCmd = &cobra.Command{
 	Use:     "show [ref]",
 	Short:   "Show conversation history for a commit",
 	GroupID: "human",
-	Long: `Displays the Claude Code conversation history stored for a commit.
+	Long: `Displays the conversation history stored for a commit.
 
 By default, shows only the conversation since the last commit (incremental view).
 Use --full to see the complete session history.
@@ -65,6 +66,16 @@ func runShow(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("no conversation found for commit %s", fullSHA[:7])
 	}
 
+	// Resolve agent for tool aliases
+	agentName := stored.Agent
+	if agentName == "" {
+		agentName = "claude"
+	}
+	var toolAliases map[string]string
+	if ag, err := agent.Get(agent.Name(agentName)); err == nil {
+		toolAliases = ag.ToolAliases()
+	}
+
 	// Parse the transcript
 	transcript, err := stored.ParseTranscript()
 	if err != nil {
@@ -82,7 +93,7 @@ func runShow(cmd *cobra.Command, args []string) error {
 	}
 
 	// Get entries to display
-	var entries []claude.TranscriptEntry
+	var entries []agent.TranscriptEntry
 	if isIncremental {
 		entries = transcript.GetEntriesSince(lastEntryUUID)
 	} else {
@@ -104,6 +115,6 @@ func runShow(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 
 	// Render the entries
-	renderer := claude.NewRenderer(os.Stdout)
+	renderer := agent.NewRenderer(os.Stdout, toolAliases)
 	return renderer.RenderEntries(entries)
 }

@@ -1,4 +1,4 @@
-package claude
+package agent
 
 import (
 	"bytes"
@@ -10,7 +10,7 @@ import (
 
 func TestRendererUserMessage(t *testing.T) {
 	var buf bytes.Buffer
-	r := NewRenderer(&buf)
+	r := NewRenderer(&buf, nil)
 
 	entry := &TranscriptEntry{
 		Type: MessageTypeUser,
@@ -35,7 +35,7 @@ func TestRendererUserMessage(t *testing.T) {
 
 func TestRendererAssistantMessage(t *testing.T) {
 	var buf bytes.Buffer
-	r := NewRenderer(&buf)
+	r := NewRenderer(&buf, nil)
 
 	entry := &TranscriptEntry{
 		Type: MessageTypeAssistant,
@@ -60,7 +60,7 @@ func TestRendererAssistantMessage(t *testing.T) {
 
 func TestRendererSystemMessage(t *testing.T) {
 	var buf bytes.Buffer
-	r := NewRenderer(&buf)
+	r := NewRenderer(&buf, nil)
 
 	entry := &TranscriptEntry{
 		Type: MessageTypeSystem,
@@ -81,7 +81,7 @@ func TestRendererSystemMessage(t *testing.T) {
 
 func TestRendererToolUse(t *testing.T) {
 	var buf bytes.Buffer
-	r := NewRenderer(&buf)
+	r := NewRenderer(&buf, nil)
 
 	entry := &TranscriptEntry{
 		Type: MessageTypeAssistant,
@@ -102,13 +102,12 @@ func TestRendererToolUse(t *testing.T) {
 }
 
 func TestRendererNoColor(t *testing.T) {
-	// Set NO_COLOR environment variable
 	origNoColor := os.Getenv("NO_COLOR")
 	os.Setenv("NO_COLOR", "1")
 	defer os.Setenv("NO_COLOR", origNoColor)
 
 	var buf bytes.Buffer
-	r := NewRenderer(&buf)
+	r := NewRenderer(&buf, nil)
 
 	entry := &TranscriptEntry{
 		Type: MessageTypeUser,
@@ -122,7 +121,6 @@ func TestRendererNoColor(t *testing.T) {
 	r.RenderEntry(entry)
 	output := buf.String()
 
-	// Should not contain ANSI escape codes
 	if strings.Contains(output, "\033[") {
 		t.Errorf("Output should not contain ANSI codes when NO_COLOR is set, got: %s", output)
 	}
@@ -130,7 +128,7 @@ func TestRendererNoColor(t *testing.T) {
 
 func TestRendererTranscript(t *testing.T) {
 	var buf bytes.Buffer
-	r := NewRenderer(&buf)
+	r := NewRenderer(&buf, nil)
 
 	transcript := &Transcript{
 		Entries: []TranscriptEntry{
@@ -171,7 +169,7 @@ func TestRendererTranscript(t *testing.T) {
 
 func TestRendererToolUseWithBashInput(t *testing.T) {
 	var buf bytes.Buffer
-	r := NewRenderer(&buf)
+	r := NewRenderer(&buf, nil)
 
 	input, _ := json.Marshal(map[string]string{
 		"command":     "ls -la",
@@ -201,7 +199,7 @@ func TestRendererToolUseWithBashInput(t *testing.T) {
 
 func TestRendererToolUseWithWriteInput(t *testing.T) {
 	var buf bytes.Buffer
-	r := NewRenderer(&buf)
+	r := NewRenderer(&buf, nil)
 
 	input, _ := json.Marshal(map[string]string{
 		"file_path": "/path/to/file.txt",
@@ -234,7 +232,7 @@ func TestRendererToolUseWithWriteInput(t *testing.T) {
 
 func TestRendererToolUseMultilineCommand(t *testing.T) {
 	var buf bytes.Buffer
-	r := NewRenderer(&buf)
+	r := NewRenderer(&buf, nil)
 
 	input, _ := json.Marshal(map[string]string{
 		"command": "git add file.txt && git commit -m \"$(cat <<'EOF'\nAdd file\n\nCo-Authored-By: Claude\nEOF\n)\"",
@@ -259,7 +257,6 @@ func TestRendererToolUseMultilineCommand(t *testing.T) {
 	if !strings.Contains(output, "git add file.txt") {
 		t.Errorf("Output should contain git command, got: %s", output)
 	}
-	// Multi-line should be indented
 	if !strings.Contains(output, "    ") {
 		t.Errorf("Multi-line content should be indented, got: %s", output)
 	}
@@ -267,7 +264,7 @@ func TestRendererToolUseMultilineCommand(t *testing.T) {
 
 func TestRendererToolResultWithContent(t *testing.T) {
 	var buf bytes.Buffer
-	r := NewRenderer(&buf)
+	r := NewRenderer(&buf, nil)
 
 	content, _ := json.Marshal("total 0\ndrwxr-xr-x 5 user staff 160 Jan 1 10:00 .")
 
@@ -297,7 +294,7 @@ func TestRendererToolResultWithContent(t *testing.T) {
 
 func TestRendererToolResultFileCreation(t *testing.T) {
 	var buf bytes.Buffer
-	r := NewRenderer(&buf)
+	r := NewRenderer(&buf, nil)
 
 	content, _ := json.Marshal("File created successfully at: /path/to/file.txt")
 
@@ -321,7 +318,7 @@ func TestRendererToolResultFileCreation(t *testing.T) {
 
 func TestRendererSkipsProgressEntries(t *testing.T) {
 	var buf bytes.Buffer
-	r := NewRenderer(&buf)
+	r := NewRenderer(&buf, nil)
 
 	transcript := &Transcript{
 		Entries: []TranscriptEntry{
@@ -332,10 +329,10 @@ func TestRendererSkipsProgressEntries(t *testing.T) {
 				},
 			},
 			{
-				Type: "progress", // Should be skipped
+				Type: "progress",
 			},
 			{
-				Type: "file-history-snapshot", // Should be skipped
+				Type: "file-history-snapshot",
 			},
 			{
 				Type: MessageTypeAssistant,
@@ -349,15 +346,45 @@ func TestRendererSkipsProgressEntries(t *testing.T) {
 	r.RenderTranscript(transcript)
 
 	output := buf.String()
-	// Should have content from user and assistant
 	if !strings.Contains(output, "Hello") {
 		t.Errorf("Output should contain user message")
 	}
 	if !strings.Contains(output, "Hi!") {
 		t.Errorf("Output should contain assistant message")
 	}
-	// Should not have excessive blank lines from skipped entries
 	if strings.Contains(output, "\n\n\n\n") {
 		t.Errorf("Output should not have excessive blank lines from skipped entries")
+	}
+}
+
+func TestRendererToolAliases(t *testing.T) {
+	var buf bytes.Buffer
+	aliases := map[string]string{
+		"shell_exec": "Bash",
+	}
+	r := NewRenderer(&buf, aliases)
+
+	input, _ := json.Marshal(map[string]string{
+		"command": "ls -la",
+	})
+
+	entry := &TranscriptEntry{
+		Type: MessageTypeAssistant,
+		Message: &Message{
+			Role: "assistant",
+			Content: []ContentBlock{
+				{Type: "tool_use", Name: "shell_exec", Input: input},
+			},
+		},
+	}
+
+	r.RenderEntry(entry)
+
+	output := buf.String()
+	if !strings.Contains(output, "[tool: Bash]") {
+		t.Errorf("Output should resolve tool alias to 'Bash', got: %s", output)
+	}
+	if !strings.Contains(output, "command: ls -la") {
+		t.Errorf("Output should render Bash tool input after alias resolution, got: %s", output)
 	}
 }

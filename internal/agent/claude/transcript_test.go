@@ -30,9 +30,9 @@ func TestGetLastEntryUUID(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			transcript, err := ParseTranscript(strings.NewReader(tc.jsonl))
+			transcript, err := ParseJSONLTranscript(strings.NewReader(tc.jsonl))
 			if err != nil {
-				t.Fatalf("ParseTranscript failed: %v", err)
+				t.Fatalf("ParseJSONLTranscript failed: %v", err)
 			}
 			result := transcript.GetLastEntryUUID()
 			if result != tc.expected {
@@ -44,9 +44,9 @@ func TestGetLastEntryUUID(t *testing.T) {
 
 func TestFindEntryIndex(t *testing.T) {
 	jsonl := `{"uuid":"first","type":"user"}` + "\n" + `{"uuid":"second","type":"assistant"}` + "\n" + `{"uuid":"third","type":"user"}`
-	transcript, err := ParseTranscript(strings.NewReader(jsonl))
+	transcript, err := ParseJSONLTranscript(strings.NewReader(jsonl))
 	if err != nil {
-		t.Fatalf("ParseTranscript failed: %v", err)
+		t.Fatalf("ParseJSONLTranscript failed: %v", err)
 	}
 
 	tests := []struct {
@@ -72,9 +72,9 @@ func TestFindEntryIndex(t *testing.T) {
 
 func TestGetEntriesSince(t *testing.T) {
 	jsonl := `{"uuid":"first","type":"user"}` + "\n" + `{"uuid":"second","type":"assistant"}` + "\n" + `{"uuid":"third","type":"user"}` + "\n" + `{"uuid":"fourth","type":"assistant"}`
-	transcript, err := ParseTranscript(strings.NewReader(jsonl))
+	transcript, err := ParseJSONLTranscript(strings.NewReader(jsonl))
 	if err != nil {
-		t.Fatalf("ParseTranscript failed: %v", err)
+		t.Fatalf("ParseJSONLTranscript failed: %v", err)
 	}
 
 	tests := []struct {
@@ -128,9 +128,9 @@ func TestGetEntriesSince(t *testing.T) {
 }
 
 func TestGetEntriesSinceWithEmptyTranscript(t *testing.T) {
-	transcript, err := ParseTranscript(strings.NewReader(""))
+	transcript, err := ParseJSONLTranscript(strings.NewReader(""))
 	if err != nil {
-		t.Fatalf("ParseTranscript failed: %v", err)
+		t.Fatalf("ParseJSONLTranscript failed: %v", err)
 	}
 
 	entries := transcript.GetEntriesSince("")

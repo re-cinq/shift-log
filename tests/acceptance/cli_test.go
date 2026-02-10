@@ -59,7 +59,7 @@ var _ = Describe("Init Command", func() {
 		It("creates .claude/settings.local.json", func() {
 			stdout, _, err := testutil.RunClauditInDir(repo.Path, "init")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(stdout).To(ContainSubstring("Configured Claude hooks"))
+			Expect(stdout).To(ContainSubstring("Configured Claude Code hooks"))
 
 			Expect(repo.FileExists(".claude/settings.local.json")).To(BeTrue())
 		})

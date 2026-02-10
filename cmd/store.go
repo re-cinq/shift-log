@@ -2,37 +2,33 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
-	"github.com/re-cinq/claudit/internal/claude"
+	"github.com/re-cinq/claudit/internal/agent"
+	_ "github.com/re-cinq/claudit/internal/agent/claude" // register Claude agent
 	"github.com/re-cinq/claudit/internal/cli"
+	"github.com/re-cinq/claudit/internal/config"
 	"github.com/re-cinq/claudit/internal/git"
 	"github.com/re-cinq/claudit/internal/session"
 	"github.com/re-cinq/claudit/internal/storage"
 	"github.com/spf13/cobra"
 )
 
-// PostToolUseHookInput represents the JSON payload sent by Claude Code's PostToolUse hook
-type PostToolUseHookInput struct {
-	SessionID      string `json:"session_id"`
-	TranscriptPath string `json:"transcript_path"`
-	ToolName       string `json:"tool_name"`
-	ToolInput      struct {
-		Command string `json:"command"`
-	} `json:"tool_input"`
-}
-
-var manualFlag bool
+var (
+	manualFlag     bool
+	storeAgentFlag string
+)
 
 var storeCmd = &cobra.Command{
 	Use:     "store",
-	Short:   "Store conversation from Claude Code hook",
+	Short:   "Store conversation from coding agent hook",
 	GroupID: "hooks",
-	Long: `Reads PostToolUse hook JSON from stdin and stores the conversation
+	Long: `Reads hook JSON from stdin and stores the conversation
 as a Git Note if a git commit was detected.
 
-This command is designed to be called by Claude Code's PostToolUse hook.
+This command is designed to be called by a coding agent's hook system.
 
 With --manual flag, discovers the active session and stores its conversation
 for the most recent commit. Used by the post-commit git hook.`,
@@ -41,7 +37,22 @@ for the most recent commit. Used by the post-commit git hook.`,
 
 func init() {
 	storeCmd.Flags().BoolVar(&manualFlag, "manual", false, "Manual mode: discover session from active session file or recent sessions")
+	storeCmd.Flags().StringVar(&storeAgentFlag, "agent", "", "Coding agent (claude, gemini, opencode). Defaults to configured agent.")
 	rootCmd.AddCommand(storeCmd)
+}
+
+// resolveAgent resolves the agent from the --agent flag or config.
+func resolveAgent(flagValue string) (agent.Agent, error) {
+	name := flagValue
+	if name == "" {
+		cfg, err := config.Read()
+		if err == nil && cfg.Agent != "" {
+			name = cfg.Agent
+		} else {
+			name = "claude"
+		}
+	}
+	return agent.Get(agent.Name(name))
 }
 
 func runStore(cmd *cobra.Command, args []string) error {
@@ -51,21 +62,35 @@ func runStore(cmd *cobra.Command, args []string) error {
 	return runHookStore()
 }
 
-// runHookStore handles the PostToolUse hook mode
+// runHookStore handles the hook mode.
 func runHookStore() error {
 	cli.LogDebug("store: reading hook input from stdin")
-	var hook PostToolUseHookInput
-	if err := cli.ReadHookInput(&hook); err != nil {
-		cli.LogDebug("store: failed to read hook input: %v", err)
-		return nil // Exit silently to not disrupt workflow
+
+	ag, err := resolveAgent(storeAgentFlag)
+	if err != nil {
+		cli.LogDebug("store: unknown agent: %v", err)
+		return nil
 	}
 
-	cli.LogDebug("store: tool=%s command=%q session=%s", hook.ToolName, hook.ToolInput.Command, hook.SessionID)
+	// Read raw stdin
+	raw, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		cli.LogDebug("store: failed to read stdin: %v", err)
+		return nil
+	}
+
+	hookData, err := ag.ParseHookInput(raw)
+	if err != nil {
+		cli.LogWarning("failed to parse hook JSON: %v", err)
+		return nil
+	}
+
+	cli.LogDebug("store: tool=%s command=%q session=%s", hookData.ToolName, hookData.Command, hookData.SessionID)
 
 	// Check if this is a git commit command
-	if hook.ToolName != "Bash" || !isGitCommitCommand(hook.ToolInput.Command) {
+	if !ag.IsCommitCommand(hookData.ToolName, hookData.Command) {
 		cli.LogDebug("store: not a git commit command, skipping")
-		return nil // Exit silently for non-commit commands
+		return nil
 	}
 
 	// Verify we're in a git repository
@@ -74,43 +99,44 @@ func runHookStore() error {
 		return nil
 	}
 
-	return storeConversation(hook.SessionID, hook.TranscriptPath)
+	return storeConversation(ag, hookData.SessionID, hookData.TranscriptPath)
 }
 
-// runManualStore handles the manual (post-commit hook) mode
+// runManualStore handles the manual (post-commit hook) mode.
 func runManualStore() error {
 	cli.LogDebug("store: manual mode")
 
-	// Verify we're in a git repository
 	if !git.IsInsideWorkTree() {
 		cli.LogDebug("store: not inside a git repository, skipping")
-		return nil // Exit silently - not in a git repo
+		return nil
 	}
 
-	// Get project path
 	projectPath, err := git.GetRepoRoot()
 	if err != nil {
 		cli.LogDebug("store: failed to get repo root: %v", err)
-		return nil // Exit silently
+		return nil
 	}
 
 	cli.LogDebug("store: discovering active session in %s", projectPath)
 
-	// Discover active session
 	activeSession, err := session.DiscoverSession(projectPath)
 	if err != nil || activeSession == nil {
 		cli.LogDebug("store: no active session found (err=%v)", err)
-		// No session found - exit silently (don't disrupt git workflow)
+		return nil
+	}
+
+	ag, err := resolveAgent(storeAgentFlag)
+	if err != nil {
+		cli.LogDebug("store: unknown agent: %v", err)
 		return nil
 	}
 
 	cli.LogDebug("store: found session %s", activeSession.SessionID)
-	return storeConversation(activeSession.SessionID, activeSession.TranscriptPath)
+	return storeConversation(ag, activeSession.SessionID, activeSession.TranscriptPath)
 }
 
-// storeConversation stores a conversation for the HEAD commit with duplicate detection
-func storeConversation(sessionID, transcriptPath string) error {
-	// Get HEAD commit
+// storeConversation stores a conversation for the HEAD commit with duplicate detection.
+func storeConversation(ag agent.Agent, sessionID, transcriptPath string) error {
 	headCommit, err := git.GetHeadCommit()
 	if err != nil {
 		return fmt.Errorf("failed to get HEAD commit: %w", err)
@@ -125,16 +151,13 @@ func storeConversation(sessionID, transcriptPath string) error {
 		if err == nil {
 			existing, err := storage.UnmarshalStoredConversation(existingNote)
 			if err == nil && existing.SessionID == sessionID {
-				// Same session - already stored (idempotent)
 				cli.LogInfo("conversation already stored for commit %s", headCommit[:8])
 				return nil
 			}
 			cli.LogDebug("store: different session, will overwrite existing note")
-			// Different session - will overwrite
 		}
 	}
 
-	// Read and parse transcript
 	if transcriptPath == "" {
 		return fmt.Errorf("no transcript path provided")
 	}
@@ -148,18 +171,16 @@ func storeConversation(sessionID, transcriptPath string) error {
 
 	cli.LogDebug("store: transcript size is %d bytes", len(transcriptData))
 
-	transcript, err := claude.ParseTranscript(strings.NewReader(string(transcriptData)))
+	transcript, err := ag.ParseTranscript(strings.NewReader(string(transcriptData)))
 	if err != nil {
 		return fmt.Errorf("failed to parse transcript: %w", err)
 	}
 
-	// Get git context
 	projectPath, _ := git.GetRepoRoot()
 	branch, _ := git.GetCurrentBranch()
 
 	cli.LogDebug("store: project=%s branch=%s messages=%d", projectPath, branch, transcript.MessageCount())
 
-	// Create stored conversation
 	stored, err := storage.NewStoredConversation(
 		sessionID,
 		projectPath,
@@ -171,7 +192,8 @@ func storeConversation(sessionID, transcriptPath string) error {
 		return fmt.Errorf("failed to create stored conversation: %w", err)
 	}
 
-	// Marshal and store as git note
+	stored.Agent = string(ag.Name())
+
 	noteContent, err := stored.Marshal()
 	if err != nil {
 		return fmt.Errorf("failed to marshal conversation: %w", err)
@@ -185,12 +207,4 @@ func storeConversation(sessionID, transcriptPath string) error {
 
 	cli.LogInfo("stored conversation for commit %s", headCommit[:8])
 	return nil
-}
-
-// isGitCommitCommand checks if a command is a git commit
-func isGitCommitCommand(command string) bool {
-	// Simple heuristic: check if command contains "git commit"
-	// This handles: git commit, git commit -m, git commit -am, etc.
-	return strings.Contains(command, "git commit") ||
-		strings.Contains(command, "git-commit")
 }
