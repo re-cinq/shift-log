@@ -87,6 +87,10 @@ claudit sync push   # Now succeeds
 
 In the rare case where two developers annotate the exact same commit SHA, both notes are preserved by concatenation — no data is lost.
 
+## Git Worktrees
+
+Claudit is worktree-safe. If you use `git worktree` to work on multiple branches simultaneously, each worktree sees only the conversations for commits on its own branch. Hooks are shared across worktrees (as git requires), but `claudit list` and `claudit show` are scoped to the current HEAD.
+
 ## Local Rebase
 
 Conversation notes automatically follow commits when you rebase. During `claudit init`, the `notes.rewriteRef` git config is set to `refs/notes/claude-conversations`, which tells git to remap notes to the new commit SHAs during rebase. No manual steps are needed.

@@ -68,8 +68,8 @@ func ListCommitsWithNotes() ([]string, error) {
 	}
 
 	// Use git rev-list to sort commits in reverse chronological order
-	// --all ensures we see all branches, --topo-order maintains parent-child relationships
-	cmd = exec.Command("git", "rev-list", "--all", "--topo-order")
+	// HEAD scopes to the current branch, --topo-order maintains parent-child relationships
+	cmd = exec.Command("git", "rev-list", "HEAD", "--topo-order")
 	output, err = cmd.Output()
 	if err != nil {
 		return nil, err
