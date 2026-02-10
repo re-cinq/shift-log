@@ -29,15 +29,15 @@ claudit resume HEAD~3    # By git ref
 
 **View in your browser:**
 
-````bash
+```bash
 claudit serve
-```Han
+```
 
 **Pull down conversations from a repo you cloned:**
 
 ```bash
 claudit sync pull
-````
+```
 
 ## Why?
 
