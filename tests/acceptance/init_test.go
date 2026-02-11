@@ -34,12 +34,30 @@ var _ = Describe("Init Command", func() {
 				}
 			})
 
-			It("creates settings file at correct path", func() {
-				_, _, err := testutil.RunClauditInDir(repo.Path, config.InitArgs...)
-				Expect(err).NotTo(HaveOccurred())
+			if config.IsHookless {
+				It("creates no agent-specific config files", func() {
+					_, _, err := testutil.RunClauditInDir(repo.Path, config.InitArgs...)
+					Expect(err).NotTo(HaveOccurred())
 
-				Expect(repo.FileExists(config.SettingsFile)).To(BeTrue())
-			})
+					// Verify .claudit/config exists with correct agent
+					Expect(repo.FileExists(".claudit/config")).To(BeTrue())
+					content, err := repo.ReadFile(".claudit/config")
+					Expect(err).NotTo(HaveOccurred())
+
+					var cfg map[string]interface{}
+					Expect(json.Unmarshal([]byte(content), &cfg)).To(Succeed())
+					Expect(cfg["agent"]).To(Equal("codex"))
+				})
+			}
+
+			if !config.IsHookless {
+				It("creates settings file at correct path", func() {
+					_, _, err := testutil.RunClauditInDir(repo.Path, config.InitArgs...)
+					Expect(err).NotTo(HaveOccurred())
+
+					Expect(repo.FileExists(config.SettingsFile)).To(BeTrue())
+				})
+			}
 
 			if config.IsPluginBased {
 				It("creates plugin with correct store command and commit detection", func() {
@@ -82,7 +100,7 @@ var _ = Describe("Init Command", func() {
 					Expect(err).NotTo(HaveOccurred())
 					Expect(string(content)).To(Equal("// other plugin"))
 				})
-			} else {
+			} else if !config.IsHookless {
 				It("configures correct hook with right matcher/timeout/command", func() {
 					_, _, err := testutil.RunClauditInDir(repo.Path, config.InitArgs...)
 					Expect(err).NotTo(HaveOccurred())

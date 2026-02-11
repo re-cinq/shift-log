@@ -30,6 +30,7 @@ type AgentTestConfig struct {
 	HasSessionHooks bool    // Gemini has SessionStart/SessionEnd
 	SessionTimeout  float64 // 5000 for Gemini
 	IsPluginBased   bool    // true for agents that use a plugin file instead of JSON settings
+	IsHookless      bool    // true for agents that have no hook/plugin config (e.g. Codex)
 
 	// Resume / session verification
 	SessionFileExt         string                                                   // ".jsonl" or ".json"
@@ -136,9 +137,39 @@ func OpenCodeTestConfig() AgentTestConfig {
 	}
 }
 
+// CodexTestConfig returns the test configuration for Codex agent.
+func CodexTestConfig() AgentTestConfig {
+	return AgentTestConfig{
+		Name:      "Codex",
+		InitArgs:  []string{"init", "--agent=codex"},
+		StoreArgs: []string{"store", "--agent=codex"},
+
+		SampleTranscript:   SampleCodexTranscript,
+		SampleHookInput:    SampleCodexHookInput,
+		SampleNonToolInput: SampleCodexHookInputNonShell,
+
+		SettingsFile:    "",    // no settings file — hookless agent
+		HookKey:         "",    // no hook key
+		ToolMatcher:     "",    // no tool matcher
+		StoreCommand:    "claudit store --agent=codex",
+		Timeout:         0,
+		HasSessionHooks: false,
+		IsPluginBased:   false,
+		IsHookless:      true,
+
+		SessionFileExt:         ".jsonl",
+		TranscriptFileExt:      ".jsonl",
+		GetSessionDir:          codexSessionDir,
+		NeedsBinaryPath:        true,
+		HasSessionsIndex:       false,
+		ReadRestoredTranscript: codexReadRestoredTranscript,
+		PrepareTranscript:      codexPrepareTranscript,
+	}
+}
+
 // AllAgentConfigs returns test configs for all agents.
 func AllAgentConfigs() []AgentTestConfig {
-	return []AgentTestConfig{ClaudeTestConfig(), GeminiTestConfig(), OpenCodeTestConfig()}
+	return []AgentTestConfig{ClaudeTestConfig(), GeminiTestConfig(), OpenCodeTestConfig(), CodexTestConfig()}
 }
 
 // claudeSessionDir computes the Claude projects session directory path.

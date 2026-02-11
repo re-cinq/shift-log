@@ -9,6 +9,7 @@ import (
 
 	"github.com/re-cinq/claudit/internal/agent"
 	_ "github.com/re-cinq/claudit/internal/agent/claude"   // register Claude agent
+	_ "github.com/re-cinq/claudit/internal/agent/codex"    // register Codex agent
 	_ "github.com/re-cinq/claudit/internal/agent/gemini"   // register Gemini agent
 	_ "github.com/re-cinq/claudit/internal/agent/opencode" // register OpenCode agent
 	"github.com/re-cinq/claudit/internal/cli"

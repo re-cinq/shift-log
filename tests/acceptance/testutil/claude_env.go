@@ -81,8 +81,13 @@ func (e *AgentEnv) WriteSessionFile(projectPath, sessionID string, content []byt
 	return sessionPath, nil
 }
 
-// SessionFileExists checks if a session file exists
+// SessionFileExists checks if a session file exists.
+// For agents with custom ReadRestoredTranscript, it uses that to check existence.
 func (e *AgentEnv) SessionFileExists(projectPath, sessionID string) bool {
+	if e.Config.ReadRestoredTranscript != nil {
+		_, err := e.Config.ReadRestoredTranscript(e.TempHome, projectPath, sessionID)
+		return err == nil
+	}
 	sessionPath := filepath.Join(e.GetProjectDir(projectPath), sessionID+e.Config.SessionFileExt)
 	_, err := os.Stat(sessionPath)
 	return err == nil

@@ -10,6 +10,7 @@ import (
 
 	"github.com/re-cinq/claudit/internal/agent"
 	_ "github.com/re-cinq/claudit/internal/agent/claude"   // register Claude agent
+	_ "github.com/re-cinq/claudit/internal/agent/codex"    // register Codex agent
 	_ "github.com/re-cinq/claudit/internal/agent/gemini"   // register Gemini agent
 	_ "github.com/re-cinq/claudit/internal/agent/opencode" // register OpenCode agent
 	"github.com/re-cinq/claudit/internal/cli"
@@ -41,7 +42,7 @@ for the most recent commit. Used by the post-commit git hook.`,
 
 func init() {
 	storeCmd.Flags().BoolVar(&manualFlag, "manual", false, "Manual mode: discover session from active session file or recent sessions")
-	storeCmd.Flags().StringVar(&storeAgentFlag, "agent", "", "Coding agent (claude, gemini, opencode). Defaults to configured agent.")
+	storeCmd.Flags().StringVar(&storeAgentFlag, "agent", "", "Coding agent (claude, codex, gemini, opencode). Defaults to configured agent.")
 	rootCmd.AddCommand(storeCmd)
 }
 
@@ -123,15 +124,27 @@ func runManualStore() error {
 
 	cli.LogDebug("store: discovering active session in %s", projectPath)
 
-	activeSession, err := session.DiscoverSession(projectPath)
-	if err != nil || activeSession == nil {
-		cli.LogDebug("store: no active session found (err=%v)", err)
-		return nil
-	}
-
 	ag, err := resolveAgent(storeAgentFlag)
 	if err != nil {
 		cli.LogDebug("store: unknown agent: %v", err)
+		return nil
+	}
+
+	// Try agent-specific session discovery first
+	agentSession, err := ag.DiscoverSession(projectPath)
+	if err != nil {
+		cli.LogDebug("store: agent session discovery error: %v", err)
+	}
+
+	if agentSession != nil {
+		cli.LogDebug("store: found session %s", agentSession.SessionID)
+		return storeConversation(ag, agentSession.SessionID, agentSession.TranscriptPath)
+	}
+
+	// Fall back to active-session.json (backward compat for Claude)
+	activeSession, err := session.DiscoverSession(projectPath)
+	if err != nil || activeSession == nil {
+		cli.LogDebug("store: no active session found (err=%v)", err)
 		return nil
 	}
 
