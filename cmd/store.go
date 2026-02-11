@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/re-cinq/claudit/internal/agent"
@@ -166,7 +168,7 @@ func storeConversation(ag agent.Agent, sessionID, transcriptPath string) error {
 
 	cli.LogDebug("store: reading transcript from %s", transcriptPath)
 
-	transcriptData, err := os.ReadFile(transcriptPath)
+	transcriptData, err := readTranscriptData(transcriptPath)
 	if err != nil {
 		return fmt.Errorf("failed to read transcript: %w", err)
 	}
@@ -209,4 +211,38 @@ func storeConversation(ag agent.Agent, sessionID, transcriptPath string) error {
 
 	cli.LogInfo("stored conversation for commit %s", headCommit[:8])
 	return nil
+}
+
+// readTranscriptData reads transcript data from a file or directory.
+// Some agents (e.g., OpenCode) store messages as individual JSON files
+// in a directory rather than a single file. In that case, we read all
+// JSON files and combine them into a JSON array.
+func readTranscriptData(path string) ([]byte, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+
+	if !info.IsDir() {
+		return os.ReadFile(path)
+	}
+
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var messages []json.RawMessage
+	for _, entry := range entries {
+		if entry.IsDir() || (!strings.HasSuffix(entry.Name(), ".json") && !strings.HasSuffix(entry.Name(), ".jsonl")) {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(path, entry.Name()))
+		if err != nil {
+			continue
+		}
+		messages = append(messages, json.RawMessage(data))
+	}
+
+	return json.Marshal(messages)
 }
