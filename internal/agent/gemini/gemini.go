@@ -1,7 +1,6 @@
 package gemini
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -117,11 +116,7 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 
 // shellToolNames are the known tool names Gemini CLI uses for shell execution.
 var shellToolNames = map[string]bool{
-	"shell":              true,
-	"shell_exec":         true,
-	"run_in_terminal":    true,
-	"execute_command":    true,
-	"run_shell_command":  true,
+	"run_shell_command": true,
 }
 
 // IsCommitCommand checks if a tool invocation represents a git commit.
@@ -133,19 +128,19 @@ func (a *Agent) IsCommitCommand(toolName, command string) bool {
 		strings.Contains(command, "git-commit")
 }
 
-// ParseTranscript parses a Gemini CLI JSONL transcript.
+// ParseTranscript parses a Gemini CLI session JSON transcript.
 func (a *Agent) ParseTranscript(r io.Reader) (*agent.Transcript, error) {
-	return ParseJSONLTranscript(r)
+	return ParseGeminiTranscript(r)
 }
 
-// ParseTranscriptFile parses a Gemini CLI JSONL transcript from a file.
+// ParseTranscriptFile parses a Gemini CLI session JSON transcript from a file.
 func (a *Agent) ParseTranscriptFile(path string) (*agent.Transcript, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
-	return ParseJSONLTranscript(f)
+	return ParseGeminiTranscript(f)
 }
 
 // DiscoverSession finds an active or recent Gemini CLI session.
@@ -194,89 +189,116 @@ func (a *Agent) ResumeCommand(sessionID string) (string, []string) {
 // ToolAliases returns Gemini CLI's tool name mappings to canonical names.
 func (a *Agent) ToolAliases() map[string]string {
 	return map[string]string{
-		"shell":             "Bash",
-		"shell_exec":        "Bash",
-		"run_in_terminal":   "Bash",
-		"execute_command":   "Bash",
 		"run_shell_command": "Bash",
-		"write_file":        "Write",
-		"read_file":         "Read",
-		"edit_file":         "Edit",
-		"search_files":      "Grep",
-		"list_files":        "Glob",
+		"replace":          "Edit",
+		"grep_search":      "Grep",
+		"glob":             "Glob",
+		"list_directory":   "Glob",
+		"google_web_search": "WebSearch",
+		"web_fetch":        "WebFetch",
 	}
 }
 
-// ParseJSONLTranscript parses a Gemini CLI JSONL transcript.
-// Gemini uses type "gemini" or "model" for assistant messages.
-func ParseJSONLTranscript(r io.Reader) (*agent.Transcript, error) {
-	scanner := bufio.NewScanner(r)
-	buf := make([]byte, 0, 64*1024)
-	scanner.Buffer(buf, 10*1024*1024)
+// geminiSession represents the top-level JSON structure of a Gemini CLI session file.
+type geminiSession struct {
+	Messages []geminiMessage `json:"messages"`
+}
+
+// geminiMessage represents a single message in a Gemini session.
+type geminiMessage struct {
+	Role      string           `json:"role"`
+	Parts     []geminiPart     `json:"parts,omitempty"`
+	ToolCalls []geminiToolCall `json:"toolCalls,omitempty"`
+}
+
+// geminiPart represents a part of a Gemini message.
+type geminiPart struct {
+	Text         string          `json:"text,omitempty"`
+	FunctionCall *geminiFuncCall `json:"functionCall,omitempty"`
+}
+
+// geminiFuncCall represents a function call within a part.
+type geminiFuncCall struct {
+	Name string                 `json:"name"`
+	Args map[string]interface{} `json:"args,omitempty"`
+}
+
+// geminiToolCall represents a tool call in a Gemini message.
+type geminiToolCall struct {
+	Name  string                 `json:"name"`
+	Input map[string]interface{} `json:"input,omitempty"`
+}
+
+// ParseGeminiTranscript parses a Gemini CLI session JSON transcript.
+// Gemini sessions are stored as a single JSON object with a "messages" array.
+func ParseGeminiTranscript(r io.Reader) (*agent.Transcript, error) {
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(data) == 0 {
+		return &agent.Transcript{}, nil
+	}
+
+	var session geminiSession
+	if err := json.Unmarshal(data, &session); err != nil {
+		return nil, fmt.Errorf("failed to parse Gemini session JSON: %w", err)
+	}
 
 	var entries []agent.TranscriptEntry
-
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		if len(line) == 0 {
+	for i, msg := range session.Messages {
+		msgType := normalizeGeminiType(msg.Role)
+		if msgType == "" {
 			continue
 		}
 
-		var raw map[string]json.RawMessage
-		if err := json.Unmarshal(line, &raw); err != nil {
-			continue
+		// Build content blocks from parts
+		var content []agent.ContentBlock
+		for _, part := range msg.Parts {
+			if part.Text != "" {
+				content = append(content, agent.ContentBlock{
+					Type: "text",
+					Text: part.Text,
+				})
+			}
+			if part.FunctionCall != nil {
+				inputJSON, _ := json.Marshal(part.FunctionCall.Args)
+				content = append(content, agent.ContentBlock{
+					Type:  "tool_use",
+					Name:  part.FunctionCall.Name,
+					Input: inputJSON,
+				})
+			}
 		}
+
+		// Also handle toolCalls field
+		for _, tc := range msg.ToolCalls {
+			inputJSON, _ := json.Marshal(tc.Input)
+			content = append(content, agent.ContentBlock{
+				Type:  "tool_use",
+				Name:  tc.Name,
+				Input: inputJSON,
+			})
+		}
+
+		if len(content) == 0 {
+			content = []agent.ContentBlock{{Type: "text", Text: ""}}
+		}
+
+		rawBytes, _ := json.Marshal(msg)
 
 		entry := agent.TranscriptEntry{
-			Raw: json.RawMessage(append([]byte{}, line...)),
-		}
-
-		// Parse type field
-		if typeRaw, ok := raw["type"]; ok {
-			var t string
-			if err := json.Unmarshal(typeRaw, &t); err == nil {
-				entry.Type = normalizeGeminiType(t)
-			}
-		}
-
-		// Parse id field (Gemini uses "id" where Claude uses "uuid")
-		if idRaw, ok := raw["id"]; ok {
-			var id string
-			if err := json.Unmarshal(idRaw, &id); err == nil {
-				entry.UUID = id
-			}
-		}
-		// Also try "uuid" for compatibility
-		if entry.UUID == "" {
-			if uuidRaw, ok := raw["uuid"]; ok {
-				var uuid string
-				if err := json.Unmarshal(uuidRaw, &uuid); err == nil {
-					entry.UUID = uuid
-				}
-			}
-		}
-
-		// Parse timestamp
-		if tsRaw, ok := raw["timestamp"]; ok {
-			var ts string
-			if err := json.Unmarshal(tsRaw, &ts); err == nil {
-				entry.Timestamp = ts
-			}
-		}
-
-		// Parse message/content
-		entry.Message = parseGeminiMessage(raw, entry.Type)
-
-		// Skip metadata-only entries (session_metadata, message_update, etc.)
-		if entry.Type == "" {
-			continue
+			UUID: fmt.Sprintf("gemini-%d", i),
+			Type: msgType,
+			Message: &agent.Message{
+				Role:    string(msgType),
+				Content: content,
+			},
+			Raw: rawBytes,
 		}
 
 		entries = append(entries, entry)
-	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, err
 	}
 
 	return &agent.Transcript{Entries: entries}, nil
@@ -294,67 +316,6 @@ func normalizeGeminiType(t string) agent.MessageType {
 	default:
 		return ""
 	}
-}
-
-// parseGeminiMessage parses message content from a Gemini JSONL entry.
-func parseGeminiMessage(raw map[string]json.RawMessage, msgType agent.MessageType) *agent.Message {
-	msg := &agent.Message{}
-
-	switch msgType {
-	case agent.MessageTypeUser:
-		msg.Role = "user"
-	case agent.MessageTypeAssistant:
-		msg.Role = "assistant"
-	case agent.MessageTypeSystem:
-		msg.Role = "system"
-	default:
-		return nil
-	}
-
-	// Try "content" as array of objects with "text" fields
-	if contentRaw, ok := raw["content"]; ok {
-		var contentArr []struct {
-			Text string `json:"text"`
-			Type string `json:"type"`
-			Name string `json:"name"`
-		}
-		if err := json.Unmarshal(contentRaw, &contentArr); err == nil {
-			for _, c := range contentArr {
-				blockType := c.Type
-				if blockType == "" {
-					blockType = "text"
-				}
-				msg.Content = append(msg.Content, agent.ContentBlock{
-					Type: blockType,
-					Text: c.Text,
-					Name: c.Name,
-				})
-			}
-			return msg
-		}
-
-		// Try as a plain string
-		var text string
-		if err := json.Unmarshal(contentRaw, &text); err == nil && text != "" {
-			msg.Content = []agent.ContentBlock{{Type: "text", Text: text}}
-			return msg
-		}
-	}
-
-	// Try "message" field (Claude-compatible format)
-	if msgRaw, ok := raw["message"]; ok {
-		var innerMsg agent.Message
-		if err := json.Unmarshal(msgRaw, &innerMsg); err == nil {
-			return &innerMsg
-		}
-	}
-
-	// If we have a type but no content, return an empty message
-	if msgType != "" {
-		return msg
-	}
-
-	return nil
 }
 
 // scanForRecentSession scans Gemini's session directory for recent files.
@@ -376,7 +337,11 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	var bestModTime time.Time
 
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".jsonl") {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		// Skip index files
+		if entry.Name() == "sessions-index.json" {
 			continue
 		}
 
@@ -392,7 +357,7 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 
 		if bestPath == "" || modTime.After(bestModTime) {
 			bestPath = filepath.Join(sessionDir, entry.Name())
-			bestSessionID = strings.TrimSuffix(entry.Name(), ".jsonl")
+			bestSessionID = strings.TrimSuffix(entry.Name(), ".json")
 			bestModTime = modTime
 		}
 	}

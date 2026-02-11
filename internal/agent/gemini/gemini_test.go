@@ -1,7 +1,9 @@
 package gemini
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,7 +28,7 @@ func TestAgentDisplayName(t *testing.T) {
 
 func TestParseHookInput(t *testing.T) {
 	a := &Agent{}
-	input := `{"session_id":"sess-1","transcript_path":"/tmp/t.jsonl","tool_name":"shell","tool_input":{"command":"git commit -m test"}}`
+	input := `{"session_id":"sess-1","transcript_path":"/tmp/t.json","tool_name":"run_shell_command","tool_input":{"command":"git commit -m test"}}`
 
 	hook, err := a.ParseHookInput([]byte(input))
 	if err != nil {
@@ -35,11 +37,11 @@ func TestParseHookInput(t *testing.T) {
 	if hook.SessionID != "sess-1" {
 		t.Errorf("SessionID = %q, want %q", hook.SessionID, "sess-1")
 	}
-	if hook.TranscriptPath != "/tmp/t.jsonl" {
-		t.Errorf("TranscriptPath = %q, want %q", hook.TranscriptPath, "/tmp/t.jsonl")
+	if hook.TranscriptPath != "/tmp/t.json" {
+		t.Errorf("TranscriptPath = %q, want %q", hook.TranscriptPath, "/tmp/t.json")
 	}
-	if hook.ToolName != "shell" {
-		t.Errorf("ToolName = %q, want %q", hook.ToolName, "shell")
+	if hook.ToolName != "run_shell_command" {
+		t.Errorf("ToolName = %q, want %q", hook.ToolName, "run_shell_command")
 	}
 	if hook.Command != "git commit -m test" {
 		t.Errorf("Command = %q, want %q", hook.Command, "git commit -m test")
@@ -52,12 +54,13 @@ func TestIsCommitCommand(t *testing.T) {
 		tool, cmd string
 		want      bool
 	}{
-		{"shell", "git commit -m fix", true},
-		{"shell_exec", "git commit -am msg", true},
-		{"run_in_terminal", "git-commit", true},
-		{"execute_command", "ls -la", false},
+		{"run_shell_command", "git commit -m fix", true},
+		{"run_shell_command", "git commit -am msg", true},
+		{"run_shell_command", "git-commit", true},
+		{"run_shell_command", "ls -la", false},
+		{"run_shell_command", "git status", false},
 		{"read_file", "git commit -m test", false},
-		{"shell", "git status", false},
+		{"replace", "git commit -m test", false},
 	}
 
 	for _, tc := range tests {
@@ -68,17 +71,18 @@ func TestIsCommitCommand(t *testing.T) {
 	}
 }
 
-func TestParseJSONLTranscript(t *testing.T) {
-	lines := []string{
-		`{"type":"user","id":"u1","content":"Hello"}`,
-		`{"type":"gemini","id":"g1","content":[{"text":"Hi there"}]}`,
-		`{"type":"user","id":"u2","content":"Thanks"}`,
-	}
-	jsonl := strings.Join(lines, "\n")
+func TestParseGeminiTranscript(t *testing.T) {
+	session := `{
+		"messages": [
+			{"role": "user", "parts": [{"text": "Hello"}]},
+			{"role": "model", "parts": [{"text": "Hi there"}]},
+			{"role": "user", "parts": [{"text": "Thanks"}]}
+		]
+	}`
 
-	transcript, err := ParseJSONLTranscript(strings.NewReader(jsonl))
+	transcript, err := ParseGeminiTranscript(strings.NewReader(session))
 	if err != nil {
-		t.Fatalf("ParseJSONLTranscript() error: %v", err)
+		t.Fatalf("ParseGeminiTranscript() error: %v", err)
 	}
 	if len(transcript.Entries) != 3 {
 		t.Fatalf("Expected 3 entries, got %d", len(transcript.Entries))
@@ -88,56 +92,66 @@ func TestParseJSONLTranscript(t *testing.T) {
 	if transcript.Entries[0].Type != agent.MessageTypeUser {
 		t.Errorf("Entry 0 type = %q, want %q", transcript.Entries[0].Type, agent.MessageTypeUser)
 	}
-	if transcript.Entries[0].UUID != "u1" {
-		t.Errorf("Entry 0 UUID = %q, want %q", transcript.Entries[0].UUID, "u1")
-	}
 
-	// Check second entry (gemini -> assistant)
+	// Check second entry (model -> assistant)
 	if transcript.Entries[1].Type != agent.MessageTypeAssistant {
 		t.Errorf("Entry 1 type = %q, want %q", transcript.Entries[1].Type, agent.MessageTypeAssistant)
 	}
-	if transcript.Entries[1].UUID != "g1" {
-		t.Errorf("Entry 1 UUID = %q, want %q", transcript.Entries[1].UUID, "g1")
+	if transcript.Entries[1].Message == nil || len(transcript.Entries[1].Message.Content) == 0 {
+		t.Fatal("Entry 1 has no message content")
+	}
+	if transcript.Entries[1].Message.Content[0].Text != "Hi there" {
+		t.Errorf("Entry 1 text = %q, want %q", transcript.Entries[1].Message.Content[0].Text, "Hi there")
 	}
 }
 
-func TestParseJSONLTranscriptModelType(t *testing.T) {
-	// Gemini also uses "model" type for assistant messages
-	jsonl := `{"type":"model","id":"m1","content":"Response text"}`
-	transcript, err := ParseJSONLTranscript(strings.NewReader(jsonl))
-	if err != nil {
-		t.Fatalf("ParseJSONLTranscript() error: %v", err)
-	}
-	if len(transcript.Entries) != 1 {
-		t.Fatalf("Expected 1 entry, got %d", len(transcript.Entries))
-	}
-	if transcript.Entries[0].Type != agent.MessageTypeAssistant {
-		t.Errorf("Entry type = %q, want %q", transcript.Entries[0].Type, agent.MessageTypeAssistant)
-	}
-}
+func TestParseGeminiTranscriptWithToolCalls(t *testing.T) {
+	session := `{
+		"messages": [
+			{"role": "user", "parts": [{"text": "Run ls"}]},
+			{"role": "model", "parts": [{"text": "Running command"}, {"functionCall": {"name": "run_shell_command", "args": {"command": "ls -la"}}}]}
+		]
+	}`
 
-func TestParseJSONLTranscriptSkipsMetadata(t *testing.T) {
-	lines := []string{
-		`{"type":"user","id":"u1","content":"Hello"}`,
-		`{"type":"session_metadata","version":"1.0"}`,
-		`{"type":"message_update","status":"done"}`,
-		`{"type":"assistant","id":"a1","content":"Done"}`,
-	}
-	jsonl := strings.Join(lines, "\n")
-
-	transcript, err := ParseJSONLTranscript(strings.NewReader(jsonl))
+	transcript, err := ParseGeminiTranscript(strings.NewReader(session))
 	if err != nil {
-		t.Fatalf("ParseJSONLTranscript() error: %v", err)
+		t.Fatalf("ParseGeminiTranscript() error: %v", err)
 	}
 	if len(transcript.Entries) != 2 {
-		t.Errorf("Expected 2 entries (skipping metadata), got %d", len(transcript.Entries))
+		t.Fatalf("Expected 2 entries, got %d", len(transcript.Entries))
+	}
+
+	// Check model entry has both text and tool_use content blocks
+	entry := transcript.Entries[1]
+	if len(entry.Message.Content) != 2 {
+		t.Fatalf("Expected 2 content blocks, got %d", len(entry.Message.Content))
+	}
+	if entry.Message.Content[0].Type != "text" {
+		t.Errorf("Content[0] type = %q, want text", entry.Message.Content[0].Type)
+	}
+	if entry.Message.Content[1].Type != "tool_use" {
+		t.Errorf("Content[1] type = %q, want tool_use", entry.Message.Content[1].Type)
+	}
+	if entry.Message.Content[1].Name != "run_shell_command" {
+		t.Errorf("Content[1] name = %q, want run_shell_command", entry.Message.Content[1].Name)
 	}
 }
 
-func TestParseJSONLTranscriptEmpty(t *testing.T) {
-	transcript, err := ParseJSONLTranscript(strings.NewReader(""))
+func TestParseGeminiTranscriptEmpty(t *testing.T) {
+	transcript, err := ParseGeminiTranscript(strings.NewReader(""))
 	if err != nil {
-		t.Fatalf("ParseJSONLTranscript() error: %v", err)
+		t.Fatalf("ParseGeminiTranscript() error: %v", err)
+	}
+	if len(transcript.Entries) != 0 {
+		t.Errorf("Expected 0 entries, got %d", len(transcript.Entries))
+	}
+}
+
+func TestParseGeminiTranscriptEmptyMessages(t *testing.T) {
+	session := `{"messages": []}`
+	transcript, err := ParseGeminiTranscript(strings.NewReader(session))
+	if err != nil {
+		t.Fatalf("ParseGeminiTranscript() error: %v", err)
 	}
 	if len(transcript.Entries) != 0 {
 		t.Errorf("Expected 0 entries, got %d", len(transcript.Entries))
@@ -147,11 +161,17 @@ func TestParseJSONLTranscriptEmpty(t *testing.T) {
 func TestToolAliases(t *testing.T) {
 	a := &Agent{}
 	aliases := a.ToolAliases()
-	if aliases["shell"] != "Bash" {
-		t.Errorf("ToolAliases[shell] = %q, want Bash", aliases["shell"])
+	if aliases["run_shell_command"] != "Bash" {
+		t.Errorf("ToolAliases[run_shell_command] = %q, want Bash", aliases["run_shell_command"])
 	}
-	if aliases["write_file"] != "Write" {
-		t.Errorf("ToolAliases[write_file] = %q, want Write", aliases["write_file"])
+	if aliases["replace"] != "Edit" {
+		t.Errorf("ToolAliases[replace] = %q, want Edit", aliases["replace"])
+	}
+	if aliases["grep_search"] != "Grep" {
+		t.Errorf("ToolAliases[grep_search] = %q, want Grep", aliases["grep_search"])
+	}
+	if aliases["google_web_search"] != "WebSearch" {
+		t.Errorf("ToolAliases[google_web_search] = %q, want WebSearch", aliases["google_web_search"])
 	}
 }
 
@@ -195,6 +215,20 @@ func TestConfigureHooks(t *testing.T) {
 	if !ok || len(afterTool) == 0 {
 		t.Fatal("Missing AfterTool hook")
 	}
+
+	// Verify matcher is run_shell_command
+	hookObj := afterTool[0].(map[string]interface{})
+	if hookObj["matcher"] != "run_shell_command" {
+		t.Errorf("AfterTool matcher = %q, want run_shell_command", hookObj["matcher"])
+	}
+
+	// Verify timeout is 30000 (milliseconds)
+	hookCmds := hookObj["hooks"].([]interface{})
+	hookCmd := hookCmds[0].(map[string]interface{})
+	timeout := hookCmd["timeout"].(float64)
+	if timeout != 30000 {
+		t.Errorf("AfterTool timeout = %v, want 30000", timeout)
+	}
 }
 
 func TestDiagnoseHooks(t *testing.T) {
@@ -232,15 +266,22 @@ func TestDiagnoseHooks(t *testing.T) {
 
 func TestEncodeProjectPath(t *testing.T) {
 	tests := []struct {
-		path, want string
+		path string
 	}{
-		{"/home/user/project", "home_user_project"},
-		{"/tmp/test", "tmp_test"},
+		{"/home/user/project"},
+		{"/tmp/test"},
 	}
 	for _, tc := range tests {
 		got := EncodeProjectPath(tc.path)
-		if got != tc.want {
-			t.Errorf("EncodeProjectPath(%q) = %q, want %q", tc.path, got, tc.want)
+		// Should be a valid SHA256 hex string (64 chars)
+		if len(got) != 64 {
+			t.Errorf("EncodeProjectPath(%q) = %q, expected 64-char hex hash", tc.path, got)
+		}
+		// Verify it matches SHA256
+		h := sha256.Sum256([]byte(tc.path))
+		want := fmt.Sprintf("%x", h)
+		if got != want {
+			t.Errorf("EncodeProjectPath(%q) = %q, want %q", tc.path, got, want)
 		}
 	}
 }

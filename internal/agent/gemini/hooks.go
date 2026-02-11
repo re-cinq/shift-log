@@ -88,12 +88,12 @@ func WriteSettings(geminiDir string, settings *Settings) error {
 // AddClauditHook adds or updates the claudit store hook in Gemini settings.
 func AddClauditHook(settings *Settings) {
 	clauditHook := Hook{
-		Matcher: "shell",
+		Matcher: "run_shell_command",
 		Hooks: []HookCmd{
 			{
 				Type:    "command",
 				Command: "claudit store --agent=gemini",
-				Timeout: 30,
+				Timeout: 30000,
 			},
 		},
 	}
@@ -117,7 +117,7 @@ func AddSessionHooks(settings *Settings) {
 			{
 				Type:    "command",
 				Command: "claudit session-start --agent=gemini",
-				Timeout: 5,
+				Timeout: 5000,
 			},
 		},
 	}
@@ -126,7 +126,7 @@ func AddSessionHooks(settings *Settings) {
 			{
 				Type:    "command",
 				Command: "claudit session-end --agent=gemini",
-				Timeout: 5,
+				Timeout: 5000,
 			},
 		},
 	}

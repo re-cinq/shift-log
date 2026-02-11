@@ -1,11 +1,11 @@
 package gemini
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 // GetGeminiDir returns the path to Gemini's config/data directory.
@@ -30,24 +30,20 @@ func GetSessionDir(projectPath string) (string, error) {
 }
 
 // EncodeProjectPath encodes a project path for Gemini's directory structure.
-// Gemini uses a hash-like encoding of the project path.
+// Gemini uses a SHA256 hash of the project path.
 func EncodeProjectPath(projectPath string) string {
-	// Gemini uses the project path with separators replaced by underscores
-	encoded := strings.ReplaceAll(projectPath, string(filepath.Separator), "_")
-	encoded = strings.ReplaceAll(encoded, "/", "_")
-	if strings.HasPrefix(encoded, "_") {
-		encoded = encoded[1:]
-	}
-	return encoded
+	h := sha256.Sum256([]byte(projectPath))
+	return fmt.Sprintf("%x", h)
 }
 
-// GetSessionFilePath returns the full path to a session's JSONL file.
+// GetSessionFilePath returns the full path to a session file.
+// Gemini uses session-{timestamp}-{id8}.json format.
 func GetSessionFilePath(projectPath, sessionID string) (string, error) {
 	sessionDir, err := GetSessionDir(projectPath)
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(sessionDir, sessionID+".jsonl"), nil
+	return filepath.Join(sessionDir, sessionID+".json"), nil
 }
 
 // WriteSessionFile writes a transcript to Gemini's session file location.

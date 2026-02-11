@@ -6,6 +6,8 @@ import (
 
 	"github.com/re-cinq/claudit/internal/agent"
 	agentclaude "github.com/re-cinq/claudit/internal/agent/claude"
+	_ "github.com/re-cinq/claudit/internal/agent/gemini"   // register Gemini agent
+	_ "github.com/re-cinq/claudit/internal/agent/opencode" // register OpenCode agent
 	"github.com/re-cinq/claudit/internal/git"
 )
 
@@ -30,11 +32,22 @@ func GetStoredConversation(commitSHA string) (*StoredConversation, error) {
 }
 
 // ParseTranscript decompresses the stored transcript and parses it into a Transcript.
+// Uses the agent-specific parser based on the stored Agent field.
 func (sc *StoredConversation) ParseTranscript() (*agent.Transcript, error) {
 	data, err := sc.GetTranscript()
 	if err != nil {
 		return nil, err
 	}
+
+	// Look up the agent-specific parser if an agent is specified
+	if sc.Agent != "" {
+		ag, err := agent.Get(agent.Name(sc.Agent))
+		if err == nil {
+			return ag.ParseTranscript(strings.NewReader(string(data)))
+		}
+	}
+
+	// Default to Claude JSONL parser for backward compatibility
 	return agentclaude.ParseJSONLTranscript(strings.NewReader(string(data)))
 }
 
