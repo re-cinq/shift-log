@@ -124,8 +124,17 @@ jobs:
         with:
           go-version: '1.24'
 
-      - name: Install Claude Code CLI
-        run: npm install -g @anthropic-ai/claude-code
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install coding agent CLIs
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          npm install -g @google/gemini-cli
+          npm install -g opencode-ai@latest
+          npm install -g @openai/codex
 
       - name: Build binary
         run: CGO_ENABLED=0 go build -o claudit .
@@ -134,6 +143,7 @@ jobs:
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           CLAUDIT_BINARY: ${{ github.workspace }}/claudit
         run: go test ./tests/integration/... -v -timeout 120s
 
