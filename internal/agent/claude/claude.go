@@ -173,8 +173,14 @@ func (a *Agent) ParseTranscriptFile(path string) (*agent.Transcript, error) {
 }
 
 // DiscoverSession finds an active or recent Claude Code session.
+// It checks (in order): active-session.json, sessions-index.json, directory scan.
 func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) {
-	// Try sessions-index.json first
+	// Try active-session.json first (written by claudit session-start hook)
+	if info, err := discoverFromActiveSession(projectPath); err == nil && info != nil {
+		return info, nil
+	}
+
+	// Try sessions-index.json
 	index, err := ReadSessionsIndex(projectPath)
 	if err == nil && len(index.Entries) > 0 {
 		session := findRecentSession(index, projectPath)
@@ -185,6 +191,53 @@ func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) 
 
 	// Fallback: scan for recent .jsonl files
 	return scanForRecentSession(projectPath)
+}
+
+// discoverFromActiveSession checks the .claudit/active-session.json file
+// written by the session-start hook for a direct pointer to the active session.
+func discoverFromActiveSession(projectPath string) (*agent.SessionInfo, error) {
+	root := projectPath
+	sessionPath := filepath.Join(root, ".claudit", "active-session.json")
+
+	data, err := os.ReadFile(sessionPath)
+	if err != nil {
+		return nil, err
+	}
+
+	var active struct {
+		SessionID      string `json:"session_id"`
+		TranscriptPath string `json:"transcript_path"`
+		StartedAt      string `json:"started_at"`
+		ProjectPath    string `json:"project_path"`
+	}
+	if err := json.Unmarshal(data, &active); err != nil {
+		return nil, err
+	}
+
+	// Validate project path matches
+	if !pathsEqual(active.ProjectPath, projectPath) {
+		return nil, nil
+	}
+
+	// Validate session is still active (transcript modified recently)
+	if active.TranscriptPath == "" {
+		return nil, nil
+	}
+	info, err := os.Stat(active.TranscriptPath)
+	if err != nil {
+		return nil, nil
+	}
+	const staleTimeout = 10 * time.Minute
+	if time.Since(info.ModTime()) > staleTimeout {
+		return nil, nil
+	}
+
+	return &agent.SessionInfo{
+		SessionID:      active.SessionID,
+		TranscriptPath: active.TranscriptPath,
+		StartedAt:      active.StartedAt,
+		ProjectPath:    active.ProjectPath,
+	}, nil
 }
 
 // RestoreSession writes a transcript to Claude Code's expected location.

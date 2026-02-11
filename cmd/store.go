@@ -16,7 +16,6 @@ import (
 	"github.com/re-cinq/claudit/internal/cli"
 	"github.com/re-cinq/claudit/internal/config"
 	"github.com/re-cinq/claudit/internal/git"
-	"github.com/re-cinq/claudit/internal/session"
 	"github.com/re-cinq/claudit/internal/storage"
 	"github.com/spf13/cobra"
 )
@@ -130,26 +129,20 @@ func runManualStore() error {
 		return nil
 	}
 
-	// Try agent-specific session discovery first
+	// Use the agent's own session discovery (each agent knows where its sessions live)
 	agentSession, err := ag.DiscoverSession(projectPath)
 	if err != nil {
-		cli.LogDebug("store: agent session discovery error: %v", err)
-	}
-
-	if agentSession != nil {
-		cli.LogDebug("store: found session %s", agentSession.SessionID)
-		return storeConversation(ag, agentSession.SessionID, agentSession.TranscriptPath)
-	}
-
-	// Fall back to active-session.json (backward compat for Claude)
-	activeSession, err := session.DiscoverSession(projectPath)
-	if err != nil || activeSession == nil {
-		cli.LogDebug("store: no active session found (err=%v)", err)
+		cli.LogDebug("store: session discovery error: %v", err)
 		return nil
 	}
 
-	cli.LogDebug("store: found session %s", activeSession.SessionID)
-	return storeConversation(ag, activeSession.SessionID, activeSession.TranscriptPath)
+	if agentSession == nil {
+		cli.LogDebug("store: no active session found")
+		return nil
+	}
+
+	cli.LogDebug("store: found session %s", agentSession.SessionID)
+	return storeConversation(ag, agentSession.SessionID, agentSession.TranscriptPath)
 }
 
 // storeConversation stores a conversation for the HEAD commit with duplicate detection.
