@@ -114,6 +114,7 @@ func newBrowserContext(t *testing.T) (context.Context, context.CancelFunc) {
 		chromedp.Flag("no-sandbox", true),
 		chromedp.Flag("disable-gpu", true),
 		chromedp.Flag("disable-dev-shm-usage", true),
+		chromedp.WSURLReadTimeout(45*time.Second),
 	)
 
 	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
