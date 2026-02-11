@@ -156,7 +156,7 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
-    needs: [lint, test, build, integration]
+    needs: [lint, test, browser-test, install-test, build, integration]
     if: github.ref == 'refs/heads/master' && github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
