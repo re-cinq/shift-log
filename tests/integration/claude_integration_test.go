@@ -224,9 +224,14 @@ func TestClaudeCodeIntegration(t *testing.T) {
 		}
 	}
 
+	// Verify agent field is "claude"
+	if noteData["agent"] != "claude" {
+		t.Errorf("Expected agent='claude', got %v", noteData["agent"])
+	}
+
 	t.Log("✓ Note content is valid and contains all required fields")
-	t.Logf("Note preview: version=%v, session_id=%v, message_count=%v",
-		noteData["version"], noteData["session_id"], noteData["message_count"])
+	t.Logf("Note preview: version=%v, session_id=%v, agent=%v, message_count=%v",
+		noteData["version"], noteData["session_id"], noteData["agent"], noteData["message_count"])
 }
 
 // TestClaudeCodeIntegration_MissingClaudit verifies that the test fails when claudit is not in PATH
