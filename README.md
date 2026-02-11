@@ -50,6 +50,19 @@ claudit serve
 claudit sync pull
 ```
 
+## claudit vs Entire
+
+|  | [Entire](https://entire.io) | claudit |
+|--|-------|---------|
+| **Funding** | $60M seed round | Claude Code Max plan ($200/mo) |
+| **Staffing** | 12 engineers | An imbecile spec-driving while not really paying attention |
+| **Agents** | Claude Code, Gemini CLI | Claude Code, Codex CLI, Gemini CLI, OpenCode |
+| **Storage** | Custom checkpoints format | Standard Git Notes |
+| **Resume sessions** | No | Yes |
+| **Web viewer** | No | Yes |
+| **Rebase support** | No | Yes |
+| **Open source** | Yes | Yes |
+
 ## Why?
 
 In order to understand _how_ and _why_ a commit was made, we need to see the conversation that led to it.
