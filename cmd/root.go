@@ -14,10 +14,12 @@ var version = "dev"
 
 var rootCmd = &cobra.Command{
 	Use:   "claudit",
-	Short: "Store and resume Claude Code conversations as Git Notes",
-	Long: `Claudit captures Claude Code conversation history and stores it as Git Notes
+	Short: "Store and resume AI coding conversations as Git Notes",
+	Long: `Claudit captures AI coding agent conversation history and stores it as Git Notes
 attached to commits. This enables teams to preserve AI-assisted development
-context alongside their code and resume interrupted sessions.`,
+context alongside their code and resume interrupted sessions.
+
+Supports Claude Code, Gemini CLI, and OpenCode.`,
 }
 
 func Execute() error {

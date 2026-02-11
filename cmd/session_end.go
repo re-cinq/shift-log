@@ -6,7 +6,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// SessionEndInput represents the SessionEnd hook JSON input from Claude Code
+// SessionEndInput represents the SessionEnd hook JSON input from the coding agent
 type SessionEndInput struct {
 	SessionID      string `json:"session_id"`
 	TranscriptPath string `json:"transcript_path"`
@@ -16,11 +16,11 @@ type SessionEndInput struct {
 
 var sessionEndCmd = &cobra.Command{
 	Use:     "session-end",
-	Short:   "Handle Claude Code SessionEnd hook",
+	Short:   "Handle coding agent SessionEnd hook",
 	GroupID: "hooks",
 	Long: `Reads SessionEnd hook JSON from stdin and clears the active session.
 
-This command is designed to be called by Claude Code's SessionEnd hook.`,
+This command is designed to be called by the coding agent's SessionEnd hook.`,
 	RunE: runSessionEnd,
 }
 
