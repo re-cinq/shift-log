@@ -136,6 +136,12 @@ jobs:
           npm install -g opencode-ai@latest
           npm install -g @openai/codex
 
+      - name: Authenticate Codex CLI
+        if: env.OPENAI_API_KEY != ''
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: printenv OPENAI_API_KEY | codex login --with-api-key
+
       - name: Build binary
         run: CGO_ENABLED=0 go build -o claudit .
 

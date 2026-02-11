@@ -88,13 +88,20 @@ func replaceClauditSection(content, newSection string) string {
 	return content[:lineStart] + newSection + content[lineEnd:]
 }
 
-// InstallAllHooks installs all claudit git hooks
+// InstallAllHooks installs all claudit git hooks.
+// It resolves the absolute path to the running claudit binary so hooks work
+// even when the shell environment strips PATH (e.g. Codex CLI sandbox).
 func InstallAllHooks(gitDir string) error {
+	bin, err := resolveClauditBinary()
+	if err != nil {
+		return fmt.Errorf("failed to resolve claudit binary path: %w", err)
+	}
+
 	hooks := map[HookType]string{
-		HookPrePush:      "claudit sync push",
-		HookPostMerge:    "claudit sync pull\nclaudit remap",
-		HookPostCheckout: "claudit sync pull",
-		HookPostCommit:   "claudit store --manual",
+		HookPrePush:      bin + " sync push",
+		HookPostMerge:    bin + " sync pull\n" + bin + " remap",
+		HookPostCheckout: bin + " sync pull",
+		HookPostCommit:   bin + " store --manual",
 	}
 
 	for hookType, command := range hooks {
@@ -104,4 +111,13 @@ func InstallAllHooks(gitDir string) error {
 	}
 
 	return nil
+}
+
+// resolveClauditBinary returns the absolute path to the running claudit binary.
+func resolveClauditBinary() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(exe)
 }

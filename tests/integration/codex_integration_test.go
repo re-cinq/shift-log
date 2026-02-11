@@ -2,6 +2,7 @@ package integration_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -89,10 +90,21 @@ func TestCodexCLIIntegration(t *testing.T) {
 		t.Fatalf("Failed to write todo file: %v", err)
 	}
 
-	// Run Codex CLI with a simple prompt to commit the file
-	codexCmd := exec.Command("codex",
-		"--approval-mode", "full-auto",
-		"-q", "Please run: git add todo.txt && git commit -m 'Add todo list'",
+	// Login Codex CLI with the API key (required since v0.1.2504+)
+	loginCmd := exec.Command("bash", "-c",
+		fmt.Sprintf("echo %q | codex login --with-api-key", apiKey))
+	loginCmd.Dir = tmpDir
+	if loginOutput, err := loginCmd.CombinedOutput(); err != nil {
+		t.Fatalf("codex login failed: %v\nOutput: %s", err, loginOutput)
+	}
+
+	// Run Codex CLI with a simple prompt to commit the file.
+	// Use "codex exec" for non-interactive mode.
+	// --dangerously-bypass-approvals-and-sandbox is needed because the default
+	// workspace-write sandbox blocks git commit (it modifies .git/).
+	codexCmd := exec.Command("codex", "exec",
+		"--dangerously-bypass-approvals-and-sandbox",
+		"Please run: git add todo.txt && git commit -m 'Add todo list'",
 	)
 	codexCmd.Dir = tmpDir
 	codexCmd.Env = append(os.Environ(),
