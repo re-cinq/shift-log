@@ -164,7 +164,7 @@ func (a *Agent) ParseTranscriptFile(path string) (*agent.Transcript, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	return a.ParseTranscript(f)
 }
 
@@ -185,7 +185,7 @@ func (a *Agent) parseMessageDir(dir string) (*agent.Transcript, error) {
 					continue
 				}
 				transcript, err := a.ParseTranscript(f)
-				f.Close()
+				_ = f.Close()
 				if err == nil {
 					entries = append(entries, transcript.Entries...)
 				}
