@@ -10,7 +10,7 @@ curl -fsSL https://raw.githubusercontent.com/re-cinq/claudit/master/scripts/inst
 claudit init --agent=<agent>
 ```
 
-Where `<agent>` is `claude` (default), `gemini`, or `opencode`.
+Where `<agent>` is `claude` (default), `codex`, `gemini`, or `opencode`.
 
 Now work with your coding agent as you would normally. Whenever you or the agent commit, the conversation since the last commit will be attached to that commit as a Git Note.
 
@@ -19,6 +19,7 @@ Now work with your coding agent as you would normally. Whenever you or the agent
 | Agent | Init command | How it hooks in |
 |-------|-------------|-----------------|
 | Claude Code | `claudit init` (default) | `.claude/settings.json` hooks |
+| Codex CLI | `claudit init --agent=codex` | Post-commit git hook |
 | Gemini CLI | `claudit init --agent=gemini` | `.gemini/settings.json` hooks |
 | OpenCode | `claudit init --agent=opencode` | `.opencode/plugins/claudit.js` plugin |
 
@@ -82,7 +83,7 @@ To view notes directly with git: `git log --notes=claude-conversations`
 ## Requirements
 
 - Git
-- One of the supported coding agents (Claude Code, Gemini CLI, or OpenCode)
+- One of the supported coding agents (Claude Code, Codex CLI, Gemini CLI, or OpenCode)
 
 ## Multi-Developer Sync
 

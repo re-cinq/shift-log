@@ -19,7 +19,7 @@ var rootCmd = &cobra.Command{
 attached to commits. This enables teams to preserve AI-assisted development
 context alongside their code and resume interrupted sessions.
 
-Supports Claude Code, Gemini CLI, and OpenCode.`,
+Supports Claude Code, Codex CLI, Gemini CLI, and OpenCode.`,
 }
 
 func Execute() error {
