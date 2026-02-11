@@ -133,6 +133,7 @@ jobs:
       - name: Run integration tests
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           CLAUDIT_BINARY: ${{ github.workspace }}/claudit
         run: go test ./tests/integration/... -v -timeout 120s
 
