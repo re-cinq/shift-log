@@ -5,84 +5,75 @@ import (
 	"path/filepath"
 )
 
-// ClaudeEnv represents an isolated Claude Code test environment
-type ClaudeEnv struct {
+// AgentEnv represents an isolated test environment with a temporary HOME directory.
+// It works for any agent by using the config's GetSessionDir and SessionFileExt.
+type AgentEnv struct {
 	// TempHome is the temporary HOME directory for isolation
 	TempHome string
 	// OrigHome is the original HOME to restore after tests
 	OrigHome string
+	// Config holds agent-specific settings for session path computation
+	Config AgentTestConfig
 }
 
-// NewClaudeEnv creates a new isolated Claude environment for testing.
-// It creates a temporary HOME directory to prevent tests from affecting
-// the real Claude configuration.
-func NewClaudeEnv() (*ClaudeEnv, error) {
+// NewAgentEnv creates a new isolated environment for testing with the given agent config.
+func NewAgentEnv(config AgentTestConfig) (*AgentEnv, error) {
 	tempHome, err := os.MkdirTemp("", "claudit-test-home-*")
 	if err != nil {
 		return nil, err
 	}
 
-	env := &ClaudeEnv{
+	env := &AgentEnv{
 		TempHome: tempHome,
 		OrigHome: os.Getenv("HOME"),
+		Config:   config,
 	}
 
 	return env, nil
 }
 
 // Cleanup removes the temporary HOME directory and restores the original HOME
-func (e *ClaudeEnv) Cleanup() {
+func (e *AgentEnv) Cleanup() {
 	_ = os.Setenv("HOME", e.OrigHome)
 	_ = os.RemoveAll(e.TempHome)
 }
 
 // Apply sets the HOME environment variable to the temporary directory
-func (e *ClaudeEnv) Apply() {
+func (e *AgentEnv) Apply() {
 	_ = os.Setenv("HOME", e.TempHome)
 }
 
 // GetEnvVars returns environment variables for running commands with isolated HOME
-func (e *ClaudeEnv) GetEnvVars() []string {
+func (e *AgentEnv) GetEnvVars() []string {
 	return []string{"HOME=" + e.TempHome}
 }
 
-// GetClaudeDir returns the path to the .claude directory in the temp HOME
-func (e *ClaudeEnv) GetClaudeDir() string {
-	return filepath.Join(e.TempHome, ".claude")
-}
-
-// GetProjectsDir returns the path to the projects directory in the temp HOME
-func (e *ClaudeEnv) GetProjectsDir() string {
-	return filepath.Join(e.TempHome, ".claude", "projects")
-}
-
-// GetProjectDir returns the path to a specific project's session directory
-func (e *ClaudeEnv) GetProjectDir(projectPath string) string {
+// GetProjectDir returns the path to a specific project's session directory,
+// delegating to the agent config's GetSessionDir function.
+func (e *AgentEnv) GetProjectDir(projectPath string) string {
 	// Resolve symlinks to match production behavior (git rev-parse resolves symlinks)
 	// This is critical on macOS where /tmp is a symlink to /private/tmp
 	resolved, err := filepath.EvalSymlinks(projectPath)
 	if err == nil {
 		projectPath = resolved
 	}
-	// Encode the project path (replace / with -)
-	encoded := encodeProjectPath(projectPath)
-	return filepath.Join(e.TempHome, ".claude", "projects", encoded)
+	return e.Config.GetSessionDir(e.TempHome, projectPath)
 }
 
 // SetupProjectDir creates the directory structure for a project
-func (e *ClaudeEnv) SetupProjectDir(projectPath string) error {
+func (e *AgentEnv) SetupProjectDir(projectPath string) error {
 	projectDir := e.GetProjectDir(projectPath)
 	return os.MkdirAll(projectDir, 0700)
 }
 
-// WriteSessionFile writes a session JSONL file for testing
-func (e *ClaudeEnv) WriteSessionFile(projectPath, sessionID string, content []byte) (string, error) {
+// WriteSessionFile writes a session file for testing using the agent's file extension.
+func (e *AgentEnv) WriteSessionFile(projectPath, sessionID string, content []byte) (string, error) {
 	projectDir := e.GetProjectDir(projectPath)
 	if err := os.MkdirAll(projectDir, 0700); err != nil {
 		return "", err
 	}
 
-	sessionPath := filepath.Join(projectDir, sessionID+".jsonl")
+	sessionPath := filepath.Join(projectDir, sessionID+e.Config.SessionFileExt)
 	if err := os.WriteFile(sessionPath, content, 0600); err != nil {
 		return "", err
 	}
@@ -91,31 +82,31 @@ func (e *ClaudeEnv) WriteSessionFile(projectPath, sessionID string, content []by
 }
 
 // SessionFileExists checks if a session file exists
-func (e *ClaudeEnv) SessionFileExists(projectPath, sessionID string) bool {
-	sessionPath := filepath.Join(e.GetProjectDir(projectPath), sessionID+".jsonl")
+func (e *AgentEnv) SessionFileExists(projectPath, sessionID string) bool {
+	sessionPath := filepath.Join(e.GetProjectDir(projectPath), sessionID+e.Config.SessionFileExt)
 	_, err := os.Stat(sessionPath)
 	return err == nil
 }
 
-// ReadSessionFile reads a session JSONL file
-func (e *ClaudeEnv) ReadSessionFile(projectPath, sessionID string) ([]byte, error) {
-	sessionPath := filepath.Join(e.GetProjectDir(projectPath), sessionID+".jsonl")
+// ReadSessionFile reads a session file
+func (e *AgentEnv) ReadSessionFile(projectPath, sessionID string) ([]byte, error) {
+	sessionPath := filepath.Join(e.GetProjectDir(projectPath), sessionID+e.Config.SessionFileExt)
 	return os.ReadFile(sessionPath)
 }
 
 // GetSessionsIndexPath returns the path to sessions-index.json for a project
-func (e *ClaudeEnv) GetSessionsIndexPath(projectPath string) string {
+func (e *AgentEnv) GetSessionsIndexPath(projectPath string) string {
 	return filepath.Join(e.GetProjectDir(projectPath), "sessions-index.json")
 }
 
 // SessionsIndexExists checks if sessions-index.json exists for a project
-func (e *ClaudeEnv) SessionsIndexExists(projectPath string) bool {
+func (e *AgentEnv) SessionsIndexExists(projectPath string) bool {
 	_, err := os.Stat(e.GetSessionsIndexPath(projectPath))
 	return err == nil
 }
 
-// encodeProjectPath converts an absolute path to Claude's encoded format
-// This must match the production EncodeProjectPath in internal/claude/session.go
+// encodeProjectPath converts an absolute path to Claude's encoded format.
+// This must match the production EncodeProjectPath in internal/claude/session.go.
 func encodeProjectPath(path string) string {
 	// Replace path separators with dashes
 	encoded := ""
@@ -127,7 +118,6 @@ func encodeProjectPath(path string) string {
 		}
 	}
 	// Ensure it starts with a dash (the root "/" becomes the leading dash)
-	// This matches the production behavior in internal/claude/session.go:41-43
 	if len(encoded) > 0 && encoded[0] != '-' {
 		encoded = "-" + encoded
 	}

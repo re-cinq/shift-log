@@ -12,146 +12,138 @@ import (
 )
 
 var _ = Describe("Store Command", func() {
-	var repo *testutil.GitRepo
+	for _, cfg := range testutil.AllAgentConfigs() {
+		config := cfg // capture loop variable
 
-	BeforeEach(func() {
-		var err error
-		repo, err = testutil.NewGitRepo()
-		Expect(err).NotTo(HaveOccurred())
+		Describe(config.Name+" agent", func() {
+			var repo *testutil.GitRepo
 
-		// Create an initial commit so we have HEAD
-		Expect(repo.WriteFile("README.md", "# Test")).To(Succeed())
-		Expect(repo.Commit("Initial commit")).To(Succeed())
-	})
+			BeforeEach(func() {
+				var err error
+				repo, err = testutil.NewGitRepo()
+				Expect(err).NotTo(HaveOccurred())
 
-	AfterEach(func() {
-		if repo != nil {
-			repo.Cleanup()
-		}
-	})
+				if config.NeedsBinaryPath {
+					repo.SetBinaryPath(testutil.BinaryPath())
+				}
 
-	Describe("with git commit command", func() {
-		It("creates a git note with conversation", func() {
-			// Write transcript file
-			transcriptPath := filepath.Join(repo.Path, "transcript.jsonl")
-			Expect(os.WriteFile(transcriptPath, []byte(testutil.SampleTranscript()), 0644)).To(Succeed())
+				// Initialize agent hooks
+				_, _, err = testutil.RunClauditInDir(repo.Path, config.InitArgs...)
+				Expect(err).NotTo(HaveOccurred())
 
-			// Get current HEAD
-			head, err := repo.GetHead()
-			Expect(err).NotTo(HaveOccurred())
+				// Create initial commit
+				Expect(repo.WriteFile("README.md", "# Test")).To(Succeed())
+				Expect(repo.Commit("Initial commit")).To(Succeed())
+			})
 
-			// Simulate hook input
-			hookInput := testutil.SampleHookInput("session-123", transcriptPath, "git commit -m 'test'")
+			AfterEach(func() {
+				if repo != nil {
+					repo.Cleanup()
+				}
+			})
 
-			_, stderr, err := testutil.RunClauditInDirWithStdin(repo.Path, hookInput, "store")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(stderr).To(ContainSubstring("stored conversation"))
+			It("creates a git note with conversation", func() {
+				transcriptPath := filepath.Join(repo.Path, "transcript"+config.TranscriptFileExt)
+				Expect(os.WriteFile(transcriptPath, []byte(config.SampleTranscript()), 0644)).To(Succeed())
 
-			// Verify note was created
-			Expect(repo.HasNote("refs/notes/claude-conversations", head)).To(BeTrue())
+				head, err := repo.GetHead()
+				Expect(err).NotTo(HaveOccurred())
+
+				hookInput := config.SampleHookInput("session-123", transcriptPath, "git commit -m 'test'")
+
+				_, stderr, err := testutil.RunClauditInDirWithStdin(repo.Path, hookInput, config.StoreArgs...)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(stderr).To(ContainSubstring("stored conversation"))
+
+				Expect(repo.HasNote("refs/notes/claude-conversations", head)).To(BeTrue())
+			})
+
+			It("stores note with expected metadata", func() {
+				transcriptPath := filepath.Join(repo.Path, "transcript"+config.TranscriptFileExt)
+				Expect(os.WriteFile(transcriptPath, []byte(config.SampleTranscript()), 0644)).To(Succeed())
+
+				head, err := repo.GetHead()
+				Expect(err).NotTo(HaveOccurred())
+
+				hookInput := config.SampleHookInput("session-456", transcriptPath, "git commit -m 'test'")
+				_, _, err = testutil.RunClauditInDirWithStdin(repo.Path, hookInput, config.StoreArgs...)
+				Expect(err).NotTo(HaveOccurred())
+
+				noteContent, err := repo.GetNote("refs/notes/claude-conversations", head)
+				Expect(err).NotTo(HaveOccurred())
+
+				var stored map[string]interface{}
+				Expect(json.Unmarshal([]byte(noteContent), &stored)).To(Succeed())
+
+				Expect(stored["version"]).To(BeEquivalentTo(1))
+				Expect(stored["session_id"]).To(Equal("session-456"))
+				Expect(stored["checksum"]).To(HavePrefix("sha256:"))
+				Expect(stored["transcript"]).NotTo(BeEmpty())
+			})
+
+			It("transcript can be decompressed from note", func() {
+				transcriptPath := filepath.Join(repo.Path, "transcript"+config.TranscriptFileExt)
+				Expect(os.WriteFile(transcriptPath, []byte(config.SampleTranscript()), 0644)).To(Succeed())
+
+				head, err := repo.GetHead()
+				Expect(err).NotTo(HaveOccurred())
+
+				hookInput := config.SampleHookInput("session-789", transcriptPath, "git commit -m 'test'")
+				_, _, err = testutil.RunClauditInDirWithStdin(repo.Path, hookInput, config.StoreArgs...)
+				Expect(err).NotTo(HaveOccurred())
+
+				noteContent, err := repo.GetNote("refs/notes/claude-conversations", head)
+				Expect(err).NotTo(HaveOccurred())
+
+				var stored map[string]interface{}
+				Expect(json.Unmarshal([]byte(noteContent), &stored)).To(Succeed())
+
+				encoded := stored["transcript"].(string)
+				Expect(encoded).NotTo(BeEmpty())
+			})
+
+			It("exits silently for non-commit commands", func() {
+				transcriptPath := filepath.Join(repo.Path, "transcript"+config.TranscriptFileExt)
+				Expect(os.WriteFile(transcriptPath, []byte(config.SampleTranscript()), 0644)).To(Succeed())
+
+				head, err := repo.GetHead()
+				Expect(err).NotTo(HaveOccurred())
+
+				hookInput := config.SampleHookInput("session-123", transcriptPath, "ls -la")
+
+				_, stderr, err := testutil.RunClauditInDirWithStdin(repo.Path, hookInput, config.StoreArgs...)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(stderr).To(BeEmpty())
+
+				Expect(repo.HasNote("refs/notes/claude-conversations", head)).To(BeFalse())
+			})
+
+			It("exits silently for non-matching tool", func() {
+				head, err := repo.GetHead()
+				Expect(err).NotTo(HaveOccurred())
+
+				hookInput := config.SampleNonToolInput("session-123")
+
+				_, stderr, err := testutil.RunClauditInDirWithStdin(repo.Path, hookInput, config.StoreArgs...)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(stderr).To(BeEmpty())
+
+				Expect(repo.HasNote("refs/notes/claude-conversations", head)).To(BeFalse())
+			})
+
+			It("exits with warning for malformed JSON", func() {
+				_, stderr, err := testutil.RunClauditInDirWithStdin(repo.Path, "not valid json", config.StoreArgs...)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(stderr).To(ContainSubstring("warning"))
+			})
+
+			It("exits with error for missing transcript", func() {
+				hookInput := config.SampleHookInput("session-123", "/nonexistent/path"+config.TranscriptFileExt, "git commit -m 'test'")
+
+				_, stderr, err := testutil.RunClauditInDirWithStdin(repo.Path, hookInput, config.StoreArgs...)
+				Expect(err).To(HaveOccurred())
+				Expect(stderr).To(ContainSubstring("failed to read transcript"))
+			})
 		})
-
-		It("stores note with expected metadata", func() {
-			transcriptPath := filepath.Join(repo.Path, "transcript.jsonl")
-			Expect(os.WriteFile(transcriptPath, []byte(testutil.SampleTranscript()), 0644)).To(Succeed())
-
-			head, err := repo.GetHead()
-			Expect(err).NotTo(HaveOccurred())
-
-			hookInput := testutil.SampleHookInput("session-456", transcriptPath, "git commit -m 'test'")
-			_, _, err = testutil.RunClauditInDirWithStdin(repo.Path, hookInput, "store")
-			Expect(err).NotTo(HaveOccurred())
-
-			noteContent, err := repo.GetNote("refs/notes/claude-conversations", head)
-			Expect(err).NotTo(HaveOccurred())
-
-			var stored map[string]interface{}
-			Expect(json.Unmarshal([]byte(noteContent), &stored)).To(Succeed())
-
-			Expect(stored["version"]).To(BeEquivalentTo(1))
-			Expect(stored["session_id"]).To(Equal("session-456"))
-			Expect(stored["checksum"]).To(HavePrefix("sha256:"))
-			Expect(stored["transcript"]).NotTo(BeEmpty())
-		})
-
-		It("transcript can be decompressed from note", func() {
-			transcriptPath := filepath.Join(repo.Path, "transcript.jsonl")
-			originalTranscript := testutil.SampleTranscript()
-			Expect(os.WriteFile(transcriptPath, []byte(originalTranscript), 0644)).To(Succeed())
-
-			head, err := repo.GetHead()
-			Expect(err).NotTo(HaveOccurred())
-
-			hookInput := testutil.SampleHookInput("session-789", transcriptPath, "git commit -m 'test'")
-			_, _, err = testutil.RunClauditInDirWithStdin(repo.Path, hookInput, "store")
-			Expect(err).NotTo(HaveOccurred())
-
-			noteContent, err := repo.GetNote("refs/notes/claude-conversations", head)
-			Expect(err).NotTo(HaveOccurred())
-
-			var stored map[string]interface{}
-			Expect(json.Unmarshal([]byte(noteContent), &stored)).To(Succeed())
-
-			// Decode and decompress
-			encoded := stored["transcript"].(string)
-
-			// Use our storage package to verify
-			// For now, just verify the field exists and is non-empty
-			Expect(encoded).NotTo(BeEmpty())
-		})
-	})
-
-	Describe("with non-commit command", func() {
-		It("exits silently without creating note", func() {
-			transcriptPath := filepath.Join(repo.Path, "transcript.jsonl")
-			Expect(os.WriteFile(transcriptPath, []byte(testutil.SampleTranscript()), 0644)).To(Succeed())
-
-			head, err := repo.GetHead()
-			Expect(err).NotTo(HaveOccurred())
-
-			// Use a non-commit command
-			hookInput := testutil.SampleHookInput("session-123", transcriptPath, "ls -la")
-
-			_, stderr, err := testutil.RunClauditInDirWithStdin(repo.Path, hookInput, "store")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(stderr).To(BeEmpty())
-
-			// Note should NOT be created
-			Expect(repo.HasNote("refs/notes/claude-conversations", head)).To(BeFalse())
-		})
-	})
-
-	Describe("with non-Bash tool", func() {
-		It("exits silently", func() {
-			head, err := repo.GetHead()
-			Expect(err).NotTo(HaveOccurred())
-
-			hookInput := testutil.SampleHookInputNonBash("session-123")
-
-			_, stderr, err := testutil.RunClauditInDirWithStdin(repo.Path, hookInput, "store")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(stderr).To(BeEmpty())
-
-			Expect(repo.HasNote("refs/notes/claude-conversations", head)).To(BeFalse())
-		})
-	})
-
-	Describe("with malformed JSON", func() {
-		It("exits with warning but no error", func() {
-			_, stderr, err := testutil.RunClauditInDirWithStdin(repo.Path, "not valid json", "store")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(stderr).To(ContainSubstring("warning"))
-		})
-	})
-
-	Describe("with missing transcript file", func() {
-		It("exits with error when transcript is missing", func() {
-			hookInput := testutil.SampleHookInput("session-123", "/nonexistent/path.jsonl", "git commit -m 'test'")
-
-			_, stderr, err := testutil.RunClauditInDirWithStdin(repo.Path, hookInput, "store")
-			// After fix: should return error instead of exiting silently
-			Expect(err).To(HaveOccurred())
-			Expect(stderr).To(ContainSubstring("failed to read transcript"))
-		})
-	})
+	}
 })

@@ -13,359 +13,367 @@ import (
 )
 
 var _ = Describe("Resume Command", func() {
-	var repo *testutil.GitRepo
-	var claudeEnv *testutil.ClaudeEnv
+	for _, cfg := range testutil.AllAgentConfigs() {
+		config := cfg // capture loop variable
 
-	BeforeEach(func() {
-		var err error
-		repo, err = testutil.NewGitRepo()
-		Expect(err).NotTo(HaveOccurred())
+		Describe(config.Name+" agent", func() {
+			var repo *testutil.GitRepo
+			var agentEnv *testutil.AgentEnv
 
-		claudeEnv, err = testutil.NewClaudeEnv()
-		Expect(err).NotTo(HaveOccurred())
+			BeforeEach(func() {
+				var err error
+				repo, err = testutil.NewGitRepo()
+				Expect(err).NotTo(HaveOccurred())
 
-		// Create initial commit
-		Expect(repo.WriteFile("README.md", "# Test")).To(Succeed())
-		Expect(repo.Commit("Initial commit")).To(Succeed())
-	})
+				if config.NeedsBinaryPath {
+					repo.SetBinaryPath(testutil.BinaryPath())
+				}
 
-	AfterEach(func() {
-		if repo != nil {
-			repo.Cleanup()
-		}
-		if claudeEnv != nil {
-			claudeEnv.Cleanup()
-		}
-	})
+				agentEnv, err = testutil.NewAgentEnv(config)
+				Expect(err).NotTo(HaveOccurred())
 
-	// Helper to store a conversation on the current commit
-	storeConversation := func(sessionID string) string {
-		transcriptPath := filepath.Join(repo.Path, "transcript.jsonl")
-		Expect(os.WriteFile(transcriptPath, []byte(testutil.SampleTranscript()), 0644)).To(Succeed())
+				// Initialize agent hooks so store works correctly
+				_, _, err = testutil.RunClauditInDir(repo.Path, config.InitArgs...)
+				Expect(err).NotTo(HaveOccurred())
 
-		head, err := repo.GetHead()
-		Expect(err).NotTo(HaveOccurred())
+				// Create initial commit
+				Expect(repo.WriteFile("README.md", "# Test")).To(Succeed())
+				Expect(repo.Commit("Initial commit")).To(Succeed())
+			})
 
-		hookInput := testutil.SampleHookInput(sessionID, transcriptPath, "git commit -m 'test'")
-		_, _, err = testutil.RunClauditInDirWithStdin(repo.Path, hookInput, "store")
-		Expect(err).NotTo(HaveOccurred())
+			AfterEach(func() {
+				if repo != nil {
+					repo.Cleanup()
+				}
+				if agentEnv != nil {
+					agentEnv.Cleanup()
+				}
+			})
 
-		return head
+			// Helper to store a conversation on the current commit
+			storeConversation := func(sessionID string) string {
+				transcriptPath := filepath.Join(repo.Path, "transcript"+config.TranscriptFileExt)
+				Expect(os.WriteFile(transcriptPath, []byte(config.SampleTranscript()), 0644)).To(Succeed())
+
+				head, err := repo.GetHead()
+				Expect(err).NotTo(HaveOccurred())
+
+				hookInput := config.SampleHookInput(sessionID, transcriptPath, "git commit -m 'test'")
+				_, _, err = testutil.RunClauditInDirWithStdin(repo.Path, hookInput, config.StoreArgs...)
+				Expect(err).NotTo(HaveOccurred())
+
+				return head
+			}
+
+			Describe("resolving commit references", func() {
+				It("resolves full SHA", func() {
+					commitSHA := storeConversation("session-full-sha")
+
+					stdout, _, _ := testutil.RunClauditInDirWithEnv(
+						repo.Path,
+						agentEnv.GetEnvVars(),
+						"resume", commitSHA, "--force",
+					)
+
+					Expect(stdout).To(ContainSubstring("restored session"))
+				})
+
+				It("resolves short SHA", func() {
+					commitSHA := storeConversation("session-short-sha")
+					shortSHA := commitSHA[:7]
+
+					stdout, _, _ := testutil.RunClauditInDirWithEnv(
+						repo.Path,
+						agentEnv.GetEnvVars(),
+						"resume", shortSHA, "--force",
+					)
+
+					Expect(stdout).To(ContainSubstring("restored session"))
+				})
+
+				It("resolves HEAD reference", func() {
+					storeConversation("session-head-ref")
+
+					stdout, _, _ := testutil.RunClauditInDirWithEnv(
+						repo.Path,
+						agentEnv.GetEnvVars(),
+						"resume", "HEAD", "--force",
+					)
+
+					Expect(stdout).To(ContainSubstring("restored session"))
+				})
+			})
+
+			Describe("restoring session files", func() {
+				It("writes transcript to agent session directory", func() {
+					commitSHA := storeConversation("session-restore-test")
+
+					testutil.RunClauditInDirWithEnv(
+						repo.Path,
+						agentEnv.GetEnvVars(),
+						"resume", commitSHA, "--force",
+					)
+
+					Expect(agentEnv.SessionFileExists(repo.Path, "session-restore-test")).To(BeTrue())
+				})
+
+				It("creates sessions-index.json", func() {
+					commitSHA := storeConversation("session-index-test")
+
+					testutil.RunClauditInDirWithEnv(
+						repo.Path,
+						agentEnv.GetEnvVars(),
+						"resume", commitSHA, "--force",
+					)
+
+					Expect(agentEnv.SessionsIndexExists(repo.Path)).To(BeTrue())
+				})
+			})
+
+			Describe("handling missing conversations", func() {
+				It("fails when commit has no conversation", func() {
+					Expect(repo.WriteFile("file.txt", "content")).To(Succeed())
+					Expect(repo.Commit("Commit without conversation")).To(Succeed())
+
+					head, err := repo.GetHead()
+					Expect(err).NotTo(HaveOccurred())
+
+					_, stderr, err := testutil.RunClauditInDirWithEnv(
+						repo.Path,
+						agentEnv.GetEnvVars(),
+						"resume", head, "--force",
+					)
+
+					Expect(err).To(HaveOccurred())
+					Expect(stderr).To(ContainSubstring("no conversation found"))
+				})
+
+				It("fails with invalid commit reference", func() {
+					_, stderr, err := testutil.RunClauditInDirWithEnv(
+						repo.Path,
+						agentEnv.GetEnvVars(),
+						"resume", "invalid-ref", "--force",
+					)
+
+					Expect(err).To(HaveOccurred())
+					Expect(stderr).To(ContainSubstring("could not resolve commit"))
+				})
+			})
+
+			Describe("handling uncommitted changes", func() {
+				It("warns about uncommitted changes without --force", func() {
+					commitSHA := storeConversation("session-dirty")
+
+					Expect(repo.WriteFile("uncommitted.txt", "changes")).To(Succeed())
+
+					_, stderr, _ := testutil.RunClauditInDirWithEnvAndStdin(
+						repo.Path,
+						agentEnv.GetEnvVars(),
+						"n\n",
+						"resume", commitSHA,
+					)
+
+					Expect(stderr).To(ContainSubstring("uncommitted changes"))
+				})
+
+				It("proceeds with --force flag despite uncommitted changes", func() {
+					commitSHA := storeConversation("session-force")
+
+					Expect(repo.WriteFile("uncommitted.txt", "changes")).To(Succeed())
+
+					stdout, _, _ := testutil.RunClauditInDirWithEnv(
+						repo.Path,
+						agentEnv.GetEnvVars(),
+						"resume", commitSHA, "--force",
+					)
+
+					Expect(stdout).To(ContainSubstring("restored session"))
+				})
+			})
+
+			Describe("handling corrupt conversations", func() {
+				It("fails when note contains invalid JSON", func() {
+					head, err := repo.GetHead()
+					Expect(err).NotTo(HaveOccurred())
+
+					repo.AddNote("refs/notes/claude-conversations", head, "not valid json at all")
+
+					_, stderr, err := testutil.RunClauditInDirWithEnv(
+						repo.Path,
+						agentEnv.GetEnvVars(),
+						"resume", head, "--force",
+					)
+
+					Expect(err).To(HaveOccurred())
+					Expect(stderr).To(ContainSubstring("could not parse"))
+				})
+
+				It("warns on checksum mismatch but still restores", func() {
+					head, err := repo.GetHead()
+					Expect(err).NotTo(HaveOccurred())
+
+					transcript := []byte(config.SampleTranscript())
+					sc, err := storage.NewStoredConversation("session-tampered", repo.Path, "master", 4, transcript)
+					Expect(err).NotTo(HaveOccurred())
+
+					sc.Checksum = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+
+					noteData, err := sc.Marshal()
+					Expect(err).NotTo(HaveOccurred())
+					repo.AddNote("refs/notes/claude-conversations", head, string(noteData))
+
+					stdout, stderr, _ := testutil.RunClauditInDirWithEnv(
+						repo.Path,
+						agentEnv.GetEnvVars(),
+						"resume", head, "--force",
+					)
+
+					Expect(stderr).To(ContainSubstring("checksum mismatch"))
+					Expect(stdout).To(ContainSubstring("restored session"))
+				})
+
+				It("fails when transcript cannot be decompressed", func() {
+					head, err := repo.GetHead()
+					Expect(err).NotTo(HaveOccurred())
+
+					note := map[string]interface{}{
+						"version":       1,
+						"session_id":    "session-corrupt",
+						"timestamp":     "2025-01-01T00:00:00Z",
+						"project_path":  repo.Path,
+						"git_branch":    "master",
+						"message_count": 1,
+						"checksum":      "sha256:abcd",
+						"transcript":    "dGhpcyBpcyBub3QgZ3ppcCBkYXRh", // base64("this is not gzip data")
+					}
+					noteData, err := json.Marshal(note)
+					Expect(err).NotTo(HaveOccurred())
+					repo.AddNote("refs/notes/claude-conversations", head, string(noteData))
+
+					_, stderr, err := testutil.RunClauditInDirWithEnv(
+						repo.Path,
+						agentEnv.GetEnvVars(),
+						"resume", head, "--force",
+					)
+
+					Expect(err).To(HaveOccurred())
+					Expect(stderr).To(ContainSubstring("could not decompress"))
+				})
+
+				It("fails when transcript field is not valid base64", func() {
+					head, err := repo.GetHead()
+					Expect(err).NotTo(HaveOccurred())
+
+					note := map[string]interface{}{
+						"version":       1,
+						"session_id":    "session-bad-b64",
+						"timestamp":     "2025-01-01T00:00:00Z",
+						"project_path":  repo.Path,
+						"git_branch":    "master",
+						"message_count": 1,
+						"checksum":      "sha256:abcd",
+						"transcript":    "!!!not-base64!!!",
+					}
+					noteData, err := json.Marshal(note)
+					Expect(err).NotTo(HaveOccurred())
+					repo.AddNote("refs/notes/claude-conversations", head, string(noteData))
+
+					_, stderr, err := testutil.RunClauditInDirWithEnv(
+						repo.Path,
+						agentEnv.GetEnvVars(),
+						"resume", head, "--force",
+					)
+
+					Expect(err).To(HaveOccurred())
+					Expect(stderr).To(SatisfyAny(
+						ContainSubstring("could not verify transcript integrity"),
+						ContainSubstring("could not decompress"),
+					))
+				})
+			})
+
+			Describe("resolving relative references", func() {
+				It("resolves HEAD~1 to parent commit", func() {
+					storeConversation("session-parent")
+
+					Expect(repo.WriteFile("second.txt", "content")).To(Succeed())
+					Expect(repo.Commit("Second commit")).To(Succeed())
+
+					stdout, _, _ := testutil.RunClauditInDirWithEnv(
+						repo.Path,
+						agentEnv.GetEnvVars(),
+						"resume", "HEAD~1", "--force",
+					)
+
+					Expect(stdout).To(ContainSubstring("restored session"))
+					Expect(stdout).To(ContainSubstring("session-parent"))
+				})
+			})
+
+			Describe("session content verification", func() {
+				It("restores the original transcript content", func() {
+					originalTranscript := config.SampleTranscript()
+					commitSHA := storeConversation("session-content-verify")
+
+					testutil.RunClauditInDirWithEnv(
+						repo.Path,
+						agentEnv.GetEnvVars(),
+						"resume", commitSHA, "--force",
+					)
+
+					content, err := agentEnv.ReadSessionFile(repo.Path, "session-content-verify")
+					Expect(err).NotTo(HaveOccurred())
+					Expect(string(content)).To(Equal(originalTranscript))
+				})
+
+				It("populates sessions-index.json with correct metadata", func() {
+					commitSHA := storeConversation("session-meta-check")
+
+					testutil.RunClauditInDirWithEnv(
+						repo.Path,
+						agentEnv.GetEnvVars(),
+						"resume", commitSHA, "--force",
+					)
+
+					indexPath := agentEnv.GetSessionsIndexPath(repo.Path)
+					indexData, err := os.ReadFile(indexPath)
+					Expect(err).NotTo(HaveOccurred())
+
+					var index map[string]interface{}
+					Expect(json.Unmarshal(indexData, &index)).To(Succeed())
+
+					entries := index["entries"].([]interface{})
+					Expect(entries).To(HaveLen(1))
+
+					entry := entries[0].(map[string]interface{})
+					Expect(entry["sessionId"]).To(Equal("session-meta-check"))
+				})
+			})
+		})
 	}
 
-	Describe("resolving commit references", func() {
-		It("resolves full SHA", func() {
-			commitSHA := storeConversation("session-full-sha")
-
-			stdout, stderr, err := testutil.RunClauditInDirWithEnv(
-				repo.Path,
-				claudeEnv.GetEnvVars(),
-				"resume", commitSHA, "--force",
-			)
-
-			// It will fail to launch claude, but that's OK for this test
-			// We just want to verify it resolved the SHA correctly
-			Expect(stdout).To(ContainSubstring("restored session"))
-			_ = stderr
-			_ = err
-		})
-
-		It("resolves short SHA", func() {
-			commitSHA := storeConversation("session-short-sha")
-			shortSHA := commitSHA[:7]
-
-			stdout, _, _ := testutil.RunClauditInDirWithEnv(
-				repo.Path,
-				claudeEnv.GetEnvVars(),
-				"resume", shortSHA, "--force",
-			)
-
-			Expect(stdout).To(ContainSubstring("restored session"))
-		})
-
-		It("resolves HEAD reference", func() {
-			storeConversation("session-head-ref")
-
-			stdout, _, _ := testutil.RunClauditInDirWithEnv(
-				repo.Path,
-				claudeEnv.GetEnvVars(),
-				"resume", "HEAD", "--force",
-			)
-
-			Expect(stdout).To(ContainSubstring("restored session"))
-		})
-	})
-
-	Describe("restoring session files", func() {
-		It("writes transcript to Claude projects directory", func() {
-			commitSHA := storeConversation("session-restore-test")
-
-			testutil.RunClauditInDirWithEnv(
-				repo.Path,
-				claudeEnv.GetEnvVars(),
-				"resume", commitSHA, "--force",
-			)
-
-			// Verify session file was created
-			Expect(claudeEnv.SessionFileExists(repo.Path, "session-restore-test")).To(BeTrue())
-		})
-
-		It("creates sessions-index.json", func() {
-			commitSHA := storeConversation("session-index-test")
-
-			testutil.RunClauditInDirWithEnv(
-				repo.Path,
-				claudeEnv.GetEnvVars(),
-				"resume", commitSHA, "--force",
-			)
-
-			// Verify index was created
-			Expect(claudeEnv.SessionsIndexExists(repo.Path)).To(BeTrue())
-		})
-	})
-
-	Describe("handling missing conversations", func() {
-		It("fails when commit has no conversation", func() {
-			// Create a commit without a conversation
-			Expect(repo.WriteFile("file.txt", "content")).To(Succeed())
-			Expect(repo.Commit("Commit without conversation")).To(Succeed())
-
-			head, err := repo.GetHead()
-			Expect(err).NotTo(HaveOccurred())
-
-			_, stderr, err := testutil.RunClauditInDirWithEnv(
-				repo.Path,
-				claudeEnv.GetEnvVars(),
-				"resume", head, "--force",
-			)
-
-			Expect(err).To(HaveOccurred())
-			Expect(stderr).To(ContainSubstring("no conversation found"))
-		})
-
-		It("fails with invalid commit reference", func() {
-			_, stderr, err := testutil.RunClauditInDirWithEnv(
-				repo.Path,
-				claudeEnv.GetEnvVars(),
-				"resume", "invalid-ref", "--force",
-			)
-
-			Expect(err).To(HaveOccurred())
-			Expect(stderr).To(ContainSubstring("could not resolve commit"))
-		})
-	})
-
-	Describe("handling uncommitted changes", func() {
-		It("warns about uncommitted changes without --force", func() {
-			commitSHA := storeConversation("session-dirty")
-
-			// Make uncommitted changes
-			Expect(repo.WriteFile("uncommitted.txt", "changes")).To(Succeed())
-
-			// Run without stdin to simulate non-interactive
-			_, stderr, _ := testutil.RunClauditInDirWithEnvAndStdin(
-				repo.Path,
-				claudeEnv.GetEnvVars(),
-				"n\n", // Respond "no" to prompt
-				"resume", commitSHA,
-			)
-
-			Expect(stderr).To(ContainSubstring("uncommitted changes"))
-		})
-
-		It("proceeds with --force flag despite uncommitted changes", func() {
-			commitSHA := storeConversation("session-force")
-
-			// Make uncommitted changes
-			Expect(repo.WriteFile("uncommitted.txt", "changes")).To(Succeed())
-
-			stdout, _, _ := testutil.RunClauditInDirWithEnv(
-				repo.Path,
-				claudeEnv.GetEnvVars(),
-				"resume", commitSHA, "--force",
-			)
-
-			Expect(stdout).To(ContainSubstring("restored session"))
-		})
-	})
-
-	Describe("handling corrupt conversations", func() {
-		It("fails when note contains invalid JSON", func() {
-			head, err := repo.GetHead()
-			Expect(err).NotTo(HaveOccurred())
-
-			// Write garbage directly as a git note
-			repo.AddNote("refs/notes/claude-conversations", head, "not valid json at all")
-
-			_, stderr, err := testutil.RunClauditInDirWithEnv(
-				repo.Path,
-				claudeEnv.GetEnvVars(),
-				"resume", head, "--force",
-			)
-
-			Expect(err).To(HaveOccurred())
-			Expect(stderr).To(ContainSubstring("could not parse"))
-		})
-
-		It("warns on checksum mismatch but still restores", func() {
-			head, err := repo.GetHead()
-			Expect(err).NotTo(HaveOccurred())
-
-			// Create a valid stored conversation, then tamper with the checksum
-			transcript := []byte(testutil.SampleTranscript())
-			sc, err := storage.NewStoredConversation("session-tampered", repo.Path, "master", 4, transcript)
-			Expect(err).NotTo(HaveOccurred())
-
-			sc.Checksum = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
-
-			noteData, err := sc.Marshal()
-			Expect(err).NotTo(HaveOccurred())
-			repo.AddNote("refs/notes/claude-conversations", head, string(noteData))
-
-			stdout, stderr, _ := testutil.RunClauditInDirWithEnv(
-				repo.Path,
-				claudeEnv.GetEnvVars(),
-				"resume", head, "--force",
-			)
-
-			// Should warn about checksum mismatch
-			Expect(stderr).To(ContainSubstring("checksum mismatch"))
-			// But should still restore the session
-			Expect(stdout).To(ContainSubstring("restored session"))
-		})
-
-		It("fails when transcript cannot be decompressed", func() {
-			head, err := repo.GetHead()
-			Expect(err).NotTo(HaveOccurred())
-
-			// Create a note with valid JSON structure but invalid transcript data
-			note := map[string]interface{}{
-				"version":       1,
-				"session_id":    "session-corrupt",
-				"timestamp":     "2025-01-01T00:00:00Z",
-				"project_path":  repo.Path,
-				"git_branch":    "master",
-				"message_count": 1,
-				"checksum":      "sha256:abcd",
-				"transcript":    "dGhpcyBpcyBub3QgZ3ppcCBkYXRh", // base64("this is not gzip data")
-			}
-			noteData, err := json.Marshal(note)
-			Expect(err).NotTo(HaveOccurred())
-			repo.AddNote("refs/notes/claude-conversations", head, string(noteData))
-
-			_, stderr, err := testutil.RunClauditInDirWithEnv(
-				repo.Path,
-				claudeEnv.GetEnvVars(),
-				"resume", head, "--force",
-			)
-
-			Expect(err).To(HaveOccurred())
-			Expect(stderr).To(ContainSubstring("could not decompress"))
-		})
-
-		It("fails when transcript field is not valid base64", func() {
-			head, err := repo.GetHead()
-			Expect(err).NotTo(HaveOccurred())
-
-			note := map[string]interface{}{
-				"version":       1,
-				"session_id":    "session-bad-b64",
-				"timestamp":     "2025-01-01T00:00:00Z",
-				"project_path":  repo.Path,
-				"git_branch":    "master",
-				"message_count": 1,
-				"checksum":      "sha256:abcd",
-				"transcript":    "!!!not-base64!!!",
-			}
-			noteData, err := json.Marshal(note)
-			Expect(err).NotTo(HaveOccurred())
-			repo.AddNote("refs/notes/claude-conversations", head, string(noteData))
-
-			_, stderr, err := testutil.RunClauditInDirWithEnv(
-				repo.Path,
-				claudeEnv.GetEnvVars(),
-				"resume", head, "--force",
-			)
-
-			Expect(err).To(HaveOccurred())
-			// Integrity check fails first (decode error), then decompress fails
-			Expect(stderr).To(SatisfyAny(
-				ContainSubstring("could not verify transcript integrity"),
-				ContainSubstring("could not decompress"),
-			))
-		})
-	})
-
-	Describe("resolving relative references", func() {
-		It("resolves HEAD~1 to parent commit", func() {
-			// Store conversation on first commit
-			storeConversation("session-parent")
-
-			// Create a second commit (no conversation)
-			Expect(repo.WriteFile("second.txt", "content")).To(Succeed())
-			Expect(repo.Commit("Second commit")).To(Succeed())
-
-			// Resume HEAD~1 should find the first commit's conversation
-			stdout, _, _ := testutil.RunClauditInDirWithEnv(
-				repo.Path,
-				claudeEnv.GetEnvVars(),
-				"resume", "HEAD~1", "--force",
-			)
-
-			Expect(stdout).To(ContainSubstring("restored session"))
-			Expect(stdout).To(ContainSubstring("session-parent"))
-		})
-	})
-
-	Describe("session content verification", func() {
-		It("restores the original transcript content", func() {
-			originalTranscript := testutil.SampleTranscript()
-			commitSHA := storeConversation("session-content-verify")
-
-			testutil.RunClauditInDirWithEnv(
-				repo.Path,
-				claudeEnv.GetEnvVars(),
-				"resume", commitSHA, "--force",
-			)
-
-			// Read back the restored session file and verify content matches
-			content, err := claudeEnv.ReadSessionFile(repo.Path, "session-content-verify")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(string(content)).To(Equal(originalTranscript))
-		})
-
-		It("populates sessions-index.json with correct metadata", func() {
-			commitSHA := storeConversation("session-meta-check")
-
-			testutil.RunClauditInDirWithEnv(
-				repo.Path,
-				claudeEnv.GetEnvVars(),
-				"resume", commitSHA, "--force",
-			)
-
-			// Read and parse the sessions index
-			indexPath := claudeEnv.GetSessionsIndexPath(repo.Path)
-			indexData, err := os.ReadFile(indexPath)
-			Expect(err).NotTo(HaveOccurred())
-
-			var index map[string]interface{}
-			Expect(json.Unmarshal(indexData, &index)).To(Succeed())
-
-			entries := index["entries"].([]interface{})
-			Expect(entries).To(HaveLen(1))
-
-			entry := entries[0].(map[string]interface{})
-			Expect(entry["sessionId"]).To(Equal("session-meta-check"))
-			Expect(entry["firstPrompt"]).To(Equal("Hello, can you help me with a task?"))
-			Expect(entry["messageCount"]).To(BeEquivalentTo(4))
-		})
-	})
-
+	// Shared test that runs once (not per-agent)
 	Describe("requires arguments", func() {
+		var repo *testutil.GitRepo
+
+		BeforeEach(func() {
+			var err error
+			repo, err = testutil.NewGitRepo()
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(repo.WriteFile("README.md", "# Test")).To(Succeed())
+			Expect(repo.Commit("Initial commit")).To(Succeed())
+		})
+
+		AfterEach(func() {
+			if repo != nil {
+				repo.Cleanup()
+			}
+		})
+
 		It("fails when no commit argument is provided", func() {
-			_, stderr, err := testutil.RunClauditInDirWithEnv(
+			_, stderr, err := testutil.RunClauditInDir(
 				repo.Path,
-				claudeEnv.GetEnvVars(),
 				"resume",
 			)
 
