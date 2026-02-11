@@ -28,7 +28,7 @@ func TestOpenCodeIntegration(t *testing.T) {
 	geminiAPIKey := os.Getenv("GEMINI_API_KEY")
 	googleGenAIKey := os.Getenv("GOOGLE_GENERATIVE_AI_API_KEY")
 	if geminiAPIKey == "" && googleGenAIKey == "" {
-		t.Fatal("Neither GEMINI_API_KEY nor GOOGLE_GENERATIVE_AI_API_KEY set - set one of these or use SKIP_OPENCODE_INTEGRATION=1")
+		t.Skip("Neither GEMINI_API_KEY nor GOOGLE_GENERATIVE_AI_API_KEY set")
 	}
 
 	// Determine which key to use (prefer GOOGLE_GENERATIVE_AI_API_KEY if both set)
@@ -39,7 +39,7 @@ func TestOpenCodeIntegration(t *testing.T) {
 
 	// Check OpenCode CLI is available
 	if _, err := exec.LookPath("opencode"); err != nil {
-		t.Fatal("OpenCode CLI not found in PATH - install it or use SKIP_OPENCODE_INTEGRATION=1")
+		t.Skip("OpenCode CLI not found in PATH")
 	}
 
 	// Check claudit binary

@@ -24,12 +24,12 @@ func TestCodexCLIIntegration(t *testing.T) {
 
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
-		t.Fatal("OPENAI_API_KEY not set - set it or use SKIP_CODEX_INTEGRATION=1")
+		t.Skip("OPENAI_API_KEY not set")
 	}
 
 	// Check Codex CLI is available
 	if _, err := exec.LookPath("codex"); err != nil {
-		t.Fatal("Codex CLI not found in PATH - install it or use SKIP_CODEX_INTEGRATION=1")
+		t.Skip("Codex CLI not found in PATH")
 	}
 
 	// Check claudit binary

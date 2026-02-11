@@ -32,7 +32,7 @@ func TestClaudeCodeIntegration(t *testing.T) {
 	apiKey := os.Getenv("ANTHROPIC_API_KEY")
 	oauthToken := os.Getenv("CLAUDE_CODE_OAUTH_TOKEN")
 	if apiKey == "" && oauthToken == "" {
-		t.Fatal("Neither ANTHROPIC_API_KEY nor CLAUDE_CODE_OAUTH_TOKEN set - set one of these or use SKIP_CLAUDE_INTEGRATION=1")
+		t.Skip("Neither ANTHROPIC_API_KEY nor CLAUDE_CODE_OAUTH_TOKEN set")
 	}
 
 	if oauthToken != "" && apiKey == "" {
@@ -43,7 +43,7 @@ func TestClaudeCodeIntegration(t *testing.T) {
 
 	// Check Claude CLI is available
 	if _, err := exec.LookPath("claude"); err != nil {
-		t.Fatal("Claude Code CLI not found in PATH - install it or use SKIP_CLAUDE_INTEGRATION=1")
+		t.Skip("Claude Code CLI not found in PATH")
 	}
 
 	// Check claudit binary
