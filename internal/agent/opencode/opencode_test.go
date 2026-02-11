@@ -3,6 +3,7 @@ package opencode
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -278,6 +279,138 @@ func TestHasPlugin(t *testing.T) {
 
 	if !HasPlugin(tmpDir) {
 		t.Error("HasPlugin() should be true after install")
+	}
+}
+
+func TestGetProjectID(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Init git repo
+	gitInit := exec.Command("git", "init")
+	gitInit.Dir = tmpDir
+	if out, err := gitInit.CombinedOutput(); err != nil {
+		t.Fatalf("git init failed: %v\n%s", err, out)
+	}
+
+	gitConfig := exec.Command("git", "config", "user.email", "test@test.com")
+	gitConfig.Dir = tmpDir
+	gitConfig.CombinedOutput()
+
+	gitConfig2 := exec.Command("git", "config", "user.name", "Test")
+	gitConfig2.Dir = tmpDir
+	gitConfig2.CombinedOutput()
+
+	// Before any commits, should return "global"
+	if id := GetProjectID(tmpDir); id != "global" {
+		t.Errorf("GetProjectID before any commit = %q, want 'global'", id)
+	}
+
+	// Create initial commit
+	os.WriteFile(filepath.Join(tmpDir, "test.txt"), []byte("hello"), 0644)
+	gitAdd := exec.Command("git", "add", ".")
+	gitAdd.Dir = tmpDir
+	gitAdd.CombinedOutput()
+
+	gitCommit := exec.Command("git", "commit", "-m", "Initial")
+	gitCommit.Dir = tmpDir
+	gitCommit.CombinedOutput()
+
+	// After commit, should return root commit hash
+	gitRevList := exec.Command("git", "rev-list", "--max-parents=0", "--all")
+	gitRevList.Dir = tmpDir
+	rootOutput, _ := gitRevList.Output()
+	expectedRoot := strings.TrimSpace(string(rootOutput))
+
+	got := GetProjectID(tmpDir)
+	if got != expectedRoot {
+		t.Errorf("GetProjectID = %q, want root commit %q", got, expectedRoot)
+	}
+
+	// Add more commits — project ID should still be the root commit
+	os.WriteFile(filepath.Join(tmpDir, "test2.txt"), []byte("world"), 0644)
+	gitAdd2 := exec.Command("git", "add", ".")
+	gitAdd2.Dir = tmpDir
+	gitAdd2.CombinedOutput()
+
+	gitCommit2 := exec.Command("git", "commit", "-m", "Second")
+	gitCommit2.Dir = tmpDir
+	gitCommit2.CombinedOutput()
+
+	got2 := GetProjectID(tmpDir)
+	if got2 != expectedRoot {
+		t.Errorf("GetProjectID after 2nd commit = %q, want root commit %q", got2, expectedRoot)
+	}
+}
+
+func TestGetDataDir(t *testing.T) {
+	// With env var set
+	t.Setenv("OPENCODE_DATA_DIR", "/custom/opencode/path")
+	dir, err := GetDataDir()
+	if err != nil {
+		t.Fatalf("GetDataDir with env error: %v", err)
+	}
+	if dir != "/custom/opencode/path" {
+		t.Errorf("GetDataDir with OPENCODE_DATA_DIR = %q, want /custom/opencode/path", dir)
+	}
+
+	// Without env var, should return default path containing "opencode"
+	t.Setenv("OPENCODE_DATA_DIR", "")
+	dir, err = GetDataDir()
+	if err != nil {
+		t.Fatalf("GetDataDir without env error: %v", err)
+	}
+	if !strings.Contains(dir, "opencode") {
+		t.Errorf("GetDataDir default = %q, should contain 'opencode'", dir)
+	}
+	// On Linux, should be ~/.local/share/opencode
+	if !strings.HasSuffix(dir, ".local/share/opencode") && !strings.Contains(dir, "Application Support/opencode") {
+		t.Errorf("GetDataDir default = %q, expected .local/share/opencode or Application Support/opencode", dir)
+	}
+}
+
+func TestGetSessionDir(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Init git repo with a commit
+	for _, args := range [][]string{
+		{"init"},
+		{"config", "user.email", "t@t.com"},
+		{"config", "user.name", "T"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = tmpDir
+		cmd.CombinedOutput()
+	}
+	os.WriteFile(filepath.Join(tmpDir, "f.txt"), []byte("x"), 0644)
+	gitAdd := exec.Command("git", "add", ".")
+	gitAdd.Dir = tmpDir
+	gitAdd.CombinedOutput()
+	gitCommit := exec.Command("git", "commit", "-m", "Init")
+	gitCommit.Dir = tmpDir
+	gitCommit.CombinedOutput()
+
+	t.Setenv("OPENCODE_DATA_DIR", "/test/data")
+	dir, err := GetSessionDir(tmpDir)
+	if err != nil {
+		t.Fatalf("GetSessionDir error: %v", err)
+	}
+
+	projectID := GetProjectID(tmpDir)
+	expected := filepath.Join("/test/data", "storage", "session", projectID)
+	if dir != expected {
+		t.Errorf("GetSessionDir = %q, want %q", dir, expected)
+	}
+}
+
+func TestGetMessageDir(t *testing.T) {
+	t.Setenv("OPENCODE_DATA_DIR", "/test/data")
+	dir, err := GetMessageDir("sess-abc")
+	if err != nil {
+		t.Fatalf("GetMessageDir error: %v", err)
+	}
+	expected := "/test/data/storage/message/sess-abc"
+	if dir != expected {
+		t.Errorf("GetMessageDir = %q, want %q", dir, expected)
 	}
 }
 
