@@ -39,10 +39,9 @@ export const ClauditPlugin = async ({ directory }) => {
       if (!pending) return;
       pendingCommits.delete(input.callID);
 
-      const dataDir = process.env.OPENCODE_DATA_DIR ||
-        (process.platform === "darwin"
+      const dataDir = process.platform === "darwin"
           ? process.env.HOME + "/Library/Application Support/opencode"
-          : process.env.HOME + "/.local/share/opencode");
+          : (process.env.XDG_DATA_HOME || process.env.HOME + "/.local/share") + "/opencode";
 
       const hookData = JSON.stringify({
         session_id: pending.sessionID || "",

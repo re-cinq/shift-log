@@ -343,18 +343,18 @@ func TestGetProjectID(t *testing.T) {
 }
 
 func TestGetDataDir(t *testing.T) {
-	// With env var set
-	t.Setenv("OPENCODE_DATA_DIR", "/custom/opencode/path")
+	// With XDG_DATA_HOME set (OpenCode respects XDG conventions)
+	t.Setenv("XDG_DATA_HOME", "/custom/data")
 	dir, err := GetDataDir()
 	if err != nil {
-		t.Fatalf("GetDataDir with env error: %v", err)
+		t.Fatalf("GetDataDir with XDG_DATA_HOME error: %v", err)
 	}
-	if dir != "/custom/opencode/path" {
-		t.Errorf("GetDataDir with OPENCODE_DATA_DIR = %q, want /custom/opencode/path", dir)
+	if dir != "/custom/data/opencode" {
+		t.Errorf("GetDataDir with XDG_DATA_HOME = %q, want /custom/data/opencode", dir)
 	}
 
-	// Without env var, should return default path containing "opencode"
-	t.Setenv("OPENCODE_DATA_DIR", "")
+	// Without XDG_DATA_HOME, should return default path containing "opencode"
+	t.Setenv("XDG_DATA_HOME", "")
 	dir, err = GetDataDir()
 	if err != nil {
 		t.Fatalf("GetDataDir without env error: %v", err)
@@ -389,26 +389,26 @@ func TestGetSessionDir(t *testing.T) {
 	gitCommit.Dir = tmpDir
 	gitCommit.CombinedOutput()
 
-	t.Setenv("OPENCODE_DATA_DIR", "/test/data")
+	t.Setenv("XDG_DATA_HOME", "/test/data")
 	dir, err := GetSessionDir(tmpDir)
 	if err != nil {
 		t.Fatalf("GetSessionDir error: %v", err)
 	}
 
 	projectID := GetProjectID(tmpDir)
-	expected := filepath.Join("/test/data", "storage", "session", projectID)
+	expected := filepath.Join("/test/data/opencode", "storage", "session", projectID)
 	if dir != expected {
 		t.Errorf("GetSessionDir = %q, want %q", dir, expected)
 	}
 }
 
 func TestGetMessageDir(t *testing.T) {
-	t.Setenv("OPENCODE_DATA_DIR", "/test/data")
+	t.Setenv("XDG_DATA_HOME", "/test/data")
 	dir, err := GetMessageDir("sess-abc")
 	if err != nil {
 		t.Fatalf("GetMessageDir error: %v", err)
 	}
-	expected := "/test/data/storage/message/sess-abc"
+	expected := "/test/data/opencode/storage/message/sess-abc"
 	if dir != expected {
 		t.Errorf("GetMessageDir = %q, want %q", dir, expected)
 	}

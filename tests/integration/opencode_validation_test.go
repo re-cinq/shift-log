@@ -77,7 +77,7 @@ func TestOpenCodeSessionSubcommand(t *testing.T) {
 //  4. Session storage: sessions at data_dir/storage/session/<projectID>/
 //  5. Message storage: messages at data_dir/storage/message/<sessionID>/
 //  6. Project ID scheme: matches git rev-list --max-parents=0 --all
-//  7. Data directory: OPENCODE_DATA_DIR env var is respected
+//  7. Data directory: XDG_DATA_HOME env var is respected
 //
 // Requires: OpenCode CLI, GEMINI_API_KEY or GOOGLE_GENERATIVE_AI_API_KEY.
 // Opt out: SKIP_OPENCODE_INTEGRATION=1
@@ -116,8 +116,10 @@ func TestOpenCodeValidation(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Use custom data dir for isolation (no pollution of real OpenCode data)
-	dataDir := filepath.Join(tmpDir, "opencode-data")
+	// Use custom XDG_DATA_HOME for isolation (no pollution of real OpenCode data).
+	// OpenCode respects XDG_DATA_HOME and stores data at $XDG_DATA_HOME/opencode.
+	xdgDataHome := filepath.Join(tmpDir, "xdg-data")
+	dataDir := filepath.Join(xdgDataHome, "opencode")
 
 	// Capture file for hook data
 	captureFile := filepath.Join(tmpDir, "hook-capture.jsonl")
@@ -172,7 +174,7 @@ func TestOpenCodeValidation(t *testing.T) {
 	opencodeCmd.Env = append(os.Environ(),
 		"PATH="+filepath.Dir(clauditPath)+":"+os.Getenv("PATH"),
 		"GOOGLE_GENERATIVE_AI_API_KEY="+apiKey,
-		"OPENCODE_DATA_DIR="+dataDir,
+		"XDG_DATA_HOME="+xdgDataHome,
 		"CLAUDIT_HOOK_CAPTURE_FILE="+captureFile,
 	)
 
@@ -340,11 +342,11 @@ func TestOpenCodeValidation(t *testing.T) {
 	})
 
 	t.Run("DataDirectory", func(t *testing.T) {
-		// Validate OPENCODE_DATA_DIR was respected
+		// Validate XDG_DATA_HOME was respected
 		if _, err := os.Stat(dataDir); os.IsNotExist(err) {
-			t.Fatalf("Custom OPENCODE_DATA_DIR at %s was not created.\n"+
-				"OpenCode may not respect the OPENCODE_DATA_DIR env var.\n"+
-				"Our GetDataDir() falls back to this env var.", dataDir)
+			t.Fatalf("Custom data dir at %s was not created.\n"+
+				"OpenCode may not respect XDG_DATA_HOME.\n"+
+				"Our GetDataDir() uses XDG_DATA_HOME/opencode.", dataDir)
 		}
 
 		// Check expected subdirectory structure
@@ -356,7 +358,7 @@ func TestOpenCodeValidation(t *testing.T) {
 			}
 		}
 
-		t.Logf("Confirmed: OPENCODE_DATA_DIR respected at %s", dataDir)
+		t.Logf("Confirmed: XDG_DATA_HOME respected at %s", dataDir)
 	})
 
 	t.Run("ProjectIDScheme", func(t *testing.T) {
@@ -675,10 +677,9 @@ export const ClauditPlugin = async ({ directory }) => {
       if (!pending) return;
       pendingCommits.delete(input.callID);
 
-      const dataDir = process.env.OPENCODE_DATA_DIR ||
-        (process.platform === "darwin"
+      const dataDir = process.platform === "darwin"
           ? process.env.HOME + "/Library/Application Support/opencode"
-          : process.env.HOME + "/.local/share/opencode");
+          : (process.env.XDG_DATA_HOME || process.env.HOME + "/.local/share") + "/opencode";
 
       const hookData = JSON.stringify({
         session_id: pending.sessionID || "",
