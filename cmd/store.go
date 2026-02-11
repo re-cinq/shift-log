@@ -217,6 +217,7 @@ func storeConversation(ag agent.Agent, sessionID, transcriptPath string) error {
 // Some agents (e.g., OpenCode) store messages as individual JSON files
 // in a directory rather than a single file. In that case, we read all
 // JSON files and combine them into a JSON array.
+// JSONL files are split by line so each line becomes a separate message.
 func readTranscriptData(path string) ([]byte, error) {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -234,14 +235,31 @@ func readTranscriptData(path string) ([]byte, error) {
 
 	var messages []json.RawMessage
 	for _, entry := range entries {
-		if entry.IsDir() || (!strings.HasSuffix(entry.Name(), ".json") && !strings.HasSuffix(entry.Name(), ".jsonl")) {
+		if entry.IsDir() {
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join(path, entry.Name()))
+		name := entry.Name()
+		isJSON := strings.HasSuffix(name, ".json")
+		isJSONL := strings.HasSuffix(name, ".jsonl")
+		if !isJSON && !isJSONL {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(path, name))
 		if err != nil {
 			continue
 		}
-		messages = append(messages, json.RawMessage(data))
+		if isJSONL {
+			// JSONL: each line is a separate JSON object
+			for _, line := range strings.Split(string(data), "\n") {
+				line = strings.TrimSpace(line)
+				if line == "" {
+					continue
+				}
+				messages = append(messages, json.RawMessage(line))
+			}
+		} else {
+			messages = append(messages, json.RawMessage(data))
+		}
 	}
 
 	return json.Marshal(messages)

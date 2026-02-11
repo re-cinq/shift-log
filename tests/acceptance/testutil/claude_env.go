@@ -94,6 +94,17 @@ func (e *AgentEnv) ReadSessionFile(projectPath, sessionID string) ([]byte, error
 	return os.ReadFile(sessionPath)
 }
 
+// ReadRestoredTranscript reads the restored transcript content.
+// For agents where the session file IS the transcript (Claude, Gemini), this
+// reads the session file. For agents with separate storage (OpenCode), this
+// delegates to the config's ReadRestoredTranscript function.
+func (e *AgentEnv) ReadRestoredTranscript(projectPath, sessionID string) ([]byte, error) {
+	if e.Config.ReadRestoredTranscript != nil {
+		return e.Config.ReadRestoredTranscript(e.TempHome, projectPath, sessionID)
+	}
+	return e.ReadSessionFile(projectPath, sessionID)
+}
+
 // GetSessionsIndexPath returns the path to sessions-index.json for a project
 func (e *AgentEnv) GetSessionsIndexPath(projectPath string) string {
 	return filepath.Join(e.GetProjectDir(projectPath), "sessions-index.json")

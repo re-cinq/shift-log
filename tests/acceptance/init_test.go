@@ -41,65 +41,108 @@ var _ = Describe("Init Command", func() {
 				Expect(repo.FileExists(config.SettingsFile)).To(BeTrue())
 			})
 
-			It("configures correct hook with right matcher/timeout/command", func() {
-				_, _, err := testutil.RunClauditInDir(repo.Path, config.InitArgs...)
-				Expect(err).NotTo(HaveOccurred())
+			if config.IsPluginBased {
+				It("creates plugin with correct store command and commit detection", func() {
+					_, _, err := testutil.RunClauditInDir(repo.Path, config.InitArgs...)
+					Expect(err).NotTo(HaveOccurred())
 
-				content, err := repo.ReadFile(config.SettingsFile)
-				Expect(err).NotTo(HaveOccurred())
+					content, err := repo.ReadFile(config.SettingsFile)
+					Expect(err).NotTo(HaveOccurred())
 
-				var raw map[string]interface{}
-				Expect(json.Unmarshal([]byte(content), &raw)).To(Succeed())
+					Expect(content).To(ContainSubstring(config.StoreCommand))
+					Expect(content).To(ContainSubstring("git commit"))
+				})
 
-				hooks, ok := raw["hooks"].(map[string]interface{})
-				Expect(ok).To(BeTrue(), "Expected hooks key in settings")
+				It("is idempotent - same content on re-init", func() {
+					_, _, err := testutil.RunClauditInDir(repo.Path, config.InitArgs...)
+					Expect(err).NotTo(HaveOccurred())
 
-				hookArray, ok := hooks[config.HookKey].([]interface{})
-				Expect(ok).To(BeTrue(), "Expected %s array", config.HookKey)
-				Expect(hookArray).NotTo(BeEmpty())
+					content1, err := repo.ReadFile(config.SettingsFile)
+					Expect(err).NotTo(HaveOccurred())
 
-				hookObj := hookArray[0].(map[string]interface{})
-				Expect(hookObj["matcher"]).To(Equal(config.ToolMatcher))
+					_, _, err = testutil.RunClauditInDir(repo.Path, config.InitArgs...)
+					Expect(err).NotTo(HaveOccurred())
 
-				hookCmds := hookObj["hooks"].([]interface{})
-				Expect(hookCmds).NotTo(BeEmpty())
-				hookCmd := hookCmds[0].(map[string]interface{})
-				Expect(hookCmd["command"]).To(Equal(config.StoreCommand))
-				Expect(hookCmd["timeout"]).To(BeNumerically("==", config.Timeout))
-			})
+					content2, err := repo.ReadFile(config.SettingsFile)
+					Expect(err).NotTo(HaveOccurred())
 
-			It("is idempotent - no duplicate hooks on re-init", func() {
-				_, _, err := testutil.RunClauditInDir(repo.Path, config.InitArgs...)
-				Expect(err).NotTo(HaveOccurred())
-				_, _, err = testutil.RunClauditInDir(repo.Path, config.InitArgs...)
-				Expect(err).NotTo(HaveOccurred())
+					Expect(content1).To(Equal(content2))
+				})
 
-				content, err := repo.ReadFile(config.SettingsFile)
-				Expect(err).NotTo(HaveOccurred())
+				It("preserves other files in plugin directory", func() {
+					pluginDir := filepath.Dir(filepath.Join(repo.Path, config.SettingsFile))
+					Expect(os.MkdirAll(pluginDir, 0755)).To(Succeed())
+					otherPlugin := filepath.Join(pluginDir, "other-plugin.js")
+					Expect(os.WriteFile(otherPlugin, []byte("// other plugin"), 0644)).To(Succeed())
 
-				var raw map[string]interface{}
-				Expect(json.Unmarshal([]byte(content), &raw)).To(Succeed())
+					_, _, err := testutil.RunClauditInDir(repo.Path, config.InitArgs...)
+					Expect(err).NotTo(HaveOccurred())
 
-				hooks := raw["hooks"].(map[string]interface{})
-				hookArray := hooks[config.HookKey].([]interface{})
-				Expect(hookArray).To(HaveLen(1))
-			})
+					content, err := os.ReadFile(otherPlugin)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(string(content)).To(Equal("// other plugin"))
+				})
+			} else {
+				It("configures correct hook with right matcher/timeout/command", func() {
+					_, _, err := testutil.RunClauditInDir(repo.Path, config.InitArgs...)
+					Expect(err).NotTo(HaveOccurred())
 
-			It("preserves existing settings", func() {
-				// Create pre-existing settings
-				settingsDir := filepath.Dir(filepath.Join(repo.Path, config.SettingsFile))
-				Expect(os.MkdirAll(settingsDir, 0755)).To(Succeed())
-				Expect(repo.WriteFile(config.SettingsFile, `{"existingKey": "existingValue"}`)).To(Succeed())
+					content, err := repo.ReadFile(config.SettingsFile)
+					Expect(err).NotTo(HaveOccurred())
 
-				_, _, err := testutil.RunClauditInDir(repo.Path, config.InitArgs...)
-				Expect(err).NotTo(HaveOccurred())
+					var raw map[string]interface{}
+					Expect(json.Unmarshal([]byte(content), &raw)).To(Succeed())
 
-				content, err := repo.ReadFile(config.SettingsFile)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(content).To(ContainSubstring("existingKey"))
-				Expect(content).To(ContainSubstring("existingValue"))
-				Expect(content).To(ContainSubstring(config.StoreCommand))
-			})
+					hooks, ok := raw["hooks"].(map[string]interface{})
+					Expect(ok).To(BeTrue(), "Expected hooks key in settings")
+
+					hookArray, ok := hooks[config.HookKey].([]interface{})
+					Expect(ok).To(BeTrue(), "Expected %s array", config.HookKey)
+					Expect(hookArray).NotTo(BeEmpty())
+
+					hookObj := hookArray[0].(map[string]interface{})
+					Expect(hookObj["matcher"]).To(Equal(config.ToolMatcher))
+
+					hookCmds := hookObj["hooks"].([]interface{})
+					Expect(hookCmds).NotTo(BeEmpty())
+					hookCmd := hookCmds[0].(map[string]interface{})
+					Expect(hookCmd["command"]).To(Equal(config.StoreCommand))
+					Expect(hookCmd["timeout"]).To(BeNumerically("==", config.Timeout))
+				})
+
+				It("is idempotent - no duplicate hooks on re-init", func() {
+					_, _, err := testutil.RunClauditInDir(repo.Path, config.InitArgs...)
+					Expect(err).NotTo(HaveOccurred())
+					_, _, err = testutil.RunClauditInDir(repo.Path, config.InitArgs...)
+					Expect(err).NotTo(HaveOccurred())
+
+					content, err := repo.ReadFile(config.SettingsFile)
+					Expect(err).NotTo(HaveOccurred())
+
+					var raw map[string]interface{}
+					Expect(json.Unmarshal([]byte(content), &raw)).To(Succeed())
+
+					hooks := raw["hooks"].(map[string]interface{})
+					hookArray := hooks[config.HookKey].([]interface{})
+					Expect(hookArray).To(HaveLen(1))
+				})
+
+				It("preserves existing settings", func() {
+					// Create pre-existing settings
+					settingsDir := filepath.Dir(filepath.Join(repo.Path, config.SettingsFile))
+					Expect(os.MkdirAll(settingsDir, 0755)).To(Succeed())
+					Expect(repo.WriteFile(config.SettingsFile, `{"existingKey": "existingValue"}`)).To(Succeed())
+
+					_, _, err := testutil.RunClauditInDir(repo.Path, config.InitArgs...)
+					Expect(err).NotTo(HaveOccurred())
+
+					content, err := repo.ReadFile(config.SettingsFile)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(content).To(ContainSubstring("existingKey"))
+					Expect(content).To(ContainSubstring("existingValue"))
+					Expect(content).To(ContainSubstring(config.StoreCommand))
+				})
+			}
 
 			if config.HasSessionHooks {
 				It("creates session hooks with correct timeouts", func() {

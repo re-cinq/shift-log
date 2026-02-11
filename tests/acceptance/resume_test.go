@@ -3,7 +3,6 @@ package acceptance_test
 import (
 	"encoding/json"
 	"os"
-	"path/filepath"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -52,13 +51,13 @@ var _ = Describe("Resume Command", func() {
 
 			// Helper to store a conversation on the current commit
 			storeConversation := func(sessionID string) string {
-				transcriptPath := filepath.Join(repo.Path, "transcript"+config.TranscriptFileExt)
-				Expect(os.WriteFile(transcriptPath, []byte(config.SampleTranscript()), 0644)).To(Succeed())
+				hookParam, err := config.PrepareTranscript(repo.Path, sessionID, config.SampleTranscript())
+				Expect(err).NotTo(HaveOccurred())
 
 				head, err := repo.GetHead()
 				Expect(err).NotTo(HaveOccurred())
 
-				hookInput := config.SampleHookInput(sessionID, transcriptPath, "git commit -m 'test'")
+				hookInput := config.SampleHookInput(sessionID, hookParam, "git commit -m 'test'")
 				_, _, err = testutil.RunClauditInDirWithStdin(repo.Path, hookInput, config.StoreArgs...)
 				Expect(err).NotTo(HaveOccurred())
 
@@ -117,17 +116,19 @@ var _ = Describe("Resume Command", func() {
 					Expect(agentEnv.SessionFileExists(repo.Path, "session-restore-test")).To(BeTrue())
 				})
 
-				It("creates sessions-index.json", func() {
-					commitSHA := storeConversation("session-index-test")
+				if config.HasSessionsIndex {
+					It("creates sessions-index.json", func() {
+						commitSHA := storeConversation("session-index-test")
 
-					testutil.RunClauditInDirWithEnv(
-						repo.Path,
-						agentEnv.GetEnvVars(),
-						"resume", commitSHA, "--force",
-					)
+						testutil.RunClauditInDirWithEnv(
+							repo.Path,
+							agentEnv.GetEnvVars(),
+							"resume", commitSHA, "--force",
+						)
 
-					Expect(agentEnv.SessionsIndexExists(repo.Path)).To(BeTrue())
-				})
+						Expect(agentEnv.SessionsIndexExists(repo.Path)).To(BeTrue())
+					})
+				}
 			})
 
 			Describe("handling missing conversations", func() {
@@ -321,33 +322,35 @@ var _ = Describe("Resume Command", func() {
 						"resume", commitSHA, "--force",
 					)
 
-					content, err := agentEnv.ReadSessionFile(repo.Path, "session-content-verify")
+					content, err := agentEnv.ReadRestoredTranscript(repo.Path, "session-content-verify")
 					Expect(err).NotTo(HaveOccurred())
 					Expect(string(content)).To(Equal(originalTranscript))
 				})
 
-				It("populates sessions-index.json with correct metadata", func() {
-					commitSHA := storeConversation("session-meta-check")
+				if config.HasSessionsIndex {
+					It("populates sessions-index.json with correct metadata", func() {
+						commitSHA := storeConversation("session-meta-check")
 
-					testutil.RunClauditInDirWithEnv(
-						repo.Path,
-						agentEnv.GetEnvVars(),
-						"resume", commitSHA, "--force",
-					)
+						testutil.RunClauditInDirWithEnv(
+							repo.Path,
+							agentEnv.GetEnvVars(),
+							"resume", commitSHA, "--force",
+						)
 
-					indexPath := agentEnv.GetSessionsIndexPath(repo.Path)
-					indexData, err := os.ReadFile(indexPath)
-					Expect(err).NotTo(HaveOccurred())
+						indexPath := agentEnv.GetSessionsIndexPath(repo.Path)
+						indexData, err := os.ReadFile(indexPath)
+						Expect(err).NotTo(HaveOccurred())
 
-					var index map[string]interface{}
-					Expect(json.Unmarshal(indexData, &index)).To(Succeed())
+						var index map[string]interface{}
+						Expect(json.Unmarshal(indexData, &index)).To(Succeed())
 
-					entries := index["entries"].([]interface{})
-					Expect(entries).To(HaveLen(1))
+						entries := index["entries"].([]interface{})
+						Expect(entries).To(HaveLen(1))
 
-					entry := entries[0].(map[string]interface{})
-					Expect(entry["sessionId"]).To(Equal("session-meta-check"))
-				})
+						entry := entries[0].(map[string]interface{})
+						Expect(entry["sessionId"]).To(Equal("session-meta-check"))
+					})
+				}
 			})
 		})
 	}

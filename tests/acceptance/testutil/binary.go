@@ -29,6 +29,13 @@ func BuildBinary() error {
 		return err
 	}
 
+	// Install mock agent binaries so resume tests don't launch real TUIs.
+	// The binary dir is first in PATH, so these shadow any system-installed agents.
+	for _, name := range []string{"claude", "opencode", "gemini"} {
+		mockPath := filepath.Join(tmpDir, name)
+		_ = os.WriteFile(mockPath, []byte("#!/bin/sh\nexit 0\n"), 0755)
+	}
+
 	return nil
 }
 

@@ -2,8 +2,6 @@ package acceptance_test
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -43,13 +41,13 @@ var _ = Describe("Store Command", func() {
 			})
 
 			It("creates a git note with conversation", func() {
-				transcriptPath := filepath.Join(repo.Path, "transcript"+config.TranscriptFileExt)
-				Expect(os.WriteFile(transcriptPath, []byte(config.SampleTranscript()), 0644)).To(Succeed())
+				hookParam, err := config.PrepareTranscript(repo.Path, "session-123", config.SampleTranscript())
+				Expect(err).NotTo(HaveOccurred())
 
 				head, err := repo.GetHead()
 				Expect(err).NotTo(HaveOccurred())
 
-				hookInput := config.SampleHookInput("session-123", transcriptPath, "git commit -m 'test'")
+				hookInput := config.SampleHookInput("session-123", hookParam, "git commit -m 'test'")
 
 				_, stderr, err := testutil.RunClauditInDirWithStdin(repo.Path, hookInput, config.StoreArgs...)
 				Expect(err).NotTo(HaveOccurred())
@@ -59,13 +57,13 @@ var _ = Describe("Store Command", func() {
 			})
 
 			It("stores note with expected metadata", func() {
-				transcriptPath := filepath.Join(repo.Path, "transcript"+config.TranscriptFileExt)
-				Expect(os.WriteFile(transcriptPath, []byte(config.SampleTranscript()), 0644)).To(Succeed())
+				hookParam, err := config.PrepareTranscript(repo.Path, "session-456", config.SampleTranscript())
+				Expect(err).NotTo(HaveOccurred())
 
 				head, err := repo.GetHead()
 				Expect(err).NotTo(HaveOccurred())
 
-				hookInput := config.SampleHookInput("session-456", transcriptPath, "git commit -m 'test'")
+				hookInput := config.SampleHookInput("session-456", hookParam, "git commit -m 'test'")
 				_, _, err = testutil.RunClauditInDirWithStdin(repo.Path, hookInput, config.StoreArgs...)
 				Expect(err).NotTo(HaveOccurred())
 
@@ -82,13 +80,13 @@ var _ = Describe("Store Command", func() {
 			})
 
 			It("transcript can be decompressed from note", func() {
-				transcriptPath := filepath.Join(repo.Path, "transcript"+config.TranscriptFileExt)
-				Expect(os.WriteFile(transcriptPath, []byte(config.SampleTranscript()), 0644)).To(Succeed())
+				hookParam, err := config.PrepareTranscript(repo.Path, "session-789", config.SampleTranscript())
+				Expect(err).NotTo(HaveOccurred())
 
 				head, err := repo.GetHead()
 				Expect(err).NotTo(HaveOccurred())
 
-				hookInput := config.SampleHookInput("session-789", transcriptPath, "git commit -m 'test'")
+				hookInput := config.SampleHookInput("session-789", hookParam, "git commit -m 'test'")
 				_, _, err = testutil.RunClauditInDirWithStdin(repo.Path, hookInput, config.StoreArgs...)
 				Expect(err).NotTo(HaveOccurred())
 
@@ -103,13 +101,13 @@ var _ = Describe("Store Command", func() {
 			})
 
 			It("exits silently for non-commit commands", func() {
-				transcriptPath := filepath.Join(repo.Path, "transcript"+config.TranscriptFileExt)
-				Expect(os.WriteFile(transcriptPath, []byte(config.SampleTranscript()), 0644)).To(Succeed())
+				hookParam, err := config.PrepareTranscript(repo.Path, "session-123", config.SampleTranscript())
+				Expect(err).NotTo(HaveOccurred())
 
 				head, err := repo.GetHead()
 				Expect(err).NotTo(HaveOccurred())
 
-				hookInput := config.SampleHookInput("session-123", transcriptPath, "ls -la")
+				hookInput := config.SampleHookInput("session-123", hookParam, "ls -la")
 
 				_, stderr, err := testutil.RunClauditInDirWithStdin(repo.Path, hookInput, config.StoreArgs...)
 				Expect(err).NotTo(HaveOccurred())
@@ -138,7 +136,7 @@ var _ = Describe("Store Command", func() {
 			})
 
 			It("exits with error for missing transcript", func() {
-				hookInput := config.SampleHookInput("session-123", "/nonexistent/path"+config.TranscriptFileExt, "git commit -m 'test'")
+				hookInput := config.SampleHookInput("session-123", "/nonexistent/path", "git commit -m 'test'")
 
 				_, stderr, err := testutil.RunClauditInDirWithStdin(repo.Path, hookInput, config.StoreArgs...)
 				Expect(err).To(HaveOccurred())
