@@ -89,6 +89,36 @@ func ListCommitsWithNotes() ([]string, error) {
 	return commits, nil
 }
 
+// ListAllCommitsWithNotes returns the set of commit SHAs that have conversation
+// notes, regardless of branch reachability. Unlike ListCommitsWithNotes it does
+// not filter through `git rev-list HEAD`.
+// If repoDir is non-empty, the git command runs in that directory.
+func ListAllCommitsWithNotes(repoDir string) (map[string]bool, error) {
+	cmd := exec.Command("git", "notes", "--ref", NotesRef, "list")
+	if repoDir != "" {
+		cmd.Dir = repoDir
+	}
+	output, err := cmd.Output()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	commitSet := make(map[string]bool)
+	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
+		if line == "" {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) >= 2 {
+			commitSet[parts[1]] = true
+		}
+	}
+	return commitSet, nil
+}
+
 // PushNotes pushes notes to the remote.
 // Returns ErrNonFastForward if the remote has diverged.
 func PushNotes(remote string) error {

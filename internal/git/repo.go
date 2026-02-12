@@ -129,6 +129,64 @@ func GetParentCommits(commitSHA string) ([]string, error) {
 	return result, nil
 }
 
+// BranchInfo holds metadata about a local branch.
+type BranchInfo struct {
+	Name       string
+	HeadSHA    string
+	CommitDate string
+	IsCurrent  bool
+}
+
+// branchFieldSep is the delimiter used in for-each-ref output.
+// We use a string unlikely to appear in branch names or dates.
+const branchFieldSep = ":::"
+
+// ListBranches returns all local branches sorted by most recent committer date.
+// If repoDir is non-empty, the git command runs in that directory.
+func ListBranches(repoDir string) ([]BranchInfo, error) {
+	format := "%(refname:short)" + branchFieldSep + "%(objectname)" + branchFieldSep + "%(committerdate:iso8601)"
+	cmd := exec.Command("git", "for-each-ref", "--sort=-committerdate",
+		"refs/heads/", "--format="+format)
+	if repoDir != "" {
+		cmd.Dir = repoDir
+	}
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+
+	trimmed := strings.TrimSpace(string(output))
+	if trimmed == "" {
+		return nil, nil
+	}
+
+	// Determine current branch (in same dir context)
+	cbCmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
+	if repoDir != "" {
+		cbCmd.Dir = repoDir
+	}
+	cbOut, _ := cbCmd.Output()
+	currentBranch := strings.TrimSpace(string(cbOut))
+
+	var branches []BranchInfo
+	for _, line := range strings.Split(trimmed, "\n") {
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, branchFieldSep, 3)
+		if len(parts) < 3 {
+			continue
+		}
+		branches = append(branches, BranchInfo{
+			Name:       parts[0],
+			HeadSHA:    parts[1],
+			CommitDate: parts[2],
+			IsCurrent:  parts[0] == currentBranch,
+		})
+	}
+	return branches, nil
+}
+
 // GetCommitInfo returns the commit message and author date for a commit
 func GetCommitInfo(commitSHA string) (message string, date string, err error) {
 	// Get commit message (first line)

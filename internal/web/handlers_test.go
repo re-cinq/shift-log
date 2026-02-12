@@ -838,3 +838,337 @@ func TestStaticFileServing(t *testing.T) {
 		}
 	})
 }
+
+// --- Branch endpoint tests ---
+
+func TestHandleBranches(t *testing.T) {
+	repo := newTestRepo(t)
+	chdir(t, repo.path)
+
+	// Create master commits
+	repo.writeFile("a.txt", "a")
+	sha1 := repo.commit("First commit")
+	repo.addConversation(sha1, "s1", sampleTranscript(), 2)
+
+	repo.writeFile("b.txt", "b")
+	repo.commit("Second commit")
+
+	// Create feature-a branch
+	repo.git("checkout", "-b", "feature-a")
+	repo.writeFile("c.txt", "c")
+	shaF := repo.commit("Feature A commit")
+	repo.addConversation(shaF, "s2", sampleTranscript(), 2)
+
+	// Create feature-b branch from master
+	repo.git("checkout", "master")
+	repo.git("checkout", "-b", "feature-b")
+	repo.writeFile("d.txt", "d")
+	repo.commit("Feature B commit")
+
+	// Go back to master for CWD
+	repo.git("checkout", "master")
+
+	srv := NewServer(0, repo.path)
+
+	t.Run("lists all branches", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/branches", nil)
+		w := httptest.NewRecorder()
+		srv.mux.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status: want 200, got %d: %s", w.Code, w.Body.String())
+		}
+
+		var branches []BranchSummary
+		decodeJSON(t, w, &branches)
+
+		if len(branches) != 3 {
+			t.Fatalf("expected 3 branches, got %d", len(branches))
+		}
+
+		names := map[string]bool{}
+		for _, b := range branches {
+			names[b.Name] = true
+		}
+		for _, expected := range []string{"master", "feature-a", "feature-b"} {
+			if !names[expected] {
+				t.Errorf("missing branch %q", expected)
+			}
+		}
+	})
+
+	t.Run("marks current branch", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/branches", nil)
+		w := httptest.NewRecorder()
+		srv.mux.ServeHTTP(w, req)
+
+		var branches []BranchSummary
+		decodeJSON(t, w, &branches)
+
+		var currentCount int
+		for _, b := range branches {
+			if b.IsCurrent {
+				currentCount++
+				if b.Name != "master" {
+					t.Errorf("expected current branch to be master, got %q", b.Name)
+				}
+			}
+		}
+		if currentCount != 1 {
+			t.Errorf("expected exactly 1 current branch, got %d", currentCount)
+		}
+	})
+
+	t.Run("conversation counts are correct", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/branches", nil)
+		w := httptest.NewRecorder()
+		srv.mux.ServeHTTP(w, req)
+
+		var branches []BranchSummary
+		decodeJSON(t, w, &branches)
+
+		for _, b := range branches {
+			switch b.Name {
+			case "master":
+				if b.ConversationCount != 1 {
+					t.Errorf("master conversation_count: want 1, got %d", b.ConversationCount)
+				}
+			case "feature-a":
+				// feature-a has its own commit with conv + inherits master's first commit
+				if b.ConversationCount < 1 {
+					t.Errorf("feature-a conversation_count: want >= 1, got %d", b.ConversationCount)
+				}
+			case "feature-b":
+				// feature-b inherits master's first commit conversation
+				if b.ConversationCount < 1 {
+					t.Errorf("feature-b conversation_count: want >= 1, got %d", b.ConversationCount)
+				}
+			}
+		}
+	})
+
+	t.Run("method not allowed", func(t *testing.T) {
+		req := httptest.NewRequest("POST", "/api/branches", nil)
+		w := httptest.NewRecorder()
+		srv.mux.ServeHTTP(w, req)
+
+		if w.Code != http.StatusMethodNotAllowed {
+			t.Errorf("status: want 405, got %d", w.Code)
+		}
+	})
+}
+
+func TestHandleBranchGraph(t *testing.T) {
+	repo := newTestRepo(t)
+	chdir(t, repo.path)
+
+	// Create master commits
+	repo.writeFile("a.txt", "a")
+	sha1 := repo.commit("First commit")
+	repo.addConversation(sha1, "s1", sampleTranscript(), 2)
+
+	repo.writeFile("b.txt", "b")
+	repo.commit("Second commit")
+
+	// Create feature branch
+	repo.git("checkout", "-b", "feature-x")
+	repo.writeFile("c.txt", "c")
+	repo.commit("Feature commit")
+
+	repo.git("checkout", "master")
+
+	srv := NewServer(0, repo.path)
+
+	t.Run("returns per-branch graph nodes", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/graph/branches?per_branch=10", nil)
+		w := httptest.NewRecorder()
+		srv.mux.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status: want 200, got %d: %s", w.Code, w.Body.String())
+		}
+
+		var data BranchGraphData
+		decodeJSON(t, w, &data)
+
+		if len(data.Branches) != 2 {
+			t.Fatalf("expected 2 branches, got %d", len(data.Branches))
+		}
+
+		names := map[string]bool{}
+		for _, b := range data.Branches {
+			names[b.Name] = true
+			if len(b.Nodes) == 0 {
+				t.Errorf("branch %q has no nodes", b.Name)
+			}
+		}
+		if !names["master"] || !names["feature-x"] {
+			t.Errorf("missing expected branches in graph: %v", names)
+		}
+	})
+
+	t.Run("marks has_conversation correctly", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/graph/branches", nil)
+		w := httptest.NewRecorder()
+		srv.mux.ServeHTTP(w, req)
+
+		var data BranchGraphData
+		decodeJSON(t, w, &data)
+
+		for _, b := range data.Branches {
+			for _, n := range b.Nodes {
+				if n.SHA == sha1 && !n.HasConversation {
+					t.Errorf("node %s should have has_conversation=true", sha1[:7])
+				}
+			}
+		}
+	})
+
+	t.Run("method not allowed", func(t *testing.T) {
+		req := httptest.NewRequest("POST", "/api/graph/branches", nil)
+		w := httptest.NewRecorder()
+		srv.mux.ServeHTTP(w, req)
+
+		if w.Code != http.StatusMethodNotAllowed {
+			t.Errorf("status: want 405, got %d", w.Code)
+		}
+	})
+}
+
+func TestHandleCommitsWithBranchParam(t *testing.T) {
+	repo := newTestRepo(t)
+	chdir(t, repo.path)
+
+	// Create master commits
+	repo.writeFile("a.txt", "a")
+	repo.commit("Master first")
+
+	repo.writeFile("b.txt", "b")
+	repo.commit("Master second")
+
+	// Create feature branch with extra commit
+	repo.git("checkout", "-b", "feature-y")
+	repo.writeFile("c.txt", "c")
+	repo.commit("Feature commit")
+
+	repo.git("checkout", "master")
+
+	srv := NewServer(0, repo.path)
+
+	t.Run("branch param returns branch-specific commits", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/commits?branch=feature-y", nil)
+		w := httptest.NewRecorder()
+		srv.mux.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status: want 200, got %d: %s", w.Code, w.Body.String())
+		}
+
+		var commits []CommitInfo
+		decodeJSON(t, w, &commits)
+
+		// feature-y has 3 commits: Feature commit + Master second + Master first
+		if len(commits) != 3 {
+			t.Fatalf("expected 3 commits on feature-y, got %d", len(commits))
+		}
+		if commits[0].Message != "Feature commit" {
+			t.Errorf("first commit should be 'Feature commit', got %q", commits[0].Message)
+		}
+	})
+
+	t.Run("no branch param returns HEAD commits", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/commits", nil)
+		w := httptest.NewRecorder()
+		srv.mux.ServeHTTP(w, req)
+
+		var commits []CommitInfo
+		decodeJSON(t, w, &commits)
+
+		// master has 2 commits
+		if len(commits) != 2 {
+			t.Fatalf("expected 2 commits on master (HEAD), got %d", len(commits))
+		}
+	})
+}
+
+func TestSingleBranch(t *testing.T) {
+	repo := newTestRepo(t)
+	chdir(t, repo.path)
+
+	repo.writeFile("a.txt", "a")
+	repo.commit("Only commit")
+
+	srv := NewServer(0, repo.path)
+
+	t.Run("branches endpoint works with single branch", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/branches", nil)
+		w := httptest.NewRecorder()
+		srv.mux.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status: want 200, got %d", w.Code)
+		}
+
+		var branches []BranchSummary
+		decodeJSON(t, w, &branches)
+
+		if len(branches) != 1 {
+			t.Fatalf("expected 1 branch, got %d", len(branches))
+		}
+		if branches[0].Name != "master" {
+			t.Errorf("expected branch name 'master', got %q", branches[0].Name)
+		}
+		if !branches[0].IsCurrent {
+			t.Error("single branch should be current")
+		}
+	})
+}
+
+// --- Helper function tests for new ref-scoped functions ---
+
+func TestGetCommitListForRef(t *testing.T) {
+	repo := newTestRepo(t)
+
+	repo.writeFile("a.txt", "a")
+	repo.commit("Master first")
+
+	repo.git("checkout", "-b", "test-branch")
+	repo.writeFile("b.txt", "b")
+	repo.commit("Branch commit")
+
+	commits, err := getCommitListForRef("test-branch", 10, repo.path)
+	if err != nil {
+		t.Fatalf("getCommitListForRef: %v", err)
+	}
+	if len(commits) != 2 {
+		t.Fatalf("expected 2 commits, got %d", len(commits))
+	}
+	if commits[0].Message != "Branch commit" {
+		t.Errorf("first commit: want 'Branch commit', got %q", commits[0].Message)
+	}
+}
+
+func TestGetGraphDataForRef(t *testing.T) {
+	repo := newTestRepo(t)
+
+	repo.writeFile("a.txt", "a")
+	sha1 := repo.commit("First")
+
+	repo.git("checkout", "-b", "test-branch")
+	repo.writeFile("b.txt", "b")
+	sha2 := repo.commit("Second")
+
+	nodes, err := getGraphDataForRef("test-branch", 10, repo.path)
+	if err != nil {
+		t.Fatalf("getGraphDataForRef: %v", err)
+	}
+	if len(nodes) != 2 {
+		t.Fatalf("expected 2 nodes, got %d", len(nodes))
+	}
+	if nodes[0].SHA != sha2 {
+		t.Errorf("first node: want %s, got %s", sha2, nodes[0].SHA)
+	}
+	if len(nodes[0].Parents) != 1 || nodes[0].Parents[0] != sha1 {
+		t.Errorf("first node parents: want [%s], got %v", sha1, nodes[0].Parents)
+	}
+}

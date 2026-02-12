@@ -40,6 +40,8 @@ func (s *Server) setupRoutes() {
 	s.mux.HandleFunc("/api/commits/", s.handleCommitDetail)
 	s.mux.HandleFunc("/api/graph", s.handleGraph)
 	s.mux.HandleFunc("/api/resume/", s.handleResume)
+	s.mux.HandleFunc("/api/branches", s.handleBranches)
+	s.mux.HandleFunc("/api/graph/branches", s.handleBranchGraph)
 }
 
 // Handler returns the HTTP handler for the server.

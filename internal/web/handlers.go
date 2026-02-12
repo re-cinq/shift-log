@@ -44,6 +44,27 @@ type GraphNode struct {
 	Message         string   `json:"message"`
 }
 
+// BranchSummary represents a branch in the branches API response.
+type BranchSummary struct {
+	Name              string `json:"name"`
+	HeadSHA           string `json:"head_sha"`
+	IsCurrent         bool   `json:"is_current"`
+	CommitDate        string `json:"commit_date"`
+	ConversationCount int    `json:"conversation_count"`
+}
+
+// BranchGraphData is the top-level response for the branch graph endpoint.
+type BranchGraphData struct {
+	Branches []BranchGraphEntry `json:"branches"`
+}
+
+// BranchGraphEntry holds graph nodes for a single branch.
+type BranchGraphEntry struct {
+	Name      string      `json:"name"`
+	IsCurrent bool        `json:"is_current"`
+	Nodes     []GraphNode `json:"nodes"`
+}
+
 // writeJSONError writes a JSON error response with the given status code.
 func writeJSONError(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
@@ -62,6 +83,11 @@ func buildNoteSet() (map[string]bool, error) {
 		noteSet[sha] = true
 	}
 	return noteSet, nil
+}
+
+// buildAllNoteSet returns the set of all commit SHAs with notes (cross-branch).
+func buildAllNoteSet(repoDir string) (map[string]bool, error) {
+	return git.ListAllCommitsWithNotes(repoDir)
 }
 
 // getStoredOrWriteError retrieves a stored conversation for the given SHA,
@@ -105,14 +131,27 @@ func (s *Server) handleCommits(w http.ResponseWriter, r *http.Request) {
 		hasConversationFilter = true
 	}
 
-	noteSet, err := buildNoteSet()
+	branchParam := r.URL.Query().Get("branch")
+
+	var noteSet map[string]bool
+	var err error
+	if branchParam != "" {
+		noteSet, err = buildAllNoteSet(s.repoDir)
+	} else {
+		noteSet, err = buildNoteSet()
+	}
 	if err != nil {
 		http.Error(w, "Failed to list conversations", http.StatusInternalServerError)
 		return
 	}
 
 	// Get all commits
-	commits, err := getCommitList(limit+offset, s.repoDir)
+	var commits []CommitData
+	if branchParam != "" {
+		commits, err = getCommitListForRef(branchParam, limit+offset, s.repoDir)
+	} else {
+		commits, err = getCommitList(limit+offset, s.repoDir)
+	}
 	if err != nil {
 		http.Error(w, "Failed to get commits", http.StatusInternalServerError)
 		return
@@ -415,6 +454,55 @@ func getGraphData(limit int, repoDir string) ([]GraphNode, error) {
 		return nil, err
 	}
 
+	return parseGraphNodes(output), nil
+}
+
+// getCommitListForRef returns commits reachable from a specific ref.
+func getCommitListForRef(ref string, limit int, repoDir string) ([]CommitData, error) {
+	cmd := exec.Command("git", "log", ref, fmt.Sprintf("--max-count=%d", limit),
+		"--format=%H%x00%s%x00%an%x00%ci")
+	cmd.Dir = repoDir
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+
+	var commits []CommitData
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, fieldSep, 4)
+		if len(parts) < 4 {
+			continue
+		}
+		commits = append(commits, CommitData{
+			SHA:     parts[0],
+			Message: parts[1],
+			Author:  parts[2],
+			Date:    parts[3],
+		})
+	}
+
+	return commits, nil
+}
+
+// getGraphDataForRef returns commit graph data for a specific ref.
+func getGraphDataForRef(ref string, limit int, repoDir string) ([]GraphNode, error) {
+	cmd := exec.Command("git", "log", ref, fmt.Sprintf("--max-count=%d", limit),
+		"--format=%H%x00%P%x00%s")
+	cmd.Dir = repoDir
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+
+	return parseGraphNodes(output), nil
+}
+
+// parseGraphNodes parses git log output into GraphNode structs.
+func parseGraphNodes(output []byte) []GraphNode {
 	var nodes []GraphNode
 	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
 	for _, line := range lines {
@@ -438,5 +526,94 @@ func getGraphData(limit int, repoDir string) ([]GraphNode, error) {
 		})
 	}
 
-	return nodes, nil
+	return nodes
+}
+
+// handleBranches returns a list of all branches with conversation counts.
+func (s *Server) handleBranches(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	branches, err := git.ListBranches(s.repoDir)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "failed to list branches")
+		return
+	}
+
+	noteSet, err := buildAllNoteSet(s.repoDir)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "failed to list notes")
+		return
+	}
+
+	var result []BranchSummary
+	for _, b := range branches {
+		convCount := 0
+		commits, err := getCommitListForRef(b.Name, 100, s.repoDir)
+		if err == nil {
+			for _, c := range commits {
+				if noteSet[c.SHA] {
+					convCount++
+				}
+			}
+		}
+		result = append(result, BranchSummary{
+			Name:              b.Name,
+			HeadSHA:           b.HeadSHA,
+			IsCurrent:         b.IsCurrent,
+			CommitDate:        b.CommitDate,
+			ConversationCount: convCount,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(result)
+}
+
+// handleBranchGraph returns graph data for all branches.
+func (s *Server) handleBranchGraph(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	perBranch := 30
+	if p := r.URL.Query().Get("per_branch"); p != "" {
+		if val, err := strconv.Atoi(p); err == nil && val > 0 {
+			perBranch = val
+		}
+	}
+
+	branches, err := git.ListBranches(s.repoDir)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "failed to list branches")
+		return
+	}
+
+	noteSet, err := buildAllNoteSet(s.repoDir)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "failed to list notes")
+		return
+	}
+
+	var entries []BranchGraphEntry
+	for _, b := range branches {
+		nodes, err := getGraphDataForRef(b.Name, perBranch, s.repoDir)
+		if err != nil {
+			continue
+		}
+		for i := range nodes {
+			nodes[i].HasConversation = noteSet[nodes[i].SHA]
+		}
+		entries = append(entries, BranchGraphEntry{
+			Name:      b.Name,
+			IsCurrent: b.IsCurrent,
+			Nodes:     nodes,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(BranchGraphData{Branches: entries})
 }
