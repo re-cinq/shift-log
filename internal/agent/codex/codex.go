@@ -51,24 +51,7 @@ func (a *Agent) DiagnoseHooks(repoRoot string) []agent.DiagnosticCheck {
 // ParseHookInput parses Codex's hook JSON from the post-commit hook.
 // Codex doesn't have per-tool hooks, so this parses the manual store format.
 func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
-	var hook struct {
-		SessionID      string `json:"session_id"`
-		TranscriptPath string `json:"transcript_path"`
-		ToolName       string `json:"tool_name"`
-		ToolInput      struct {
-			Command string `json:"command"`
-		} `json:"tool_input"`
-	}
-	if err := json.Unmarshal(raw, &hook); err != nil {
-		return nil, err
-	}
-
-	return &agent.HookData{
-		SessionID:      hook.SessionID,
-		TranscriptPath: hook.TranscriptPath,
-		ToolName:       hook.ToolName,
-		Command:        hook.ToolInput.Command,
-	}, nil
+	return agent.ParseStandardHookInput(raw)
 }
 
 // IsCommitCommand checks if a tool invocation represents a git commit.
@@ -156,7 +139,7 @@ func (a *Agent) parseResponseItem(item responseItem, timestamp string, rawLine [
 
 	switch item.Type {
 	case "message":
-		entry.Type = normalizeCodexRole(item.Role)
+		entry.Type = agent.NormalizeRole(item.Role)
 		entry.Message = parseCodexMessage(item)
 
 	case "function_call":
@@ -222,19 +205,6 @@ func parseCodexMessage(item responseItem) *agent.Message {
 	return msg
 }
 
-// normalizeCodexRole converts Codex roles to MessageType.
-func normalizeCodexRole(role string) agent.MessageType {
-	switch role {
-	case "user":
-		return agent.MessageTypeUser
-	case "assistant":
-		return agent.MessageTypeAssistant
-	case "system":
-		return agent.MessageTypeSystem
-	default:
-		return ""
-	}
-}
 
 // ParseTranscriptFile parses a Codex rollout JSONL file.
 func (a *Agent) ParseTranscriptFile(path string) (*agent.Transcript, error) {

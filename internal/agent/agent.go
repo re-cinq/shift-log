@@ -1,7 +1,9 @@
 package agent
 
 import (
+	"encoding/json"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -69,6 +71,101 @@ func HasFlatHookCommand(hookConfig interface{}, command string) bool {
 		}
 	}
 	return false
+}
+
+// NormalizeRole converts agent-specific role strings to the common MessageType.
+// Handles all known role names across Claude, Codex, Copilot, Gemini, and OpenCode.
+func NormalizeRole(role string) MessageType {
+	switch role {
+	case "user":
+		return MessageTypeUser
+	case "assistant", "model", "gemini":
+		return MessageTypeAssistant
+	case "system":
+		return MessageTypeSystem
+	default:
+		return ""
+	}
+}
+
+// ParseStandardHookInput parses the standard hook input JSON format used by
+// Claude, Codex, and Gemini. The expected structure is:
+//
+//	{"session_id":"...", "transcript_path":"...", "tool_name":"...", "tool_input":{"command":"..."}}
+func ParseStandardHookInput(raw []byte) (*HookData, error) {
+	var hook struct {
+		SessionID      string `json:"session_id"`
+		TranscriptPath string `json:"transcript_path"`
+		ToolName       string `json:"tool_name"`
+		ToolInput      struct {
+			Command string `json:"command"`
+		} `json:"tool_input"`
+	}
+	if err := json.Unmarshal(raw, &hook); err != nil {
+		return nil, err
+	}
+	return &HookData{
+		SessionID:      hook.SessionID,
+		TranscriptPath: hook.TranscriptPath,
+		ToolName:       hook.ToolName,
+		Command:        hook.ToolInput.Command,
+	}, nil
+}
+
+// ScanDirForRecentSession scans a directory for recently modified session files
+// and returns the newest one. It filters by file extension and optionally skips
+// specific filenames. Used by Claude (.jsonl) and Gemini (.json).
+func ScanDirForRecentSession(sessionDir, ext string, skipNames []string, projectPath string) (*SessionInfo, error) {
+	entries, err := os.ReadDir(sessionDir)
+	if err != nil {
+		return nil, nil
+	}
+
+	skip := make(map[string]bool, len(skipNames))
+	for _, name := range skipNames {
+		skip[name] = true
+	}
+
+	now := time.Now()
+	var bestPath string
+	var bestSessionID string
+	var bestModTime time.Time
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ext) {
+			continue
+		}
+		if skip[entry.Name()] {
+			continue
+		}
+
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+
+		modTime := info.ModTime()
+		if now.Sub(modTime) > RecentSessionTimeout {
+			continue
+		}
+
+		if bestPath == "" || modTime.After(bestModTime) {
+			bestPath = filepath.Join(sessionDir, entry.Name())
+			bestSessionID = strings.TrimSuffix(entry.Name(), ext)
+			bestModTime = modTime
+		}
+	}
+
+	if bestPath == "" {
+		return nil, nil
+	}
+
+	return &SessionInfo{
+		SessionID:      bestSessionID,
+		TranscriptPath: bestPath,
+		StartedAt:      bestModTime.Format(time.RFC3339),
+		ProjectPath:    projectPath,
+	}, nil
 }
 
 // Name identifies a coding agent CLI.

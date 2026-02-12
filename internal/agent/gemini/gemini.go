@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/re-cinq/claudit/internal/agent"
@@ -94,23 +93,7 @@ func (a *Agent) DiagnoseHooks(repoRoot string) []agent.DiagnosticCheck {
 
 // ParseHookInput parses Gemini CLI's AfterTool hook JSON.
 func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
-	var hook struct {
-		SessionID      string `json:"session_id"`
-		TranscriptPath string `json:"transcript_path"`
-		ToolName       string `json:"tool_name"`
-		ToolInput      struct {
-			Command string `json:"command"`
-		} `json:"tool_input"`
-	}
-	if err := json.Unmarshal(raw, &hook); err != nil {
-		return nil, err
-	}
-	return &agent.HookData{
-		SessionID:      hook.SessionID,
-		TranscriptPath: hook.TranscriptPath,
-		ToolName:       hook.ToolName,
-		Command:        hook.ToolInput.Command,
-	}, nil
+	return agent.ParseStandardHookInput(raw)
 }
 
 // shellToolNames are the known tool names Gemini CLI uses for shell execution.
@@ -246,7 +229,7 @@ func ParseGeminiTranscript(r io.Reader) (*agent.Transcript, error) {
 
 	var entries []agent.TranscriptEntry
 	for i, msg := range session.Messages {
-		msgType := normalizeGeminiType(msg.Role)
+		msgType := agent.NormalizeRole(msg.Role)
 		if msgType == "" {
 			continue
 		}
@@ -302,19 +285,6 @@ func ParseGeminiTranscript(r io.Reader) (*agent.Transcript, error) {
 	return &agent.Transcript{Entries: entries}, nil
 }
 
-// normalizeGeminiType converts Gemini message types to the common MessageType.
-func normalizeGeminiType(t string) agent.MessageType {
-	switch t {
-	case "user":
-		return agent.MessageTypeUser
-	case "gemini", "model", "assistant":
-		return agent.MessageTypeAssistant
-	case "system":
-		return agent.MessageTypeSystem
-	default:
-		return ""
-	}
-}
 
 // scanForRecentSession scans Gemini's session directory for recent files.
 func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
@@ -322,54 +292,7 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	if err != nil {
 		return nil, nil
 	}
-
-	entries, err := os.ReadDir(sessionDir)
-	if err != nil {
-		return nil, nil
-	}
-
-	now := time.Now()
-	recentTimeout := agent.RecentSessionTimeout
-	var bestPath string
-	var bestSessionID string
-	var bestModTime time.Time
-
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
-			continue
-		}
-		// Skip index files
-		if entry.Name() == "sessions-index.json" {
-			continue
-		}
-
-		info, err := entry.Info()
-		if err != nil {
-			continue
-		}
-
-		modTime := info.ModTime()
-		if now.Sub(modTime) > recentTimeout {
-			continue
-		}
-
-		if bestPath == "" || modTime.After(bestModTime) {
-			bestPath = filepath.Join(sessionDir, entry.Name())
-			bestSessionID = strings.TrimSuffix(entry.Name(), ".json")
-			bestModTime = modTime
-		}
-	}
-
-	if bestPath == "" {
-		return nil, nil
-	}
-
-	return &agent.SessionInfo{
-		SessionID:      bestSessionID,
-		TranscriptPath: bestPath,
-		StartedAt:      bestModTime.Format(time.RFC3339),
-		ProjectPath:    projectPath,
-	}, nil
+	return agent.ScanDirForRecentSession(sessionDir, ".json", []string{"sessions-index.json"}, projectPath)
 }
 
 

@@ -128,23 +128,7 @@ func (a *Agent) DiagnoseHooks(repoRoot string) []agent.DiagnosticCheck {
 
 // ParseHookInput parses Claude Code's PostToolUse hook JSON.
 func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
-	var hook struct {
-		SessionID      string `json:"session_id"`
-		TranscriptPath string `json:"transcript_path"`
-		ToolName       string `json:"tool_name"`
-		ToolInput      struct {
-			Command string `json:"command"`
-		} `json:"tool_input"`
-	}
-	if err := json.Unmarshal(raw, &hook); err != nil {
-		return nil, err
-	}
-	return &agent.HookData{
-		SessionID:      hook.SessionID,
-		TranscriptPath: hook.TranscriptPath,
-		ToolName:       hook.ToolName,
-		Command:        hook.ToolInput.Command,
-	}, nil
+	return agent.ParseStandardHookInput(raw)
 }
 
 // IsCommitCommand checks if a tool invocation represents a git commit.
@@ -401,50 +385,7 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	if err != nil {
 		return nil, nil
 	}
-
-	entries, err := os.ReadDir(sessionDir)
-	if err != nil {
-		return nil, nil
-	}
-
-	now := time.Now()
-	recentTimeout := agent.RecentSessionTimeout
-	var bestPath string
-	var bestSessionID string
-	var bestModTime time.Time
-
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".jsonl") {
-			continue
-		}
-
-		info, err := entry.Info()
-		if err != nil {
-			continue
-		}
-
-		modTime := info.ModTime()
-		if now.Sub(modTime) > recentTimeout {
-			continue
-		}
-
-		if bestPath == "" || modTime.After(bestModTime) {
-			bestPath = filepath.Join(sessionDir, entry.Name())
-			bestSessionID = strings.TrimSuffix(entry.Name(), ".jsonl")
-			bestModTime = modTime
-		}
-	}
-
-	if bestPath == "" {
-		return nil, nil
-	}
-
-	return &agent.SessionInfo{
-		SessionID:      bestSessionID,
-		TranscriptPath: bestPath,
-		StartedAt:      bestModTime.Format(time.RFC3339),
-		ProjectPath:    projectPath,
-	}, nil
+	return agent.ScanDirForRecentSession(sessionDir, ".jsonl", nil, projectPath)
 }
 
 

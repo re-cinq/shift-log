@@ -425,9 +425,9 @@ func TestNormalizeOpenCodeRole(t *testing.T) {
 		{"unknown", ""},
 	}
 	for _, tc := range tests {
-		got := normalizeOpenCodeRole(tc.input)
+		got := agent.NormalizeRole(tc.input)
 		if got != tc.want {
-			t.Errorf("normalizeOpenCodeRole(%q) = %q, want %q", tc.input, got, tc.want)
+			t.Errorf("NormalizeRole(%q) = %q, want %q", tc.input, got, tc.want)
 		}
 	}
 }

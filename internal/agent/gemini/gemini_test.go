@@ -300,9 +300,9 @@ func TestNormalizeGeminiType(t *testing.T) {
 		{"unknown", ""},
 	}
 	for _, tc := range tests {
-		got := normalizeGeminiType(tc.input)
+		got := agent.NormalizeRole(tc.input)
 		if got != tc.want {
-			t.Errorf("normalizeGeminiType(%q) = %q, want %q", tc.input, got, tc.want)
+			t.Errorf("NormalizeRole(%q) = %q, want %q", tc.input, got, tc.want)
 		}
 	}
 }

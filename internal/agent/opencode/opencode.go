@@ -300,7 +300,7 @@ func parseOpenCodeEntry(raw map[string]json.RawMessage, fullData []byte) agent.T
 	if roleRaw, ok := raw["role"]; ok {
 		var role string
 		if err := json.Unmarshal(roleRaw, &role); err == nil {
-			entry.Type = normalizeOpenCodeRole(role)
+			entry.Type = agent.NormalizeRole(role)
 		}
 	}
 
@@ -309,7 +309,7 @@ func parseOpenCodeEntry(raw map[string]json.RawMessage, fullData []byte) agent.T
 		if typeRaw, ok := raw["type"]; ok {
 			var t string
 			if err := json.Unmarshal(typeRaw, &t); err == nil {
-				entry.Type = normalizeOpenCodeRole(t)
+				entry.Type = agent.NormalizeRole(t)
 			}
 		}
 	}
@@ -338,19 +338,6 @@ func parseOpenCodeEntry(raw map[string]json.RawMessage, fullData []byte) agent.T
 	return entry
 }
 
-// normalizeOpenCodeRole converts OpenCode roles to MessageType.
-func normalizeOpenCodeRole(role string) agent.MessageType {
-	switch role {
-	case "user":
-		return agent.MessageTypeUser
-	case "assistant":
-		return agent.MessageTypeAssistant
-	case "system":
-		return agent.MessageTypeSystem
-	default:
-		return ""
-	}
-}
 
 // parseOpenCodeMessage parses message content from an OpenCode entry.
 func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageType) *agent.Message {
