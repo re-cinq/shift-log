@@ -21,6 +21,7 @@ import (
 //
 // Opt out with: SKIP_OPENCODE_INTEGRATION=1 go test ./tests/integration/...
 func TestOpenCodeIntegration(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("SKIP_OPENCODE_INTEGRATION") == "1" {
 		t.Skip("SKIP_OPENCODE_INTEGRATION=1 is set")
 	}

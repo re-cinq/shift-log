@@ -126,6 +126,7 @@ func manualCommitNewFile(t *testing.T, tmpDir string) {
 // Requires: ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN, claude CLI in PATH
 // Opt out: SKIP_CLAUDE_INTEGRATION=1
 func TestClaudeManualCommit(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("SKIP_CLAUDE_INTEGRATION") == "1" {
 		t.Skip("SKIP_CLAUDE_INTEGRATION=1 is set")
 	}
@@ -201,6 +202,7 @@ func TestClaudeManualCommit(t *testing.T) {
 // Requires: OPENAI_API_KEY, codex CLI in PATH
 // Opt out: SKIP_CODEX_INTEGRATION=1
 func TestCodexManualCommit(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("SKIP_CODEX_INTEGRATION") == "1" {
 		t.Skip("SKIP_CODEX_INTEGRATION=1 is set")
 	}
@@ -273,6 +275,7 @@ func TestCodexManualCommit(t *testing.T) {
 // Requires: GEMINI_API_KEY or GOOGLE_API_KEY, gemini CLI in PATH
 // Opt out: SKIP_GEMINI_INTEGRATION=1
 func TestGeminiManualCommit(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("SKIP_GEMINI_INTEGRATION") == "1" {
 		t.Skip("SKIP_GEMINI_INTEGRATION=1 is set")
 	}
@@ -343,6 +346,7 @@ func TestGeminiManualCommit(t *testing.T) {
 // Requires: GEMINI_API_KEY or GOOGLE_GENERATIVE_AI_API_KEY, opencode CLI in PATH
 // Opt out: SKIP_OPENCODE_INTEGRATION=1
 func TestOpenCodeManualCommit(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("SKIP_OPENCODE_INTEGRATION") == "1" {
 		t.Skip("SKIP_OPENCODE_INTEGRATION=1 is set")
 	}
@@ -426,6 +430,7 @@ func TestOpenCodeManualCommit(t *testing.T) {
 // Requires: COPILOT_GITHUB_TOKEN, copilot CLI in PATH
 // Opt out: SKIP_COPILOT_INTEGRATION=1
 func TestCopilotManualCommit(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("SKIP_COPILOT_INTEGRATION") == "1" {
 		t.Skip("SKIP_COPILOT_INTEGRATION=1 is set")
 	}

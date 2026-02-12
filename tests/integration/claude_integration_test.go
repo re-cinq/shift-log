@@ -24,6 +24,7 @@ import (
 //
 // Opt out with: SKIP_CLAUDE_INTEGRATION=1 go test ./tests/integration/...
 func TestClaudeCodeIntegration(t *testing.T) {
+	t.Parallel()
 	// Skip conditions
 	if os.Getenv("SKIP_CLAUDE_INTEGRATION") == "1" {
 		t.Skip("SKIP_CLAUDE_INTEGRATION=1 is set")
@@ -237,6 +238,7 @@ func TestClaudeCodeIntegration(t *testing.T) {
 // TestClaudeCodeIntegration_MissingClaudit verifies that the test fails when claudit is not in PATH
 // This proves our stricter assertions can catch real failures
 func TestClaudeCodeIntegration_MissingClaudit(t *testing.T) {
+	t.Parallel()
 	// Skip conditions
 	if os.Getenv("SKIP_CLAUDE_INTEGRATION") == "1" {
 		t.Skip("SKIP_CLAUDE_INTEGRATION=1 is set")
@@ -386,6 +388,7 @@ func TestClaudeCodeIntegration_MissingClaudit(t *testing.T) {
 // TestStoreCommandFailureHandling tests that the store command returns errors instead of exiting silently
 // This test should FAIL with the current implementation (bug) and PASS after we fix it
 func TestStoreCommandFailureHandling(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("SKIP_CLAUDE_INTEGRATION") == "1" {
 		t.Skip("SKIP_CLAUDE_INTEGRATION=1 is set")
 	}

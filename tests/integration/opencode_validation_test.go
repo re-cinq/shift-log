@@ -15,6 +15,7 @@ import (
 // recognized CLI flag, confirming our ResumeCommand() returns a valid invocation.
 // Requires: OpenCode CLI in PATH. No API key needed.
 func TestOpenCodeResumeFlag(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("SKIP_OPENCODE_INTEGRATION") == "1" {
 		t.Skip("SKIP_OPENCODE_INTEGRATION=1")
 	}
@@ -48,6 +49,7 @@ func TestOpenCodeResumeFlag(t *testing.T) {
 // subcommand exists, which we may use for session discovery.
 // Requires: OpenCode CLI in PATH. No API key needed.
 func TestOpenCodeSessionSubcommand(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("SKIP_OPENCODE_INTEGRATION") == "1" {
 		t.Skip("SKIP_OPENCODE_INTEGRATION=1")
 	}
@@ -82,6 +84,7 @@ func TestOpenCodeSessionSubcommand(t *testing.T) {
 // Requires: OpenCode CLI, GEMINI_API_KEY or GOOGLE_GENERATIVE_AI_API_KEY.
 // Opt out: SKIP_OPENCODE_INTEGRATION=1
 func TestOpenCodeValidation(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("SKIP_OPENCODE_INTEGRATION") == "1" {
 		t.Skip("SKIP_OPENCODE_INTEGRATION=1")
 	}
