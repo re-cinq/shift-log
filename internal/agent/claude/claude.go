@@ -77,7 +77,7 @@ func (a *Agent) DiagnoseHooks(repoRoot string) []agent.DiagnosticCheck {
 
 	// Check PostToolUse
 	postToolUse, hasPostToolUse := hooks["PostToolUse"]
-	if !hasPostToolUse || !hasClauditCommand(postToolUse, "claudit store") {
+	if !hasPostToolUse || !agent.HasNestedHookCommand(postToolUse, "claudit store") {
 		checks = append(checks, agent.DiagnosticCheck{
 			Name:    "PostToolUse hook",
 			OK:      false,
@@ -93,7 +93,7 @@ func (a *Agent) DiagnoseHooks(repoRoot string) []agent.DiagnosticCheck {
 
 	// Check SessionStart
 	sessionStart, hasSessionStart := hooks["SessionStart"]
-	if !hasSessionStart || !hasClauditCommand(sessionStart, "claudit session-start") {
+	if !hasSessionStart || !agent.HasNestedHookCommand(sessionStart, "claudit session-start") {
 		checks = append(checks, agent.DiagnosticCheck{
 			Name:    "SessionStart hook",
 			OK:      false,
@@ -109,7 +109,7 @@ func (a *Agent) DiagnoseHooks(repoRoot string) []agent.DiagnosticCheck {
 
 	// Check SessionEnd
 	sessionEnd, hasSessionEnd := hooks["SessionEnd"]
-	if !hasSessionEnd || !hasClauditCommand(sessionEnd, "claudit session-end") {
+	if !hasSessionEnd || !agent.HasNestedHookCommand(sessionEnd, "claudit session-end") {
 		checks = append(checks, agent.DiagnosticCheck{
 			Name:    "SessionEnd hook",
 			OK:      false,
@@ -152,8 +152,7 @@ func (a *Agent) IsCommitCommand(toolName, command string) bool {
 	if toolName != "Bash" {
 		return false
 	}
-	return strings.Contains(command, "git commit") ||
-		strings.Contains(command, "git-commit")
+	return agent.IsGitCommitCommand(command)
 }
 
 // ParseTranscript parses a Claude Code JSONL transcript.
@@ -214,7 +213,7 @@ func discoverFromActiveSession(projectPath string) (*agent.SessionInfo, error) {
 	}
 
 	// Validate project path matches
-	if !pathsEqual(active.ProjectPath, projectPath) {
+	if !agent.PathsEqual(active.ProjectPath, projectPath) {
 		return nil, nil
 	}
 
@@ -354,7 +353,7 @@ func extractFirstPrompt(transcriptData []byte) string {
 // findRecentSession finds a recent session from the sessions-index.
 func findRecentSession(index *SessionsIndex, projectPath string) *agent.SessionInfo {
 	now := time.Now()
-	const recentTimeout = 5 * time.Minute
+	recentTimeout := agent.RecentSessionTimeout
 
 	var bestEntry *SessionEntry
 	var bestModified time.Time
@@ -362,7 +361,7 @@ func findRecentSession(index *SessionsIndex, projectPath string) *agent.SessionI
 	for i := range index.Entries {
 		entry := &index.Entries[i]
 
-		if !pathsEqual(entry.ProjectPath, projectPath) {
+		if !agent.PathsEqual(entry.ProjectPath, projectPath) {
 			continue
 		}
 
@@ -409,7 +408,7 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	}
 
 	now := time.Now()
-	const recentTimeout = 5 * time.Minute
+	recentTimeout := agent.RecentSessionTimeout
 	var bestPath string
 	var bestSessionID string
 	var bestModTime time.Time
@@ -448,34 +447,4 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	}, nil
 }
 
-// hasClauditCommand checks if a hook list contains a specific claudit command.
-func hasClauditCommand(hookConfig interface{}, command string) bool {
-	hookList, ok := hookConfig.([]interface{})
-	if !ok {
-		return false
-	}
-	for _, h := range hookList {
-		hookMap, _ := h.(map[string]interface{})
-		hookCmds, _ := hookMap["hooks"].([]interface{})
-		for _, hc := range hookCmds {
-			hcMap, _ := hc.(map[string]interface{})
-			if cmd, ok := hcMap["command"].(string); ok {
-				if strings.Contains(cmd, command) {
-					return true
-				}
-			}
-		}
-	}
-	return false
-}
-
-// pathsEqual compares two paths after resolving symlinks.
-func pathsEqual(a, b string) bool {
-	resolvedA, errA := filepath.EvalSymlinks(a)
-	resolvedB, errB := filepath.EvalSymlinks(b)
-	if errA == nil && errB == nil {
-		return resolvedA == resolvedB
-	}
-	return a == b
-}
 

@@ -82,15 +82,3 @@ func WriteSessionFile(sessionID string, data []byte) (string, error) {
 	return eventsPath, os.WriteFile(eventsPath, data, 0600)
 }
 
-// pathsEqual compares two paths after resolving symlinks.
-func pathsEqual(a, b string) bool {
-	ra, err := filepath.EvalSymlinks(a)
-	if err != nil {
-		ra = filepath.Clean(a)
-	}
-	rb, err := filepath.EvalSymlinks(b)
-	if err != nil {
-		rb = filepath.Clean(b)
-	}
-	return ra == rb
-}

@@ -75,7 +75,7 @@ func (a *Agent) DiagnoseHooks(repoRoot string) []agent.DiagnosticCheck {
 	}
 
 	afterTool, hasAfterTool := hooks["AfterTool"]
-	if !hasAfterTool || !hasClauditCommand(afterTool, "claudit store") {
+	if !hasAfterTool || !agent.HasNestedHookCommand(afterTool, "claudit store") {
 		checks = append(checks, agent.DiagnosticCheck{
 			Name:    "AfterTool hook",
 			OK:      false,
@@ -123,8 +123,7 @@ func (a *Agent) IsCommitCommand(toolName, command string) bool {
 	if !shellToolNames[toolName] {
 		return false
 	}
-	return strings.Contains(command, "git commit") ||
-		strings.Contains(command, "git-commit")
+	return agent.IsGitCommitCommand(command)
 }
 
 // ParseTranscript parses a Gemini CLI session JSON transcript.
@@ -330,7 +329,7 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	}
 
 	now := time.Now()
-	const recentTimeout = 5 * time.Minute
+	recentTimeout := agent.RecentSessionTimeout
 	var bestPath string
 	var bestSessionID string
 	var bestModTime time.Time
@@ -373,24 +372,4 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	}, nil
 }
 
-// hasClauditCommand checks if a hook list contains a specific claudit command.
-func hasClauditCommand(hookConfig interface{}, command string) bool {
-	hookList, ok := hookConfig.([]interface{})
-	if !ok {
-		return false
-	}
-	for _, h := range hookList {
-		hookMap, _ := h.(map[string]interface{})
-		hookCmds, _ := hookMap["hooks"].([]interface{})
-		for _, hc := range hookCmds {
-			hcMap, _ := hc.(map[string]interface{})
-			if cmd, ok := hcMap["command"].(string); ok {
-				if strings.Contains(cmd, command) {
-					return true
-				}
-			}
-		}
-	}
-	return false
-}
 

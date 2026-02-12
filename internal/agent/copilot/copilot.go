@@ -74,7 +74,7 @@ func (a *Agent) DiagnoseHooks(repoRoot string) []agent.DiagnosticCheck {
 	}
 
 	postToolUse, hasPostToolUse := hooks["postToolUse"]
-	if !hasPostToolUse || !hasClauditCommandEntry(postToolUse, "claudit store") {
+	if !hasPostToolUse || !agent.HasFlatHookCommand(postToolUse, "claudit store") {
 		checks = append(checks, agent.DiagnosticCheck{
 			Name:    "postToolUse hook",
 			OK:      false,
@@ -157,8 +157,7 @@ func (a *Agent) IsCommitCommand(toolName, command string) bool {
 	if !shellToolNames[toolName] {
 		return false
 	}
-	return strings.Contains(command, "git commit") ||
-		strings.Contains(command, "git-commit")
+	return agent.IsGitCommitCommand(command)
 }
 
 // copilotEvent represents a single event line in the events.jsonl transcript.
@@ -391,7 +390,7 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	}
 
 	now := time.Now()
-	const recentTimeout = 5 * time.Minute
+	recentTimeout := agent.RecentSessionTimeout
 	var bestDir string
 	var bestSessionID string
 	var bestModTime time.Time
@@ -418,7 +417,7 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 			continue
 		}
 
-		if !pathsEqual(meta.CWD, projectPath) {
+		if !agent.PathsEqual(meta.CWD, projectPath) {
 			continue
 		}
 
@@ -441,20 +440,4 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	}, nil
 }
 
-// hasClauditCommandEntry checks if a hook list contains a claudit command entry.
-func hasClauditCommandEntry(hookConfig interface{}, command string) bool {
-	hookList, ok := hookConfig.([]interface{})
-	if !ok {
-		return false
-	}
-	for _, h := range hookList {
-		hookMap, _ := h.(map[string]interface{})
-		if cmd, ok := hookMap["command"].(string); ok {
-			if strings.Contains(cmd, command) {
-				return true
-			}
-		}
-	}
-	return false
-}
 

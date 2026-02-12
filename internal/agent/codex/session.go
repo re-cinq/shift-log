@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/re-cinq/claudit/internal/agent"
 )
 
 // SessionMeta represents the first line of a Codex rollout JSONL file.
@@ -101,7 +103,7 @@ func FindRecentRollout(projectPath string, timeout time.Duration) (path string, 
 			return nil
 		}
 
-		if !pathsEqual(meta.CWD, projectPath) {
+		if !agent.PathsEqual(meta.CWD, projectPath) {
 			return nil
 		}
 
@@ -135,15 +137,3 @@ func WriteSessionFile(sessionID string, data []byte) (string, error) {
 	return path, os.WriteFile(path, data, 0644)
 }
 
-// pathsEqual compares two paths after resolving symlinks.
-func pathsEqual(a, b string) bool {
-	ra, err := filepath.EvalSymlinks(a)
-	if err != nil {
-		ra = filepath.Clean(a)
-	}
-	rb, err := filepath.EvalSymlinks(b)
-	if err != nil {
-		rb = filepath.Clean(b)
-	}
-	return ra == rb
-}

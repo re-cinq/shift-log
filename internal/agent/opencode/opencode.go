@@ -92,8 +92,7 @@ func (a *Agent) IsCommitCommand(toolName, command string) bool {
 	if !shellTools[toolName] {
 		return false
 	}
-	return strings.Contains(command, "git commit") ||
-		strings.Contains(command, "git-commit")
+	return agent.IsGitCommitCommand(command)
 }
 
 // ParseTranscript parses an OpenCode transcript.
@@ -224,7 +223,7 @@ func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) 
 	}
 
 	now := time.Now()
-	const recentTimeout = 5 * time.Minute
+	recentTimeout := agent.RecentSessionTimeout
 	var bestSessionID string
 	var bestModTime time.Time
 

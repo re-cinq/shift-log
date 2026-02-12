@@ -82,8 +82,7 @@ func (a *Agent) IsCommitCommand(toolName, command string) bool {
 	if !shellTools[toolName] {
 		return false
 	}
-	return strings.Contains(command, "git commit") ||
-		strings.Contains(command, "git-commit")
+	return agent.IsGitCommitCommand(command)
 }
 
 // rolloutLine represents a single line in a Codex rollout JSONL file.
@@ -249,7 +248,7 @@ func (a *Agent) ParseTranscriptFile(path string) (*agent.Transcript, error) {
 
 // DiscoverSession finds an active or recent Codex CLI session.
 func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) {
-	const recentTimeout = 5 * time.Minute
+	recentTimeout := agent.RecentSessionTimeout
 
 	rolloutPath, sessionID, err := FindRecentRollout(projectPath, recentTimeout)
 	if err != nil {
