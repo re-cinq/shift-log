@@ -30,6 +30,12 @@ func SampleTranscript() string {
 				"content": []map[string]interface{}{
 					{"type": "text", "text": "Of course! What would you like help with?"},
 				},
+				"usage": map[string]interface{}{
+					"input_tokens":                100,
+					"output_tokens":               50,
+					"cache_creation_input_tokens": 10,
+					"cache_read_input_tokens":     20,
+				},
 			},
 		},
 		{
@@ -57,6 +63,12 @@ func SampleTranscript() string {
 						"name":  "Bash",
 						"input": map[string]interface{}{"command": "echo 'test content' > test.txt"},
 					},
+				},
+				"usage": map[string]interface{}{
+					"input_tokens":                200,
+					"output_tokens":               75,
+					"cache_creation_input_tokens": 0,
+					"cache_read_input_tokens":     30,
 				},
 			},
 		},

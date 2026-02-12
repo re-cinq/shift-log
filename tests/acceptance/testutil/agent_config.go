@@ -43,6 +43,12 @@ type AgentTestConfig struct {
 	// Transcript file extension for writing temp files
 	TranscriptFileExt string // ".jsonl" or ".json"
 
+	// Expected effort metrics from sample transcript
+	ExpectedTurns     int   // expected turns count from SampleTranscript()
+	ExpectedHasTokens bool  // whether the agent provides token data (only Claude)
+	ExpectedInputTok  int64 // expected input tokens (Claude only)
+	ExpectedOutputTok int64 // expected output tokens (Claude only)
+
 	// PrepareTranscript sets up transcript data for store testing.
 	// Returns the parameter to pass as the second arg to SampleHookInput.
 	// For Claude/Gemini: writes a single file, returns its path.
@@ -76,6 +82,11 @@ func ClaudeTestConfig() AgentTestConfig {
 		HasSessionsIndex:       true,
 		ReadRestoredTranscript: nil,
 		PrepareTranscript:      claudePrepareTranscript,
+
+		ExpectedTurns:     2,
+		ExpectedHasTokens: true,
+		ExpectedInputTok:  300,
+		ExpectedOutputTok: 125,
 	}
 }
 
@@ -106,6 +117,9 @@ func GeminiTestConfig() AgentTestConfig {
 		HasSessionsIndex:       true,
 		ReadRestoredTranscript: nil,
 		PrepareTranscript:      geminiPrepareTranscript,
+
+		ExpectedTurns:     2,
+		ExpectedHasTokens: false,
 	}
 }
 
@@ -135,6 +149,9 @@ func OpenCodeTestConfig() AgentTestConfig {
 		HasSessionsIndex:       false,
 		ReadRestoredTranscript: opencodeReadRestoredTranscript,
 		PrepareTranscript:      opencodePrepareTranscript,
+
+		ExpectedTurns:     2,
+		ExpectedHasTokens: false,
 	}
 }
 
@@ -165,6 +182,9 @@ func CodexTestConfig() AgentTestConfig {
 		HasSessionsIndex:       false,
 		ReadRestoredTranscript: codexReadRestoredTranscript,
 		PrepareTranscript:      codexPrepareTranscript,
+
+		ExpectedTurns:     2,
+		ExpectedHasTokens: false,
 	}
 }
 
@@ -196,6 +216,9 @@ func CopilotTestConfig() AgentTestConfig {
 		HasSessionsIndex:       false,
 		ReadRestoredTranscript: copilotReadRestoredTranscript,
 		PrepareTranscript:      copilotPrepareTranscript,
+
+		ExpectedTurns:     2,
+		ExpectedHasTokens: false,
 	}
 }
 

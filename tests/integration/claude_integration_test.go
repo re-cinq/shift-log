@@ -225,9 +225,9 @@ func TestClaudeCodeIntegration(t *testing.T) {
 		}
 	}
 
-	// Verify version is 2 (current format version)
-	if v, ok := noteData["version"].(float64); !ok || int(v) != 2 {
-		t.Errorf("Expected version=2, got %v", noteData["version"])
+	// Verify version is 3 (current format version)
+	if v, ok := noteData["version"].(float64); !ok || int(v) != 3 {
+		t.Errorf("Expected version=3, got %v", noteData["version"])
 	}
 
 	// Verify agent field is "claude"
@@ -241,6 +241,36 @@ func TestClaudeCodeIntegration(t *testing.T) {
 		t.Logf("Note: model field is empty or missing (may be expected if Claude transcript format changed)")
 	} else {
 		t.Logf("✓ Model field present: %v", model)
+	}
+
+	// Verify effort field is present (v3 feature)
+	effortRaw, hasEffort := noteData["effort"]
+	if !hasEffort {
+		t.Logf("Note: effort field missing (may indicate zero turns/tokens)")
+	} else {
+		effort, ok := effortRaw.(map[string]interface{})
+		if !ok {
+			t.Errorf("effort field is not a JSON object: %v", effortRaw)
+		} else {
+			// Claude should always have turns > 0 for a real conversation
+			if turns, ok := effort["turns"].(float64); ok && turns > 0 {
+				t.Logf("✓ Effort turns: %.0f", turns)
+			} else {
+				t.Logf("Note: effort.turns = %v", effort["turns"])
+			}
+
+			// Claude transcripts include token usage
+			if inputTok, ok := effort["input_tokens"].(float64); ok && inputTok > 0 {
+				t.Logf("✓ Effort input_tokens: %.0f", inputTok)
+			} else {
+				t.Logf("Note: effort.input_tokens = %v (may be expected if transcript format changed)", effort["input_tokens"])
+			}
+			if outputTok, ok := effort["output_tokens"].(float64); ok && outputTok > 0 {
+				t.Logf("✓ Effort output_tokens: %.0f", outputTok)
+			} else {
+				t.Logf("Note: effort.output_tokens = %v", effort["output_tokens"])
+			}
+		}
 	}
 
 	t.Log("✓ Note content is valid and contains all required fields")
