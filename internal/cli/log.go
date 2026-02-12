@@ -26,13 +26,23 @@ func LogInfo(format string, args ...interface{}) {
 // LogDebug prints a debug message to stderr if debug logging is enabled
 // in .claudit/config. The config is read once per process invocation.
 func LogDebug(format string, args ...interface{}) {
+	initDebug()
+	if debugEnabled {
+		fmt.Fprintf(os.Stderr, "claudit: debug: "+format+"\n", args...)
+	}
+}
+
+// IsDebugEnabled returns whether debug logging is enabled.
+func IsDebugEnabled() bool {
+	initDebug()
+	return debugEnabled
+}
+
+func initDebug() {
 	debugOnce.Do(func() {
 		cfg, err := config.Read()
 		if err == nil {
 			debugEnabled = cfg.Debug
 		}
 	})
-	if debugEnabled {
-		fmt.Fprintf(os.Stderr, "claudit: debug: "+format+"\n", args...)
-	}
 }

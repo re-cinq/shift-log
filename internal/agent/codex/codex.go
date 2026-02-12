@@ -254,6 +254,11 @@ func (a *Agent) ResumeCommand(sessionID string) (string, []string) {
 	return "codex", []string{"resume", sessionID}
 }
 
+// SummariseCommand returns the command to run Codex in non-interactive mode.
+func (a *Agent) SummariseCommand() (string, []string) {
+	return "codex", []string{"-q"}
+}
+
 // ToolAliases returns Codex's tool name mappings to canonical names.
 func (a *Agent) ToolAliases() map[string]string {
 	return map[string]string{

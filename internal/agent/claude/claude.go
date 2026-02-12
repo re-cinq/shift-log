@@ -272,6 +272,11 @@ func (a *Agent) ResumeCommand(sessionID string) (string, []string) {
 	return "claude", []string{"--resume", sessionID}
 }
 
+// SummariseCommand returns the command to run Claude Code in non-interactive mode.
+func (a *Agent) SummariseCommand() (string, []string) {
+	return "claude", []string{"-p", "--output-format", "text"}
+}
+
 // ToolAliases returns Claude Code's tool name mappings.
 // Claude Code uses canonical names directly, so no aliasing needed.
 func (a *Agent) ToolAliases() map[string]string {
