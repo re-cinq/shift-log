@@ -10,18 +10,19 @@ curl -fsSL https://raw.githubusercontent.com/re-cinq/claudit/master/scripts/inst
 claudit init --agent=<agent>
 ```
 
-Where `<agent>` is `claude` (default), `codex`, `gemini`, or `opencode`.
+Where `<agent>` is `claude` (default), `codex`, `copilot`, `gemini`, or `opencode`.
 
 Now work with your coding agent as you would normally. Whenever you or the agent commit, the conversation since the last commit will be attached to that commit as a Git Note.
 
 ## Supported Agents
 
-| Agent | Init command | How it hooks in |
-|-------|-------------|-----------------|
-| Claude Code | `claudit init` (default) | `.claude/settings.json` hooks |
-| Codex CLI | `claudit init --agent=codex` | Post-commit git hook |
-| Gemini CLI | `claudit init --agent=gemini` | `.gemini/settings.json` hooks |
-| OpenCode | `claudit init --agent=opencode` | `.opencode/plugins/claudit.js` plugin |
+| Agent       | Init command                    | How it hooks in                       |
+| ----------- | ------------------------------- | ------------------------------------- |
+| Claude Code | `claudit init` (default)        | `.claude/settings.json` hooks         |
+| Codex CLI   | `claudit init --agent=codex`    | Post-commit git hook                  |
+| Copilot CLI | `claudit init --agent=copilot`  | `hooks.json` postToolUse hook         |
+| Gemini CLI  | `claudit init --agent=gemini`   | `.gemini/settings.json` hooks         |
+| OpenCode    | `claudit init --agent=opencode` | `.opencode/plugins/claudit.js` plugin |
 
 ## Usage
 
@@ -52,16 +53,16 @@ claudit sync pull
 
 ## claudit vs Entire
 
-|  | [Entire](https://entire.io) | claudit |
-|--|-------|---------|
-| **Funding** | $60M seed round | Claude Code Max plan ($200/mo) |
-| **Staffing** | 12 engineers | An imbecile spec-driving while not really paying attention |
-| **Agents** | Claude Code, Gemini CLI | Claude Code, Codex CLI, Gemini CLI, OpenCode |
-| **Storage** | Custom checkpoints format | Standard Git Notes |
-| **Resume sessions** | No | Yes |
-| **Web viewer** | No | Yes |
-| **Rebase support** | No | Yes |
-| **Open source** | Yes | Yes |
+|                     | [Entire](https://entire.io) | claudit                                                    |
+| ------------------- | --------------------------- | ---------------------------------------------------------- |
+| **Funding**         | $60M seed round             | Claude Code Max plan ($200/mo)                             |
+| **Staffing**        | 12 engineers                | An imbecile spec-driving while not really paying attention |
+| **Agents**          | Claude Code, Gemini CLI     | Claude Code, Codex CLI, Copilot CLI, Gemini CLI, OpenCode  |
+| **Storage**         | Custom checkpoints format   | Standard Git Notes                                         |
+| **Resume sessions** | No                          | Yes                                                        |
+| **Web viewer**      | No                          | Yes                                                        |
+| **Rebase support**  | No                          | Yes                                                        |
+| **Open source**     | Yes                         | Yes                                                        |
 
 ## Why?
 
@@ -81,22 +82,22 @@ To view notes directly with git: `git log --notes=claude-conversations`
 
 ## Commands
 
-| Command                   | Description                            |
-| ------------------------- | -------------------------------------- |
-| `claudit init`            | Initialize claudit in the current repo |
-| `claudit list`            | List commits with stored conversations |
-| `claudit show [ref]`      | Show conversation history for a commit |
-| `claudit resume <commit>` | Resume a Claude session from a commit  |
-| `claudit serve`           | Start the web visualization server     |
-| `claudit doctor`          | Diagnose claudit configuration issues  |
-| `claudit debug`           | Toggle debug logging                   |
-| `claudit sync push/pull`  | Sync conversation notes with remote    |
-| `claudit remap`           | Remap orphaned notes to rebased commits|
+| Command                   | Description                             |
+| ------------------------- | --------------------------------------- |
+| `claudit init`            | Initialize claudit in the current repo  |
+| `claudit list`            | List commits with stored conversations  |
+| `claudit show [ref]`      | Show conversation history for a commit  |
+| `claudit resume <commit>` | Resume a Claude session from a commit   |
+| `claudit serve`           | Start the web visualization server      |
+| `claudit doctor`          | Diagnose claudit configuration issues   |
+| `claudit debug`           | Toggle debug logging                    |
+| `claudit sync push/pull`  | Sync conversation notes with remote     |
+| `claudit remap`           | Remap orphaned notes to rebased commits |
 
 ## Requirements
 
 - Git
-- One of the supported coding agents (Claude Code, Codex CLI, Gemini CLI, or OpenCode)
+- One of the supported coding agents (Claude Code, Codex CLI, Copilot CLI, Gemini CLI, or OpenCode)
 
 ## Multi-Developer Sync
 

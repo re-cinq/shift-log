@@ -29,8 +29,9 @@ type AgentTestConfig struct {
 	Timeout         float64 // 30 or 30000
 	HasSessionHooks bool    // Gemini has SessionStart/SessionEnd
 	SessionTimeout  float64 // 5000 for Gemini
-	IsPluginBased   bool    // true for agents that use a plugin file instead of JSON settings
-	IsHookless      bool    // true for agents that have no hook/plugin config (e.g. Codex)
+	IsPluginBased    bool    // true for agents that use a plugin file instead of JSON settings
+	IsHookless       bool    // true for agents that have no hook/plugin config (e.g. Codex)
+	IsRepoRootHooks  bool    // true for agents that use a hooks.json at repo root (e.g. Copilot)
 
 	// Resume / session verification
 	SessionFileExt         string                                                   // ".jsonl" or ".json"
@@ -167,9 +168,40 @@ func CodexTestConfig() AgentTestConfig {
 	}
 }
 
+// CopilotTestConfig returns the test configuration for Copilot agent.
+func CopilotTestConfig() AgentTestConfig {
+	return AgentTestConfig{
+		Name:      "Copilot",
+		InitArgs:  []string{"init", "--agent=copilot"},
+		StoreArgs: []string{"store", "--agent=copilot"},
+
+		SampleTranscript:   SampleCopilotTranscript,
+		SampleHookInput:    SampleCopilotHookInput,
+		SampleNonToolInput: SampleCopilotHookInputNonShell,
+
+		SettingsFile:     "hooks.json",
+		HookKey:          "",     // repo-root hooks, different format
+		ToolMatcher:      "",     // repo-root hooks, different format
+		StoreCommand:     "claudit store --agent=copilot",
+		Timeout:          30,
+		HasSessionHooks:  false,
+		IsPluginBased:    false,
+		IsHookless:       false,
+		IsRepoRootHooks:  true,
+
+		SessionFileExt:         ".json",
+		TranscriptFileExt:      ".json",
+		GetSessionDir:          copilotSessionDir,
+		NeedsBinaryPath:        true,
+		HasSessionsIndex:       false,
+		ReadRestoredTranscript: copilotReadRestoredTranscript,
+		PrepareTranscript:      copilotPrepareTranscript,
+	}
+}
+
 // AllAgentConfigs returns test configs for all agents.
 func AllAgentConfigs() []AgentTestConfig {
-	return []AgentTestConfig{ClaudeTestConfig(), GeminiTestConfig(), OpenCodeTestConfig(), CodexTestConfig()}
+	return []AgentTestConfig{ClaudeTestConfig(), GeminiTestConfig(), OpenCodeTestConfig(), CodexTestConfig(), CopilotTestConfig()}
 }
 
 // claudeSessionDir computes the Claude projects session directory path.

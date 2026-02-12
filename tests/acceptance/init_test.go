@@ -50,6 +50,65 @@ var _ = Describe("Init Command", func() {
 				})
 			}
 
+			if config.IsRepoRootHooks {
+				It("creates hooks.json at repo root with correct structure", func() {
+					_, _, err := testutil.RunClauditInDir(repo.Path, config.InitArgs...)
+					Expect(err).NotTo(HaveOccurred())
+
+					Expect(repo.FileExists("hooks.json")).To(BeTrue())
+
+					content, err := repo.ReadFile("hooks.json")
+					Expect(err).NotTo(HaveOccurred())
+
+					var raw map[string]interface{}
+					Expect(json.Unmarshal([]byte(content), &raw)).To(Succeed())
+
+					// Check version
+					Expect(raw["version"]).To(BeNumerically("==", 1))
+
+					hooks, ok := raw["hooks"].(map[string]interface{})
+					Expect(ok).To(BeTrue(), "Expected hooks key in hooks.json")
+
+					postToolUse, ok := hooks["postToolUse"].([]interface{})
+					Expect(ok).To(BeTrue(), "Expected postToolUse array")
+					Expect(postToolUse).NotTo(BeEmpty())
+
+					hookObj := postToolUse[0].(map[string]interface{})
+					Expect(hookObj["bash"]).To(Equal(config.StoreCommand))
+					Expect(hookObj["timeoutSec"]).To(BeNumerically("==", config.Timeout))
+				})
+
+				It("is idempotent - no duplicate hooks on re-init", func() {
+					_, _, err := testutil.RunClauditInDir(repo.Path, config.InitArgs...)
+					Expect(err).NotTo(HaveOccurred())
+					_, _, err = testutil.RunClauditInDir(repo.Path, config.InitArgs...)
+					Expect(err).NotTo(HaveOccurred())
+
+					content, err := repo.ReadFile("hooks.json")
+					Expect(err).NotTo(HaveOccurred())
+
+					var raw map[string]interface{}
+					Expect(json.Unmarshal([]byte(content), &raw)).To(Succeed())
+
+					hooks := raw["hooks"].(map[string]interface{})
+					postToolUse := hooks["postToolUse"].([]interface{})
+					Expect(postToolUse).To(HaveLen(1))
+				})
+
+				It("preserves existing hooks.json content", func() {
+					Expect(repo.WriteFile("hooks.json", `{"version":1,"hooks":{"postToolUse":[{"type":"bash","bash":"other-tool","timeoutSec":10}]},"existingKey":"existingValue"}`)).To(Succeed())
+
+					_, _, err := testutil.RunClauditInDir(repo.Path, config.InitArgs...)
+					Expect(err).NotTo(HaveOccurred())
+
+					content, err := repo.ReadFile("hooks.json")
+					Expect(err).NotTo(HaveOccurred())
+					Expect(content).To(ContainSubstring("existingKey"))
+					Expect(content).To(ContainSubstring("existingValue"))
+					Expect(content).To(ContainSubstring(config.StoreCommand))
+				})
+			}
+
 			if !config.IsHookless {
 				It("creates settings file at correct path", func() {
 					_, _, err := testutil.RunClauditInDir(repo.Path, config.InitArgs...)
@@ -100,7 +159,7 @@ var _ = Describe("Init Command", func() {
 					Expect(err).NotTo(HaveOccurred())
 					Expect(string(content)).To(Equal("// other plugin"))
 				})
-			} else if !config.IsHookless {
+			} else if !config.IsHookless && !config.IsRepoRootHooks {
 				It("configures correct hook with right matcher/timeout/command", func() {
 					_, _, err := testutil.RunClauditInDir(repo.Path, config.InitArgs...)
 					Expect(err).NotTo(HaveOccurred())

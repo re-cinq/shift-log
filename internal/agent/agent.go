@@ -8,6 +8,7 @@ type Name string
 const (
 	Claude   Name = "claude"
 	Codex    Name = "codex"
+	Copilot  Name = "copilot"
 	Gemini   Name = "gemini"
 	OpenCode Name = "opencode"
 )

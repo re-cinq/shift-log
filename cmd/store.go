@@ -11,6 +11,7 @@ import (
 	"github.com/re-cinq/claudit/internal/agent"
 	_ "github.com/re-cinq/claudit/internal/agent/claude"   // register Claude agent
 	_ "github.com/re-cinq/claudit/internal/agent/codex"    // register Codex agent
+	_ "github.com/re-cinq/claudit/internal/agent/copilot"  // register Copilot agent
 	_ "github.com/re-cinq/claudit/internal/agent/gemini"   // register Gemini agent
 	_ "github.com/re-cinq/claudit/internal/agent/opencode" // register OpenCode agent
 	"github.com/re-cinq/claudit/internal/cli"
@@ -41,7 +42,7 @@ for the most recent commit. Used by the post-commit git hook.`,
 
 func init() {
 	storeCmd.Flags().BoolVar(&manualFlag, "manual", false, "Manual mode: discover session from active session file or recent sessions")
-	storeCmd.Flags().StringVar(&storeAgentFlag, "agent", "", "Coding agent (claude, codex, gemini, opencode). Defaults to configured agent.")
+	storeCmd.Flags().StringVar(&storeAgentFlag, "agent", "", "Coding agent (claude, codex, copilot, gemini, opencode). Defaults to configured agent.")
 	rootCmd.AddCommand(storeCmd)
 }
 
