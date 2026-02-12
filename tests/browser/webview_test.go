@@ -728,3 +728,346 @@ func TestResumeButtonDisabledUntilConversationSelected(t *testing.T) {
 		t.Error("resume button should be enabled when a commit with conversation is selected")
 	}
 }
+
+// setupMultiBranchTestServer creates a repo with 2 branches and conversations, returning
+// the test server URL, the repo, and a map of branch name → commit SHAs.
+func setupMultiBranchTestServer(t *testing.T) (string, *testRepo, map[string][]string) {
+	t.Helper()
+
+	repo := newTestRepo(t)
+	chdir(t, repo.path)
+
+	// master: 3 commits, conversation on commit 2
+	repo.writeFile("a.txt", "a")
+	m1 := repo.commit("Initial commit")
+
+	repo.writeFile("b.txt", "b")
+	m2 := repo.commit("Add feature B")
+	transcript := marshalTranscript([]map[string]interface{}{
+		{
+			"uuid": "u1", "type": "user",
+			"message": map[string]interface{}{
+				"role": "user",
+				"content": []map[string]interface{}{
+					{"type": "text", "text": "Hello from master"},
+				},
+			},
+		},
+		{
+			"uuid": "a1", "parentUuid": "u1", "type": "assistant",
+			"message": map[string]interface{}{
+				"role": "assistant",
+				"content": []map[string]interface{}{
+					{"type": "text", "text": "Hi there!"},
+				},
+			},
+		},
+	})
+	repo.addConversation(m2, "session-master", transcript, 2)
+
+	repo.writeFile("d.txt", "d")
+	m3 := repo.commit("Update docs")
+
+	// Create feature branch from m1
+	repo.git("checkout", "-b", "feature-x", m1)
+
+	repo.writeFile("x.txt", "x1")
+	f1 := repo.commit("Start feature X")
+	transcriptF := marshalTranscript([]map[string]interface{}{
+		{
+			"uuid": "u2", "type": "user",
+			"message": map[string]interface{}{
+				"role": "user",
+				"content": []map[string]interface{}{
+					{"type": "text", "text": "Working on feature X"},
+				},
+			},
+		},
+		{
+			"uuid": "a2", "parentUuid": "u2", "type": "assistant",
+			"message": map[string]interface{}{
+				"role": "assistant",
+				"content": []map[string]interface{}{
+					{"type": "text", "text": "Let me help with feature X."},
+				},
+			},
+		},
+	})
+	repo.addConversation(f1, "session-feature", transcriptF, 2)
+
+	repo.writeFile("x.txt", "x2")
+	f2 := repo.commit("Complete feature X")
+
+	// Switch back to master so it's the current branch
+	repo.git("checkout", "master")
+
+	srv := web.NewServer(0, repo.path)
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+
+	shas := map[string][]string{
+		"master":    {m1, m2, m3},
+		"feature-x": {f1, f2},
+	}
+	return ts.URL, repo, shas
+}
+
+func TestMultiBranchOverviewRenders(t *testing.T) {
+	url, _, _ := setupMultiBranchTestServer(t)
+	ctx, _ := newBrowserContext(t)
+
+	var headerCount int
+	var headerTexts []string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(url),
+		chromedp.WaitVisible(`.col-header`, chromedp.ByQuery),
+		chromedp.EvaluateAsDevTools(
+			`document.querySelectorAll('.col-header').length`,
+			&headerCount,
+		),
+		chromedp.EvaluateAsDevTools(
+			`Array.from(document.querySelectorAll('.col-header-name')).map(e => e.textContent.trim())`,
+			&headerTexts,
+		),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+
+	if headerCount != 2 {
+		t.Errorf("expected 2 column headers, got %d", headerCount)
+	}
+
+	foundMaster := false
+	foundFeature := false
+	for _, text := range headerTexts {
+		if strings.Contains(text, "master") {
+			foundMaster = true
+		}
+		if strings.Contains(text, "feature-x") {
+			foundFeature = true
+		}
+	}
+	if !foundMaster {
+		t.Error("column headers should include 'master'")
+	}
+	if !foundFeature {
+		t.Error("column headers should include 'feature-x'")
+	}
+}
+
+func TestOverviewConversationCounts(t *testing.T) {
+	url, _, _ := setupMultiBranchTestServer(t)
+	ctx, _ := newBrowserContext(t)
+
+	var countTexts []string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(url),
+		chromedp.WaitVisible(`.col-header`, chromedp.ByQuery),
+		chromedp.EvaluateAsDevTools(
+			`Array.from(document.querySelectorAll('.col-header-count')).map(e => e.textContent.trim())`,
+			&countTexts,
+		),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+
+	// master has 1 conversation, feature-x has 1 conversation
+	foundOne := 0
+	for _, text := range countTexts {
+		if strings.Contains(text, "1 conversation") {
+			foundOne++
+		}
+	}
+	if foundOne != 2 {
+		t.Errorf("expected 2 branches with '1 conversation', got %d (texts: %v)", foundOne, countTexts)
+	}
+}
+
+func TestOverviewCommitBoxesRender(t *testing.T) {
+	url, _, shas := setupMultiBranchTestServer(t)
+	ctx, _ := newBrowserContext(t)
+
+	var boxCount int
+	var boxHTML string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(url),
+		chromedp.WaitVisible(`.commit-box`, chromedp.ByQuery),
+		chromedp.EvaluateAsDevTools(
+			`document.querySelectorAll('.commit-box').length`,
+			&boxCount,
+		),
+		chromedp.OuterHTML(`.commit-grid`, &boxHTML, chromedp.ByQuery),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+
+	// master has 3 commits, feature-x has 2 + shared initial = 3, total unique ~5-6
+	if boxCount < 5 {
+		t.Errorf("expected at least 5 commit boxes, got %d", boxCount)
+	}
+
+	// Check that short SHAs from both branches appear
+	for branch, commits := range shas {
+		for _, sha := range commits {
+			short := sha[:7]
+			if !strings.Contains(boxHTML, short) {
+				t.Errorf("commit grid should contain short SHA %s from branch %s", short, branch)
+			}
+		}
+	}
+}
+
+func TestOverviewHasConvStyling(t *testing.T) {
+	url, _, shas := setupMultiBranchTestServer(t)
+	ctx, _ := newBrowserContext(t)
+
+	// m2 has a conversation, m1 does not
+	m2Short := shas["master"][1]
+	m1Short := shas["master"][0]
+
+	var m2HasConv, m1HasConv bool
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(url),
+		chromedp.WaitVisible(`.commit-box`, chromedp.ByQuery),
+		chromedp.EvaluateAsDevTools(
+			fmt.Sprintf(`document.querySelector('.commit-box[data-sha="%s"]').classList.contains('has-conv')`, m2Short),
+			&m2HasConv,
+		),
+		chromedp.EvaluateAsDevTools(
+			fmt.Sprintf(`document.querySelector('.commit-box[data-sha="%s"]').classList.contains('no-conv')`, m1Short),
+			&m1HasConv,
+		),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+
+	if !m2HasConv {
+		t.Error("commit with conversation should have 'has-conv' class")
+	}
+	if !m1HasConv {
+		t.Error("commit without conversation should have 'no-conv' class")
+	}
+}
+
+func TestClickCommitBoxDrillsIntoDetail(t *testing.T) {
+	url, _, shas := setupMultiBranchTestServer(t)
+	ctx, _ := newBrowserContext(t)
+
+	m2 := shas["master"][1]
+	selector := fmt.Sprintf(`.commit-box[data-sha="%s"]`, m2)
+
+	var detailVisible bool
+	var conversationHTML string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(url),
+		chromedp.WaitVisible(`.commit-box`, chromedp.ByQuery),
+		// Click commit box with conversation
+		chromedp.Click(selector, chromedp.ByQuery),
+		// Wait for detail view to appear
+		chromedp.WaitVisible(`#detail-container`, chromedp.ByQuery),
+		chromedp.WaitVisible(`.message`, chromedp.ByQuery),
+		chromedp.EvaluateAsDevTools(
+			`!document.getElementById('detail-container').classList.contains('hidden')`,
+			&detailVisible,
+		),
+		chromedp.OuterHTML(`#conversation-content`, &conversationHTML, chromedp.ByID),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+
+	if !detailVisible {
+		t.Error("detail container should be visible after clicking commit box")
+	}
+	if !strings.Contains(conversationHTML, "Hello from master") {
+		t.Error("conversation should contain user message from master branch")
+	}
+}
+
+func TestBranchesButtonReturnsToOverview(t *testing.T) {
+	url, _, shas := setupMultiBranchTestServer(t)
+	ctx, _ := newBrowserContext(t)
+
+	m2 := shas["master"][1]
+	selector := fmt.Sprintf(`.commit-box[data-sha="%s"]`, m2)
+
+	var overviewVisible bool
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(url),
+		chromedp.WaitVisible(`.commit-box`, chromedp.ByQuery),
+		// Drill into detail
+		chromedp.Click(selector, chromedp.ByQuery),
+		chromedp.WaitVisible(`#detail-container`, chromedp.ByQuery),
+		// Click Branches button to go back
+		chromedp.Click(`#nav-branches`, chromedp.ByID),
+		chromedp.Sleep(300*time.Millisecond),
+		chromedp.EvaluateAsDevTools(
+			`!document.getElementById('overview-container').classList.contains('hidden')`,
+			&overviewVisible,
+		),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+
+	if !overviewVisible {
+		t.Error("overview should be visible after clicking Branches button")
+	}
+}
+
+func TestDownArrowHintsRender(t *testing.T) {
+	url, _, _ := setupMultiBranchTestServer(t)
+	ctx, _ := newBrowserContext(t)
+
+	var hintCount int
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(url),
+		chromedp.WaitVisible(`.commit-box`, chromedp.ByQuery),
+		chromedp.EvaluateAsDevTools(
+			`document.querySelectorAll('.grid-cell-hint').length`,
+			&hintCount,
+		),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+
+	// With 2 branches diverging, there should be empty cells with down-arrow hints
+	if hintCount == 0 {
+		t.Error("expected down-arrow hints in empty grid cells where branch has commits below")
+	}
+}
+
+func TestSingleBranchSkipsOverview(t *testing.T) {
+	// Use the single-branch setupTestServer
+	url, _, _ := setupTestServer(t)
+	ctx, _ := newBrowserContext(t)
+
+	var detailVisible, overviewHidden bool
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(url),
+		chromedp.WaitVisible(`#detail-container`, chromedp.ByQuery),
+		chromedp.EvaluateAsDevTools(
+			`!document.getElementById('detail-container').classList.contains('hidden')`,
+			&detailVisible,
+		),
+		chromedp.EvaluateAsDevTools(
+			`document.getElementById('overview-container').classList.contains('hidden')`,
+			&overviewHidden,
+		),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+
+	if !detailVisible {
+		t.Error("single-branch repo should show detail view directly")
+	}
+	if !overviewHidden {
+		t.Error("single-branch repo should hide overview")
+	}
+}
