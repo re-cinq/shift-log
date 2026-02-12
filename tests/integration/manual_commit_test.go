@@ -420,3 +420,67 @@ func TestOpenCodeManualCommit(t *testing.T) {
 	t.Log("Manual commit created, verifying note...")
 	verifyNoteOnHead(t, tmpDir, "opencode")
 }
+
+// TestCopilotManualCommit tests the manual commit flow with GitHub Copilot CLI.
+//
+// Requires: COPILOT_GITHUB_TOKEN, copilot CLI in PATH
+// Opt out: SKIP_COPILOT_INTEGRATION=1
+func TestCopilotManualCommit(t *testing.T) {
+	if os.Getenv("SKIP_COPILOT_INTEGRATION") == "1" {
+		t.Skip("SKIP_COPILOT_INTEGRATION=1 is set")
+	}
+
+	githubToken := os.Getenv("COPILOT_GITHUB_TOKEN")
+	if githubToken == "" {
+		t.Skip("COPILOT_GITHUB_TOKEN not set")
+	}
+
+	if _, err := exec.LookPath("copilot"); err != nil {
+		t.Skip("Copilot CLI not found in PATH")
+	}
+
+	tmpDir, clauditPath := setupManualCommitRepo(t, "copilot")
+	defer os.RemoveAll(tmpDir)
+
+	// Run Copilot with a simple command to establish a session
+	copilotCmd := exec.Command("copilot",
+		"-p", "Run: echo 'hello world'",
+		"--yolo",
+	)
+	copilotCmd.Dir = tmpDir
+	copilotCmd.Env = append(os.Environ(),
+		"PATH="+filepath.Dir(clauditPath)+":"+os.Getenv("PATH"),
+		"COPILOT_GITHUB_TOKEN="+githubToken,
+	)
+
+	type result struct {
+		output []byte
+		err    error
+	}
+	done := make(chan result, 1)
+	go func() {
+		output, err := copilotCmd.CombinedOutput()
+		done <- result{output, err}
+	}()
+
+	select {
+	case res := <-done:
+		if res.err != nil {
+			t.Logf("Copilot command finished with error (may be expected): %v", res.err)
+		}
+		t.Logf("Copilot output: %s", res.output)
+	case <-time.After(90 * time.Second):
+		copilotCmd.Process.Kill()
+		t.Fatal("Copilot command timed out after 90 seconds")
+	}
+
+	t.Log("Agent session established, making manual commit...")
+
+	// Create a new file and commit — triggers post-commit hook
+	manualCommitNewFile(t, tmpDir)
+
+	time.Sleep(2 * time.Second)
+
+	t.Log("Manual commit created, verifying note...")
+	verifyNoteOnHead(t, tmpDir, "copilot")
+}

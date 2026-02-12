@@ -44,6 +44,12 @@ func TestPrerequisites(t *testing.T) {
 			binary:  "opencode",
 			skipEnv: "SKIP_OPENCODE_INTEGRATION",
 		},
+		{
+			agent:   "Copilot",
+			envVars: []string{"COPILOT_GITHUB_TOKEN"},
+			binary:  "copilot",
+			skipEnv: "SKIP_COPILOT_INTEGRATION",
+		},
 	}
 
 	var summary []string
