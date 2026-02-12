@@ -7,27 +7,27 @@ import (
 	"strings"
 )
 
-// HooksFile represents the Copilot CLI hooks.json structure.
-// Format: {"version": 1, "hooks": {"postToolUse": [{"type":"bash","bash":"...","timeoutSec":30}]}}
+// HooksFile represents the Copilot CLI hooks file structure.
+// Format: {"version": 1, "hooks": {"postToolUse": [{"type":"command","command":"...","timeoutSec":30}]}}
 type HooksFile struct {
 	Version int                    `json:"version"`
 	Hooks   map[string][]HookEntry `json:"hooks"`
 	Other   map[string]interface{} `json:"-"`
 }
 
-// HookEntry represents a single hook entry in hooks.json.
+// HookEntry represents a single hook entry in the hooks file.
 type HookEntry struct {
 	Type       string `json:"type"`
-	Bash       string `json:"bash"`
+	Command    string `json:"command"`
 	TimeoutSec int    `json:"timeoutSec,omitempty"`
 }
 
-// hooksFilePath returns the path to hooks.json at the repo root.
+// hooksFilePath returns the path to the Copilot hooks file.
 func hooksFilePath(repoRoot string) string {
-	return filepath.Join(repoRoot, "hooks.json")
+	return filepath.Join(repoRoot, ".github", "hooks", "claudit.json")
 }
 
-// ReadHooksFile reads the Copilot hooks file from the repo root.
+// ReadHooksFile reads the Copilot hooks file.
 func ReadHooksFile(repoRoot string) (*HooksFile, error) {
 	path := hooksFilePath(repoRoot)
 
@@ -70,7 +70,7 @@ func ReadHooksFile(repoRoot string) (*HooksFile, error) {
 	return hf, nil
 }
 
-// WriteHooksFile writes the hooks file to the repo root.
+// WriteHooksFile writes the hooks file.
 func WriteHooksFile(repoRoot string, hf *HooksFile) error {
 	output := make(map[string]interface{})
 	for k, v := range hf.Other {
@@ -88,14 +88,17 @@ func WriteHooksFile(repoRoot string, hf *HooksFile) error {
 	}
 
 	path := hooksFilePath(repoRoot)
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
 	return os.WriteFile(path, data, 0644)
 }
 
 // AddClauditHooks adds the claudit store postToolUse hook entry.
 func AddClauditHooks(hf *HooksFile) {
 	entry := HookEntry{
-		Type:       "bash",
-		Bash:       "claudit store --agent=copilot",
+		Type:       "command",
+		Command:    "claudit store --agent=copilot",
 		TimeoutSec: 30,
 	}
 
@@ -104,10 +107,10 @@ func AddClauditHooks(hf *HooksFile) {
 	)
 }
 
-// addOrUpdateHookEntry adds or updates a hook entry matching by bash command prefix.
+// addOrUpdateHookEntry adds or updates a hook entry matching by command prefix.
 func addOrUpdateHookEntry(entries []HookEntry, newEntry HookEntry, prefix string) []HookEntry {
 	for i, e := range entries {
-		if strings.Contains(e.Bash, prefix) {
+		if strings.Contains(e.Command, prefix) {
 			entries[i] = newEntry
 			return entries
 		}

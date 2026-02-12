@@ -179,7 +179,7 @@ func CopilotTestConfig() AgentTestConfig {
 		SampleHookInput:    SampleCopilotHookInput,
 		SampleNonToolInput: SampleCopilotHookInputNonShell,
 
-		SettingsFile:     "hooks.json",
+		SettingsFile:     ".github/hooks/claudit.json",
 		HookKey:          "",     // repo-root hooks, different format
 		ToolMatcher:      "",     // repo-root hooks, different format
 		StoreCommand:     "claudit store --agent=copilot",
@@ -189,8 +189,8 @@ func CopilotTestConfig() AgentTestConfig {
 		IsHookless:       false,
 		IsRepoRootHooks:  true,
 
-		SessionFileExt:         ".json",
-		TranscriptFileExt:      ".json",
+		SessionFileExt:         ".jsonl",
+		TranscriptFileExt:      ".jsonl",
 		GetSessionDir:          copilotSessionDir,
 		NeedsBinaryPath:        true,
 		HasSessionsIndex:       false,

@@ -7,54 +7,28 @@ import (
 	"strings"
 )
 
-// SampleCopilotTranscript returns a sample Copilot CLI session JSON transcript for testing.
+// SampleCopilotTranscript returns a sample Copilot CLI events.jsonl transcript for testing.
 func SampleCopilotTranscript() string {
-	session := map[string]interface{}{
-		"sessionId": "test-session",
-		"cwd":       "/test/project",
-		"model":     "gpt-4",
-		"messages": []map[string]interface{}{
-			{
-				"role":    "user",
-				"content": "Hello, can you help me with a task?",
-			},
-			{
-				"role":    "assistant",
-				"content": "Of course! What would you like help with?",
-			},
-			{
-				"role":    "user",
-				"content": "Please create a file called test.txt",
-			},
-			{
-				"role":    "assistant",
-				"content": "I'll create that file for you.",
-				"tool_calls": []map[string]interface{}{
-					{
-						"id":   "call_1",
-						"type": "function",
-						"function": map[string]interface{}{
-							"name":      "shell_run",
-							"arguments": `{"command":"echo 'test content' > test.txt"}`,
-						},
-					},
-				},
-			},
-		},
+	events := []string{
+		`{"type":"session.start","data":{}}`,
+		`{"type":"user.message","data":{"content":"Hello, can you help me with a task?"}}`,
+		`{"type":"assistant.message","data":{"message":"Of course! What would you like help with?"}}`,
+		`{"type":"user.message","data":{"content":"Please create a file called test.txt"}}`,
+		`{"type":"assistant.message","data":{"message":"I'll create that file for you.","toolRequests":[{"id":"call_1","name":"bash","input":{"command":"echo 'test content' > test.txt"}}]}}`,
+		`{"type":"tool.execution_start","data":{"toolUseId":"call_1","toolName":"bash"}}`,
+		`{"type":"tool.execution_complete","data":{"toolUseId":"call_1","toolName":"bash","result":""}}`,
 	}
-
-	data, _ := json.MarshalIndent(session, "", "  ")
-	return string(data)
+	return strings.Join(events, "\n")
 }
 
 // SampleCopilotHookInput returns sample postToolUse hook JSON for Copilot CLI testing.
 func SampleCopilotHookInput(sessionID, transcriptPath, command string) string {
-	// Copilot's postToolUse hook sends: {timestamp, cwd, toolName, toolArgs}
-	// We include session_id and transcript_path for the shared store test path.
+	// Use the generic shared format with session_id and transcript_path
+	// but with Copilot-native tool name "bash"
 	input := map[string]interface{}{
 		"session_id":      sessionID,
 		"transcript_path": transcriptPath,
-		"tool_name":       "shell_run",
+		"tool_name":       "bash",
 		"tool_input": map[string]interface{}{
 			"command": command,
 		},
@@ -67,18 +41,19 @@ func SampleCopilotHookInput(sessionID, transcriptPath, command string) string {
 func SampleCopilotHookInputNonShell(sessionID string) string {
 	input := map[string]interface{}{
 		"session_id": sessionID,
-		"tool_name":  "view",
+		"tool_name":  "create",
 		"tool_input": map[string]interface{}{
-			"path": "/some/file.txt",
+			"path":    "/some/file.txt",
+			"content": "hello",
 		},
 	}
 	data, _ := json.Marshal(input)
 	return string(data)
 }
 
-// copilotPrepareTranscript writes a Copilot JSON transcript file.
+// copilotPrepareTranscript writes a Copilot events.jsonl transcript file.
 func copilotPrepareTranscript(baseDir, sessionID, transcript string) (string, error) {
-	path := filepath.Join(baseDir, "transcript.json")
+	path := filepath.Join(baseDir, "transcript.jsonl")
 	return path, os.WriteFile(path, []byte(transcript), 0644)
 }
 
@@ -90,22 +65,18 @@ func copilotSessionDir(homeDir, projectPath string) string {
 // copilotReadRestoredTranscript finds and reads the restored Copilot transcript.
 func copilotReadRestoredTranscript(homeDir, projectPath, sessionID string) ([]byte, error) {
 	sessionDir := filepath.Join(homeDir, ".copilot", "session-state")
-	var found string
 	entries, err := os.ReadDir(sessionDir)
 	if err != nil {
 		return nil, err
 	}
 	for _, entry := range entries {
-		if entry.IsDir() {
+		if !entry.IsDir() {
 			continue
 		}
-		if strings.Contains(entry.Name(), sessionID) && strings.HasSuffix(entry.Name(), ".json") {
-			found = filepath.Join(sessionDir, entry.Name())
-			break
+		if strings.Contains(entry.Name(), sessionID) {
+			eventsPath := filepath.Join(sessionDir, entry.Name(), "events.jsonl")
+			return os.ReadFile(eventsPath)
 		}
 	}
-	if found == "" {
-		return nil, os.ErrNotExist
-	}
-	return os.ReadFile(found)
+	return nil, os.ErrNotExist
 }

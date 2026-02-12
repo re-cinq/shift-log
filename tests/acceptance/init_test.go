@@ -51,13 +51,13 @@ var _ = Describe("Init Command", func() {
 			}
 
 			if config.IsRepoRootHooks {
-				It("creates hooks.json at repo root with correct structure", func() {
+				It("creates .github/hooks/claudit.json with correct structure", func() {
 					_, _, err := testutil.RunClauditInDir(repo.Path, config.InitArgs...)
 					Expect(err).NotTo(HaveOccurred())
 
-					Expect(repo.FileExists("hooks.json")).To(BeTrue())
+					Expect(repo.FileExists(".github/hooks/claudit.json")).To(BeTrue())
 
-					content, err := repo.ReadFile("hooks.json")
+					content, err := repo.ReadFile(".github/hooks/claudit.json")
 					Expect(err).NotTo(HaveOccurred())
 
 					var raw map[string]interface{}
@@ -67,14 +67,14 @@ var _ = Describe("Init Command", func() {
 					Expect(raw["version"]).To(BeNumerically("==", 1))
 
 					hooks, ok := raw["hooks"].(map[string]interface{})
-					Expect(ok).To(BeTrue(), "Expected hooks key in hooks.json")
+					Expect(ok).To(BeTrue(), "Expected hooks key in claudit.json")
 
 					postToolUse, ok := hooks["postToolUse"].([]interface{})
 					Expect(ok).To(BeTrue(), "Expected postToolUse array")
 					Expect(postToolUse).NotTo(BeEmpty())
 
 					hookObj := postToolUse[0].(map[string]interface{})
-					Expect(hookObj["bash"]).To(Equal(config.StoreCommand))
+					Expect(hookObj["command"]).To(Equal(config.StoreCommand))
 					Expect(hookObj["timeoutSec"]).To(BeNumerically("==", config.Timeout))
 				})
 
@@ -84,7 +84,7 @@ var _ = Describe("Init Command", func() {
 					_, _, err = testutil.RunClauditInDir(repo.Path, config.InitArgs...)
 					Expect(err).NotTo(HaveOccurred())
 
-					content, err := repo.ReadFile("hooks.json")
+					content, err := repo.ReadFile(".github/hooks/claudit.json")
 					Expect(err).NotTo(HaveOccurred())
 
 					var raw map[string]interface{}
@@ -95,13 +95,14 @@ var _ = Describe("Init Command", func() {
 					Expect(postToolUse).To(HaveLen(1))
 				})
 
-				It("preserves existing hooks.json content", func() {
-					Expect(repo.WriteFile("hooks.json", `{"version":1,"hooks":{"postToolUse":[{"type":"bash","bash":"other-tool","timeoutSec":10}]},"existingKey":"existingValue"}`)).To(Succeed())
+				It("preserves existing .github/hooks/claudit.json content", func() {
+					Expect(os.MkdirAll(filepath.Join(repo.Path, ".github", "hooks"), 0755)).To(Succeed())
+					Expect(repo.WriteFile(".github/hooks/claudit.json", `{"version":1,"hooks":{"postToolUse":[{"type":"command","command":"other-tool","timeoutSec":10}]},"existingKey":"existingValue"}`)).To(Succeed())
 
 					_, _, err := testutil.RunClauditInDir(repo.Path, config.InitArgs...)
 					Expect(err).NotTo(HaveOccurred())
 
-					content, err := repo.ReadFile("hooks.json")
+					content, err := repo.ReadFile(".github/hooks/claudit.json")
 					Expect(err).NotTo(HaveOccurred())
 					Expect(content).To(ContainSubstring("existingKey"))
 					Expect(content).To(ContainSubstring("existingValue"))

@@ -1,6 +1,7 @@
 package copilot
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -23,7 +24,7 @@ type Agent struct{}
 func (a *Agent) Name() agent.Name   { return agent.Copilot }
 func (a *Agent) DisplayName() string { return "Copilot CLI" }
 
-// ConfigureHooks sets up Copilot CLI hooks in hooks.json at the repo root.
+// ConfigureHooks sets up Copilot CLI hooks in .github/hooks/claudit.json.
 func (a *Agent) ConfigureHooks(repoRoot string) error {
 	hf, err := ReadHooksFile(repoRoot)
 	if err != nil {
@@ -48,7 +49,7 @@ func (a *Agent) DiagnoseHooks(repoRoot string) []agent.DiagnosticCheck {
 		checks = append(checks, agent.DiagnosticCheck{
 			Name:    "Copilot CLI hook configuration",
 			OK:      false,
-			Message: "No hooks.json found. Run 'claudit init --agent=copilot' to configure.",
+			Message: "No .github/hooks/claudit.json found. Run 'claudit init --agent=copilot' to configure.",
 		})
 		return checks
 	}
@@ -58,7 +59,7 @@ func (a *Agent) DiagnoseHooks(repoRoot string) []agent.DiagnosticCheck {
 		checks = append(checks, agent.DiagnosticCheck{
 			Name:    "Copilot CLI hook configuration",
 			OK:      false,
-			Message: fmt.Sprintf("Invalid JSON in hooks.json: %v", err),
+			Message: fmt.Sprintf("Invalid JSON in .github/hooks/claudit.json: %v", err),
 		})
 		return checks
 	}
@@ -68,13 +69,13 @@ func (a *Agent) DiagnoseHooks(repoRoot string) []agent.DiagnosticCheck {
 		checks = append(checks, agent.DiagnosticCheck{
 			Name:    "Copilot CLI hooks",
 			OK:      false,
-			Message: "Missing 'hooks' key in hooks.json. Run 'claudit init --agent=copilot' to fix.",
+			Message: "Missing 'hooks' key in .github/hooks/claudit.json. Run 'claudit init --agent=copilot' to fix.",
 		})
 		return checks
 	}
 
 	postToolUse, hasPostToolUse := hooks["postToolUse"]
-	if !hasPostToolUse || !hasClauditBashEntry(postToolUse, "claudit store") {
+	if !hasPostToolUse || !hasClauditCommandEntry(postToolUse, "claudit store") {
 		checks = append(checks, agent.DiagnosticCheck{
 			Name:    "postToolUse hook",
 			OK:      false,
@@ -93,7 +94,7 @@ func (a *Agent) DiagnoseHooks(repoRoot string) []agent.DiagnosticCheck {
 
 // ParseHookInput parses Copilot CLI's postToolUse hook JSON.
 // Supports two formats:
-//   - Copilot native: {"timestamp":N, "cwd":"...", "toolName":"...", "toolArgs":"..."}
+//   - Copilot native: {"timestamp":N, "cwd":"...", "toolName":"...", "toolArgs":{...}}
 //   - Generic (shared test path): {"session_id":"...", "transcript_path":"...", "tool_name":"...", "tool_input":{"command":"..."}}
 func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 	var hook struct {
@@ -106,10 +107,10 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 		} `json:"tool_input"`
 
 		// Copilot native format fields
-		Timestamp int64  `json:"timestamp"`
-		CWD       string `json:"cwd"`
-		ToolName  string `json:"toolName"`
-		ToolArgs  string `json:"toolArgs"`
+		Timestamp int64           `json:"timestamp"`
+		CWD       string          `json:"cwd"`
+		ToolName  string          `json:"toolName"`
+		ToolArgs  json.RawMessage `json:"toolArgs"`
 	}
 	if err := json.Unmarshal(raw, &hook); err != nil {
 		return nil, err
@@ -123,7 +124,7 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 
 	// Determine command: prefer generic tool_input.command, fall back to native toolArgs extraction
 	command := hook.ToolInput.Command
-	if command == "" && hook.ToolArgs != "" {
+	if command == "" && len(hook.ToolArgs) > 0 {
 		command = extractCommand(toolName, hook.ToolArgs)
 	}
 
@@ -149,8 +150,7 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 
 // shellToolNames are the known tool names Copilot CLI uses for shell execution.
 var shellToolNames = map[string]bool{
-	"shell_run": true,
-	"bash":      true,
+	"bash": true,
 }
 
 // IsCommitCommand checks if a tool invocation represents a git commit.
@@ -162,41 +162,42 @@ func (a *Agent) IsCommitCommand(toolName, command string) bool {
 		strings.Contains(command, "git-commit")
 }
 
-// copilotSession represents the top-level JSON structure of a Copilot CLI session file.
-type copilotSession struct {
-	SessionID string           `json:"sessionId"`
-	CWD       string           `json:"cwd"`
-	Model     string           `json:"model"`
-	Messages  []copilotMessage `json:"messages"`
+// copilotEvent represents a single event line in the events.jsonl transcript.
+type copilotEvent struct {
+	Type string           `json:"type"`
+	Data copilotEventData `json:"data"`
 }
 
-// copilotMessage represents a single message in a Copilot session.
-type copilotMessage struct {
-	Role       string             `json:"role"`
-	Content    string             `json:"content,omitempty"`
-	ToolCalls  []copilotToolCall  `json:"tool_calls,omitempty"`
-	ToolCallID string             `json:"tool_call_id,omitempty"`
+// copilotEventData represents the data payload of a Copilot event.
+type copilotEventData struct {
+	// For user.message events
+	Content string `json:"content,omitempty"`
+
+	// For assistant.message events
+	Message string `json:"message,omitempty"`
+
+	// For assistant.message events with tool requests
+	ToolRequests []copilotToolRequest `json:"toolRequests,omitempty"`
+
+	// For tool.execution_complete events
+	ToolUseID string          `json:"toolUseId,omitempty"`
+	ToolName  string          `json:"toolName,omitempty"`
+	Result    json.RawMessage `json:"result,omitempty"`
 }
 
-// copilotToolCall represents a tool call in a Copilot message.
-type copilotToolCall struct {
-	ID       string              `json:"id"`
-	Type     string              `json:"type"`
-	Function copilotFunctionCall `json:"function"`
+// copilotToolRequest represents a tool request in an assistant message.
+type copilotToolRequest struct {
+	ID    string          `json:"id"`
+	Name  string          `json:"name"`
+	Input json.RawMessage `json:"input,omitempty"`
 }
 
-// copilotFunctionCall represents a function call within a tool call.
-type copilotFunctionCall struct {
-	Name      string `json:"name"`
-	Arguments string `json:"arguments"`
-}
-
-// ParseTranscript parses a Copilot CLI session JSON transcript.
+// ParseTranscript parses a Copilot CLI events.jsonl transcript.
 func (a *Agent) ParseTranscript(r io.Reader) (*agent.Transcript, error) {
 	return parseCopilotTranscript(r)
 }
 
-// ParseTranscriptFile parses a Copilot CLI session JSON transcript from a file.
+// ParseTranscriptFile parses a Copilot CLI events.jsonl transcript from a file.
 func (a *Agent) ParseTranscriptFile(path string) (*agent.Transcript, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -226,127 +227,159 @@ func (a *Agent) ResumeCommand(sessionID string) (string, []string) {
 // ToolAliases returns Copilot CLI's tool name mappings to canonical names.
 func (a *Agent) ToolAliases() map[string]string {
 	return map[string]string{
-		"shell_run": "Bash",
-		"bash":      "Bash",
-		"view":      "Read",
-		"edit":      "Edit",
-		"write":     "Write",
+		"bash":          "Bash",
+		"view":          "Read",
+		"edit":          "Edit",
+		"write":         "Write",
+		"create":        "Write",
+		"report_intent": "ReportIntent",
 	}
 }
 
-// parseCopilotTranscript parses a Copilot CLI session JSON transcript.
+// parseCopilotTranscript parses a Copilot CLI events.jsonl transcript.
 func parseCopilotTranscript(r io.Reader) (*agent.Transcript, error) {
-	data, err := io.ReadAll(r)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(data) == 0 {
-		return &agent.Transcript{}, nil
-	}
-
-	var session copilotSession
-	if err := json.Unmarshal(data, &session); err != nil {
-		return nil, fmt.Errorf("failed to parse Copilot session JSON: %w", err)
-	}
+	scanner := bufio.NewScanner(r)
+	// Increase buffer for potentially large event lines
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
 	var entries []agent.TranscriptEntry
-	for i, msg := range session.Messages {
-		msgType := normalizeCopilotRole(msg.Role)
-		if msgType == "" {
+	idx := 0
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
 			continue
 		}
 
-		var content []agent.ContentBlock
+		var event copilotEvent
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			continue // skip unparseable lines
+		}
 
-		if msg.Content != "" {
-			content = append(content, agent.ContentBlock{
-				Type: "text",
-				Text: msg.Content,
+		rawBytes := []byte(line)
+
+		switch event.Type {
+		case "user.message":
+			entries = append(entries, agent.TranscriptEntry{
+				UUID: fmt.Sprintf("copilot-%d", idx),
+				Type: agent.MessageTypeUser,
+				Message: &agent.Message{
+					Role: "user",
+					Content: []agent.ContentBlock{
+						{Type: "text", Text: event.Data.Content},
+					},
+				},
+				Raw: rawBytes,
 			})
-		}
+			idx++
 
-		for _, tc := range msg.ToolCalls {
-			content = append(content, agent.ContentBlock{
-				Type:      "tool_use",
-				ToolUseID: tc.ID,
-				Name:      tc.Function.Name,
-				Input:     json.RawMessage(tc.Function.Arguments),
+		case "assistant.message":
+			var content []agent.ContentBlock
+
+			if event.Data.Message != "" {
+				content = append(content, agent.ContentBlock{
+					Type: "text",
+					Text: event.Data.Message,
+				})
+			}
+
+			for _, tr := range event.Data.ToolRequests {
+				content = append(content, agent.ContentBlock{
+					Type:      "tool_use",
+					ToolUseID: tr.ID,
+					Name:      tr.Name,
+					Input:     tr.Input,
+				})
+			}
+
+			if len(content) == 0 {
+				content = []agent.ContentBlock{{Type: "text", Text: ""}}
+			}
+
+			entries = append(entries, agent.TranscriptEntry{
+				UUID: fmt.Sprintf("copilot-%d", idx),
+				Type: agent.MessageTypeAssistant,
+				Message: &agent.Message{
+					Role:    "assistant",
+					Content: content,
+				},
+				Raw: rawBytes,
 			})
-		}
+			idx++
 
-		if msg.ToolCallID != "" {
-			content = append(content, agent.ContentBlock{
-				Type:      "tool_result",
-				ToolUseID: msg.ToolCallID,
-				Content:   json.RawMessage(`"` + strings.ReplaceAll(msg.Content, `"`, `\"`) + `"`),
+		case "tool.execution_complete":
+			resultStr := string(event.Data.Result)
+			entries = append(entries, agent.TranscriptEntry{
+				UUID: fmt.Sprintf("copilot-%d", idx),
+				Type: agent.MessageTypeUser,
+				Message: &agent.Message{
+					Role: "user",
+					Content: []agent.ContentBlock{
+						{
+							Type:      "tool_result",
+							ToolUseID: event.Data.ToolUseID,
+							Content:   json.RawMessage(`"` + strings.ReplaceAll(resultStr, `"`, `\"`) + `"`),
+						},
+					},
+				},
+				Raw: rawBytes,
 			})
+			idx++
+
+		default:
+			// Skip session.start, session.model_change, assistant.turn_start/end, tool.execution_start
+			continue
 		}
+	}
 
-		if len(content) == 0 {
-			content = []agent.ContentBlock{{Type: "text", Text: ""}}
-		}
-
-		rawBytes, _ := json.Marshal(msg)
-
-		entry := agent.TranscriptEntry{
-			UUID: fmt.Sprintf("copilot-%d", i),
-			Type: msgType,
-			Message: &agent.Message{
-				Role:    string(msgType),
-				Content: content,
-			},
-			Raw: rawBytes,
-		}
-
-		entries = append(entries, entry)
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read events.jsonl: %w", err)
 	}
 
 	return &agent.Transcript{Entries: entries}, nil
 }
 
-// normalizeCopilotRole converts Copilot message roles to the common MessageType.
-func normalizeCopilotRole(role string) agent.MessageType {
-	switch role {
-	case "user":
-		return agent.MessageTypeUser
-	case "assistant", "copilot":
-		return agent.MessageTypeAssistant
-	case "system":
-		return agent.MessageTypeSystem
-	case "tool":
-		return agent.MessageTypeUser
-	default:
-		return ""
-	}
-}
-
-// extractCommand extracts the shell command from toolArgs JSON.
-// toolArgs is a JSON string containing the tool's arguments.
-func extractCommand(toolName, toolArgs string) string {
+// extractCommand extracts the shell command from toolArgs.
+// toolArgs can be a JSON object or a JSON string containing an object.
+func extractCommand(toolName string, toolArgs json.RawMessage) string {
 	if !shellToolNames[toolName] {
 		return ""
 	}
-	if toolArgs == "" {
+	if len(toolArgs) == 0 {
 		return ""
 	}
 
+	// Try parsing as JSON object directly
 	var args map[string]interface{}
-	if err := json.Unmarshal([]byte(toolArgs), &args); err != nil {
-		return toolArgs
+	if err := json.Unmarshal(toolArgs, &args); err == nil {
+		if cmd, ok := args["command"].(string); ok {
+			return cmd
+		}
+		if cmd, ok := args["cmd"].(string); ok {
+			return cmd
+		}
+		return ""
 	}
 
-	if cmd, ok := args["command"].(string); ok {
-		return cmd
-	}
-	if cmd, ok := args["cmd"].(string); ok {
-		return cmd
+	// Try parsing as JSON string (backwards compat: toolArgs is a JSON-escaped string)
+	var argsStr string
+	if err := json.Unmarshal(toolArgs, &argsStr); err == nil {
+		var innerArgs map[string]interface{}
+		if err := json.Unmarshal([]byte(argsStr), &innerArgs); err == nil {
+			if cmd, ok := innerArgs["command"].(string); ok {
+				return cmd
+			}
+			if cmd, ok := innerArgs["cmd"].(string); ok {
+				return cmd
+			}
+		}
+		return argsStr
 	}
 
 	return ""
 }
 
-// scanForRecentSession scans Copilot's session state directory for recent files.
+// scanForRecentSession scans Copilot's session state directory for recent session directories.
 func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	sessionDir, err := GetSessionStateDir()
 	if err != nil {
@@ -360,12 +393,12 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 
 	now := time.Now()
 	const recentTimeout = 5 * time.Minute
-	var bestPath string
+	var bestDir string
 	var bestSessionID string
 	var bestModTime time.Time
 
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+		if !entry.IsDir() {
 			continue
 		}
 
@@ -379,8 +412,9 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 			continue
 		}
 
-		// Check if this session matches the project path
-		meta, err := parseSessionMeta(filepath.Join(sessionDir, entry.Name()))
+		// Check if this session directory has a workspace.yaml
+		entryPath := filepath.Join(sessionDir, entry.Name())
+		meta, err := parseSessionMeta(entryPath)
 		if err != nil || meta == nil {
 			continue
 		}
@@ -389,35 +423,35 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 			continue
 		}
 
-		if bestPath == "" || modTime.After(bestModTime) {
-			bestPath = filepath.Join(sessionDir, entry.Name())
-			bestSessionID = meta.SessionID
+		if bestDir == "" || modTime.After(bestModTime) {
+			bestDir = entryPath
+			bestSessionID = meta.ID
 			bestModTime = modTime
 		}
 	}
 
-	if bestPath == "" {
+	if bestDir == "" {
 		return nil, nil
 	}
 
 	return &agent.SessionInfo{
 		SessionID:      bestSessionID,
-		TranscriptPath: bestPath,
+		TranscriptPath: GetTranscriptPath(bestDir),
 		StartedAt:      bestModTime.Format(time.RFC3339),
 		ProjectPath:    projectPath,
 	}, nil
 }
 
-// hasClauditBashEntry checks if a hook list contains a claudit bash entry.
-func hasClauditBashEntry(hookConfig interface{}, command string) bool {
+// hasClauditCommandEntry checks if a hook list contains a claudit command entry.
+func hasClauditCommandEntry(hookConfig interface{}, command string) bool {
 	hookList, ok := hookConfig.([]interface{})
 	if !ok {
 		return false
 	}
 	for _, h := range hookList {
 		hookMap, _ := h.(map[string]interface{})
-		if bash, ok := hookMap["bash"].(string); ok {
-			if strings.Contains(bash, command) {
+		if cmd, ok := hookMap["command"].(string); ok {
+			if strings.Contains(cmd, command) {
 				return true
 			}
 		}

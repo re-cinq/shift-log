@@ -1,16 +1,18 @@
 package copilot
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"gopkg.in/yaml.v3"
 )
 
-// sessionMeta represents lightweight metadata from a Copilot session file.
+// sessionMeta represents lightweight metadata from a Copilot session workspace.yaml.
 type sessionMeta struct {
-	SessionID string `json:"sessionId"`
-	CWD       string `json:"cwd"`
+	ID      string `yaml:"id"`
+	CWD     string `yaml:"cwd"`
+	GitRoot string `yaml:"git_root,omitempty"`
 }
 
 // GetCopilotDir returns the path to Copilot's config/data directory.
@@ -31,34 +33,53 @@ func GetSessionStateDir() (string, error) {
 	return filepath.Join(copilotDir, "session-state"), nil
 }
 
-// parseSessionMeta reads a Copilot session file and extracts metadata.
-func parseSessionMeta(path string) (*sessionMeta, error) {
+// parseSessionMeta reads a workspace.yaml from a Copilot session directory.
+func parseSessionMeta(sessionDir string) (*sessionMeta, error) {
+	path := filepath.Join(sessionDir, "workspace.yaml")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
 
 	var meta sessionMeta
-	if err := json.Unmarshal(data, &meta); err != nil {
+	if err := yaml.Unmarshal(data, &meta); err != nil {
 		return nil, err
 	}
 
 	return &meta, nil
 }
 
-// WriteSessionFile writes transcript data to the Copilot session state directory.
+// GetTranscriptPath returns the path to the events.jsonl transcript within a session directory.
+func GetTranscriptPath(sessionDir string) string {
+	return filepath.Join(sessionDir, "events.jsonl")
+}
+
+// WriteSessionFile writes a session directory structure to Copilot's session state directory.
+// Creates <sessionDir>/<sessionID>/ with workspace.yaml and events.jsonl.
 func WriteSessionFile(sessionID string, data []byte) (string, error) {
-	sessionDir, err := GetSessionStateDir()
+	stateDir, err := GetSessionStateDir()
 	if err != nil {
 		return "", err
 	}
 
+	sessionDir := filepath.Join(stateDir, sessionID)
 	if err := os.MkdirAll(sessionDir, 0700); err != nil {
 		return "", fmt.Errorf("could not create session directory: %w", err)
 	}
 
-	path := filepath.Join(sessionDir, sessionID+".json")
-	return path, os.WriteFile(path, data, 0600)
+	// Write workspace.yaml
+	meta := sessionMeta{ID: sessionID}
+	yamlData, err := yaml.Marshal(&meta)
+	if err != nil {
+		return "", fmt.Errorf("could not marshal workspace.yaml: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(sessionDir, "workspace.yaml"), yamlData, 0600); err != nil {
+		return "", err
+	}
+
+	// Write events.jsonl
+	eventsPath := GetTranscriptPath(sessionDir)
+	return eventsPath, os.WriteFile(eventsPath, data, 0600)
 }
 
 // pathsEqual compares two paths after resolving symlinks.

@@ -26,14 +26,32 @@ func TestAgentDisplayName(t *testing.T) {
 
 func TestParseHookInput(t *testing.T) {
 	a := &Agent{}
-	input := `{"timestamp":1700000000,"cwd":"/tmp/project","toolName":"shell_run","toolArgs":"{\"command\":\"git commit -m test\"}"}`
+	// Real Copilot native format: toolArgs is a JSON object, not a string
+	input := `{"timestamp":1700000000,"cwd":"/tmp/project","toolName":"bash","toolArgs":{"command":"git commit -m test"}}`
 
 	hook, err := a.ParseHookInput([]byte(input))
 	if err != nil {
 		t.Fatalf("ParseHookInput() error: %v", err)
 	}
-	if hook.ToolName != "shell_run" {
-		t.Errorf("ToolName = %q, want %q", hook.ToolName, "shell_run")
+	if hook.ToolName != "bash" {
+		t.Errorf("ToolName = %q, want %q", hook.ToolName, "bash")
+	}
+	if hook.Command != "git commit -m test" {
+		t.Errorf("Command = %q, want %q", hook.Command, "git commit -m test")
+	}
+}
+
+func TestParseHookInputStringToolArgs(t *testing.T) {
+	a := &Agent{}
+	// Backwards compat: toolArgs as JSON string
+	input := `{"timestamp":1700000000,"cwd":"/tmp/project","toolName":"bash","toolArgs":"{\"command\":\"git commit -m test\"}"}`
+
+	hook, err := a.ParseHookInput([]byte(input))
+	if err != nil {
+		t.Fatalf("ParseHookInput() error: %v", err)
+	}
+	if hook.ToolName != "bash" {
+		t.Errorf("ToolName = %q, want %q", hook.ToolName, "bash")
 	}
 	if hook.Command != "git commit -m test" {
 		t.Errorf("Command = %q, want %q", hook.Command, "git commit -m test")
@@ -46,15 +64,14 @@ func TestIsCommitCommand(t *testing.T) {
 		tool, cmd string
 		want      bool
 	}{
-		{"shell_run", "git commit -m fix", true},
-		{"shell_run", "git commit -am msg", true},
-		{"bash", "git commit -m test", true},
-		{"shell_run", "git-commit", true},
-		{"shell_run", "ls -la", false},
-		{"shell_run", "git status", false},
+		{"bash", "git commit -m fix", true},
+		{"bash", "git commit -am msg", true},
+		{"bash", "git-commit", true},
+		{"bash", "ls -la", false},
+		{"bash", "git status", false},
 		{"view", "git commit -m test", false},
 		{"edit", "git commit -m test", false},
-		{"write", "git commit -m test", false},
+		{"create", "git commit -m test", false},
 	}
 
 	for _, tc := range tests {
@@ -66,18 +83,14 @@ func TestIsCommitCommand(t *testing.T) {
 }
 
 func TestParseCopilotTranscript(t *testing.T) {
-	session := `{
-		"sessionId": "sess-1",
-		"cwd": "/tmp/project",
-		"model": "gpt-4",
-		"messages": [
-			{"role": "user", "content": "Hello"},
-			{"role": "assistant", "content": "Hi there"},
-			{"role": "user", "content": "Thanks"}
-		]
-	}`
+	events := strings.Join([]string{
+		`{"type":"session.start","data":{}}`,
+		`{"type":"user.message","data":{"content":"Hello"}}`,
+		`{"type":"assistant.message","data":{"message":"Hi there"}}`,
+		`{"type":"user.message","data":{"content":"Thanks"}}`,
+	}, "\n")
 
-	transcript, err := parseCopilotTranscript(strings.NewReader(session))
+	transcript, err := parseCopilotTranscript(strings.NewReader(events))
 	if err != nil {
 		t.Fatalf("parseCopilotTranscript() error: %v", err)
 	}
@@ -100,18 +113,14 @@ func TestParseCopilotTranscript(t *testing.T) {
 }
 
 func TestParseCopilotTranscriptWithToolCalls(t *testing.T) {
-	session := `{
-		"sessionId": "sess-1",
-		"cwd": "/tmp/project",
-		"model": "gpt-4",
-		"messages": [
-			{"role": "user", "content": "Run ls"},
-			{"role": "assistant", "content": "Running command", "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "shell_run", "arguments": "{\"command\":\"ls -la\"}"}}]},
-			{"role": "tool", "tool_call_id": "call_1", "content": "file1.txt\nfile2.txt"}
-		]
-	}`
+	events := strings.Join([]string{
+		`{"type":"user.message","data":{"content":"Run ls"}}`,
+		`{"type":"assistant.message","data":{"message":"Running command","toolRequests":[{"id":"call_1","name":"bash","input":{"command":"ls -la"}}]}}`,
+		`{"type":"tool.execution_start","data":{"toolUseId":"call_1","toolName":"bash"}}`,
+		`{"type":"tool.execution_complete","data":{"toolUseId":"call_1","toolName":"bash","result":"file1.txt\nfile2.txt"}}`,
+	}, "\n")
 
-	transcript, err := parseCopilotTranscript(strings.NewReader(session))
+	transcript, err := parseCopilotTranscript(strings.NewReader(events))
 	if err != nil {
 		t.Fatalf("parseCopilotTranscript() error: %v", err)
 	}
@@ -130,8 +139,8 @@ func TestParseCopilotTranscriptWithToolCalls(t *testing.T) {
 	if entry.Message.Content[1].Type != "tool_use" {
 		t.Errorf("Content[1] type = %q, want tool_use", entry.Message.Content[1].Type)
 	}
-	if entry.Message.Content[1].Name != "shell_run" {
-		t.Errorf("Content[1] name = %q, want shell_run", entry.Message.Content[1].Name)
+	if entry.Message.Content[1].Name != "bash" {
+		t.Errorf("Content[1] name = %q, want bash", entry.Message.Content[1].Name)
 	}
 
 	// Check tool result entry
@@ -151,9 +160,9 @@ func TestParseCopilotTranscriptEmpty(t *testing.T) {
 	}
 }
 
-func TestParseCopilotTranscriptEmptyMessages(t *testing.T) {
-	session := `{"sessionId":"s1","cwd":"/tmp","model":"gpt-4","messages":[]}`
-	transcript, err := parseCopilotTranscript(strings.NewReader(session))
+func TestParseCopilotTranscriptEmptyLines(t *testing.T) {
+	events := "\n\n\n"
+	transcript, err := parseCopilotTranscript(strings.NewReader(events))
 	if err != nil {
 		t.Fatalf("parseCopilotTranscript() error: %v", err)
 	}
@@ -165,9 +174,6 @@ func TestParseCopilotTranscriptEmptyMessages(t *testing.T) {
 func TestToolAliases(t *testing.T) {
 	a := &Agent{}
 	aliases := a.ToolAliases()
-	if aliases["shell_run"] != "Bash" {
-		t.Errorf("ToolAliases[shell_run] = %q, want Bash", aliases["shell_run"])
-	}
 	if aliases["bash"] != "Bash" {
 		t.Errorf("ToolAliases[bash] = %q, want Bash", aliases["bash"])
 	}
@@ -179,6 +185,9 @@ func TestToolAliases(t *testing.T) {
 	}
 	if aliases["write"] != "Write" {
 		t.Errorf("ToolAliases[write] = %q, want Write", aliases["write"])
+	}
+	if aliases["create"] != "Write" {
+		t.Errorf("ToolAliases[create] = %q, want Write", aliases["create"])
 	}
 }
 
@@ -201,10 +210,10 @@ func TestConfigureHooks(t *testing.T) {
 		t.Fatalf("ConfigureHooks() error: %v", err)
 	}
 
-	hooksPath := filepath.Join(tmpDir, "hooks.json")
+	hooksPath := filepath.Join(tmpDir, ".github", "hooks", "claudit.json")
 	data, err := os.ReadFile(hooksPath)
 	if err != nil {
-		t.Fatalf("Failed to read hooks.json: %v", err)
+		t.Fatalf("Failed to read .github/hooks/claudit.json: %v", err)
 	}
 
 	var raw map[string]interface{}
@@ -228,11 +237,11 @@ func TestConfigureHooks(t *testing.T) {
 	}
 
 	hookObj := postToolUse[0].(map[string]interface{})
-	if hookObj["type"] != "bash" {
-		t.Errorf("hook type = %q, want bash", hookObj["type"])
+	if hookObj["type"] != "command" {
+		t.Errorf("hook type = %q, want command", hookObj["type"])
 	}
-	if hookObj["bash"] != "claudit store --agent=copilot" {
-		t.Errorf("hook bash = %q, want 'claudit store --agent=copilot'", hookObj["bash"])
+	if hookObj["command"] != "claudit store --agent=copilot" {
+		t.Errorf("hook command = %q, want 'claudit store --agent=copilot'", hookObj["command"])
 	}
 	if timeout, ok := hookObj["timeoutSec"].(float64); !ok || timeout != 30 {
 		t.Errorf("hook timeoutSec = %v, want 30", hookObj["timeoutSec"])
@@ -250,10 +259,10 @@ func TestConfigureHooksIdempotent(t *testing.T) {
 		t.Fatalf("ConfigureHooks() second call error: %v", err)
 	}
 
-	hooksPath := filepath.Join(tmpDir, "hooks.json")
+	hooksPath := filepath.Join(tmpDir, ".github", "hooks", "claudit.json")
 	data, err := os.ReadFile(hooksPath)
 	if err != nil {
-		t.Fatalf("Failed to read hooks.json: %v", err)
+		t.Fatalf("Failed to read .github/hooks/claudit.json: %v", err)
 	}
 
 	var raw map[string]interface{}
@@ -272,9 +281,13 @@ func TestConfigureHooksPreservesExisting(t *testing.T) {
 	a := &Agent{}
 	tmpDir := t.TempDir()
 
-	// Write pre-existing hooks.json with extra data
-	existing := `{"version":1,"hooks":{"postToolUse":[{"type":"bash","bash":"other-tool","timeoutSec":10}]},"customKey":"customValue"}`
-	if err := os.WriteFile(filepath.Join(tmpDir, "hooks.json"), []byte(existing), 0644); err != nil {
+	// Write pre-existing hooks file with extra data
+	hooksDir := filepath.Join(tmpDir, ".github", "hooks")
+	if err := os.MkdirAll(hooksDir, 0755); err != nil {
+		t.Fatalf("MkdirAll() error: %v", err)
+	}
+	existing := `{"version":1,"hooks":{"postToolUse":[{"type":"command","command":"other-tool","timeoutSec":10}]},"customKey":"customValue"}`
+	if err := os.WriteFile(filepath.Join(hooksDir, "claudit.json"), []byte(existing), 0644); err != nil {
 		t.Fatalf("WriteFile() error: %v", err)
 	}
 
@@ -282,9 +295,9 @@ func TestConfigureHooksPreservesExisting(t *testing.T) {
 		t.Fatalf("ConfigureHooks() error: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmpDir, "hooks.json"))
+	data, err := os.ReadFile(filepath.Join(hooksDir, "claudit.json"))
 	if err != nil {
-		t.Fatalf("Failed to read hooks.json: %v", err)
+		t.Fatalf("Failed to read claudit.json: %v", err)
 	}
 
 	var raw map[string]interface{}
@@ -306,14 +319,14 @@ func TestConfigureHooksPreservesExisting(t *testing.T) {
 
 	// First should be the existing hook
 	first := postToolUse[0].(map[string]interface{})
-	if first["bash"] != "other-tool" {
-		t.Errorf("First entry bash = %q, want 'other-tool'", first["bash"])
+	if first["command"] != "other-tool" {
+		t.Errorf("First entry command = %q, want 'other-tool'", first["command"])
 	}
 
 	// Second should be the claudit hook
 	second := postToolUse[1].(map[string]interface{})
-	if second["bash"] != "claudit store --agent=copilot" {
-		t.Errorf("Second entry bash = %q, want 'claudit store --agent=copilot'", second["bash"])
+	if second["command"] != "claudit store --agent=copilot" {
+		t.Errorf("Second entry command = %q, want 'claudit store --agent=copilot'", second["command"])
 	}
 }
 
@@ -327,7 +340,7 @@ func TestDiagnoseHooks(t *testing.T) {
 			t.Fatal("Expected diagnostic checks")
 		}
 		if checks[0].OK {
-			t.Error("Expected check to fail when no hooks.json file")
+			t.Error("Expected check to fail when no hooks file")
 		}
 	})
 
@@ -354,14 +367,14 @@ func TestExtractCommand(t *testing.T) {
 	tests := []struct {
 		name     string
 		toolName string
-		toolArgs string
+		toolArgs json.RawMessage
 		want     string
 	}{
-		{"shell_run with command key", "shell_run", `{"command":"git commit -m test"}`, "git commit -m test"},
-		{"shell_run with cmd key", "shell_run", `{"cmd":"ls -la"}`, "ls -la"},
-		{"non-shell tool", "view", `{"path":"/some/file"}`, ""},
-		{"empty toolArgs", "shell_run", "", ""},
-		{"invalid JSON fallback", "shell_run", "not-json", "not-json"},
+		{"bash with command key (object)", "bash", json.RawMessage(`{"command":"git commit -m test"}`), "git commit -m test"},
+		{"bash with cmd key (object)", "bash", json.RawMessage(`{"cmd":"ls -la"}`), "ls -la"},
+		{"bash with command key (string)", "bash", json.RawMessage(`"{\"command\":\"git commit -m test\"}"`), "git commit -m test"},
+		{"non-shell tool", "view", json.RawMessage(`{"path":"/some/file"}`), ""},
+		{"empty toolArgs", "bash", nil, ""},
 	}
 
 	for _, tc := range tests {
@@ -371,25 +384,5 @@ func TestExtractCommand(t *testing.T) {
 				t.Errorf("extractCommand(%q, %q) = %q, want %q", tc.toolName, tc.toolArgs, got, tc.want)
 			}
 		})
-	}
-}
-
-func TestNormalizeCopilotRole(t *testing.T) {
-	tests := []struct {
-		input string
-		want  agent.MessageType
-	}{
-		{"user", agent.MessageTypeUser},
-		{"assistant", agent.MessageTypeAssistant},
-		{"copilot", agent.MessageTypeAssistant},
-		{"system", agent.MessageTypeSystem},
-		{"tool", agent.MessageTypeUser},
-		{"unknown", ""},
-	}
-	for _, tc := range tests {
-		got := normalizeCopilotRole(tc.input)
-		if got != tc.want {
-			t.Errorf("normalizeCopilotRole(%q) = %q, want %q", tc.input, got, tc.want)
-		}
 	}
 }
