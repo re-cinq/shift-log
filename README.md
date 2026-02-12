@@ -20,7 +20,7 @@ Now work with your coding agent as you would normally. Whenever you or the agent
 | ----------- | ------------------------------- | ------------------------------------- |
 | Claude Code | `claudit init` (default)        | `.claude/settings.json` hooks         |
 | Codex CLI   | `claudit init --agent=codex`    | Post-commit git hook                  |
-| Copilot CLI | `claudit init --agent=copilot`  | `hooks.json` postToolUse hook         |
+| Copilot CLI | `claudit init --agent=copilot`  | `.github/hooks/claudit.json` hook     |
 | Gemini CLI  | `claudit init --agent=gemini`   | `.gemini/settings.json` hooks         |
 | OpenCode    | `claudit init --agent=opencode` | `.opencode/plugins/claudit.js` plugin |
 
@@ -72,8 +72,8 @@ In order to understand _how_ and _why_ a commit was made, we need to see the con
 
 Claudit uses [Git Notes](https://git-scm.com/docs/git-notes) to attach conversations to commits, stored under `refs/notes/claude-conversations` to keep `git log` clean. When you run `claudit init`, it sets up hooks so:
 
-1. When Claude makes a commit, the conversation is saved automatically
-2. When you make a commit during a Claude session, it's saved too
+1. When the coding agent makes a commit, the conversation is saved automatically
+2. When you make a commit during an agent session, it's saved too
 3. When you push/pull, conversations sync with the remote
 
 No extra steps needed during your normal workflow.
@@ -87,7 +87,7 @@ To view notes directly with git: `git log --notes=claude-conversations`
 | `claudit init`            | Initialize claudit in the current repo  |
 | `claudit list`            | List commits with stored conversations  |
 | `claudit show [ref]`      | Show conversation history for a commit  |
-| `claudit resume <commit>` | Resume a Claude session from a commit   |
+| `claudit resume <commit>` | Resume a coding agent session from a commit |
 | `claudit serve`           | Start the web visualization server      |
 | `claudit doctor`          | Diagnose claudit configuration issues   |
 | `claudit debug`           | Toggle debug logging                    |
