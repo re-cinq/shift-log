@@ -143,3 +143,32 @@ func TestGetEntriesSinceWithEmptyTranscript(t *testing.T) {
 		t.Errorf("Expected 0 entries from empty transcript with uuid, got %d", len(entries))
 	}
 }
+
+func TestParseJSONLTranscriptExtractsModel(t *testing.T) {
+	jsonl := `{"uuid":"user-1","type":"user","message":{"role":"user","content":[{"type":"text","text":"Hello"}]}}
+{"uuid":"assistant-1","type":"assistant","model":"claude-sonnet-4-5-20250514","message":{"role":"assistant","content":[{"type":"text","text":"Hi!"}]}}
+{"uuid":"user-2","type":"user","message":{"role":"user","content":[{"type":"text","text":"Thanks"}]}}`
+
+	transcript, err := ParseJSONLTranscript(strings.NewReader(jsonl))
+	if err != nil {
+		t.Fatalf("ParseJSONLTranscript failed: %v", err)
+	}
+
+	if transcript.Model != "claude-sonnet-4-5-20250514" {
+		t.Errorf("Model = %q, want %q", transcript.Model, "claude-sonnet-4-5-20250514")
+	}
+}
+
+func TestParseJSONLTranscriptNoModel(t *testing.T) {
+	jsonl := `{"uuid":"user-1","type":"user","message":{"role":"user","content":[{"type":"text","text":"Hello"}]}}
+{"uuid":"assistant-1","type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Hi!"}]}}`
+
+	transcript, err := ParseJSONLTranscript(strings.NewReader(jsonl))
+	if err != nil {
+		t.Fatalf("ParseJSONLTranscript failed: %v", err)
+	}
+
+	if transcript.Model != "" {
+		t.Errorf("Model = %q, want empty", transcript.Model)
+	}
+}

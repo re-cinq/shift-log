@@ -73,10 +73,11 @@ var _ = Describe("Store Command", func() {
 				var stored map[string]interface{}
 				Expect(json.Unmarshal([]byte(noteContent), &stored)).To(Succeed())
 
-				Expect(stored["version"]).To(BeEquivalentTo(1))
+				Expect(stored["version"]).To(BeEquivalentTo(2))
 				Expect(stored["session_id"]).To(Equal("session-456"))
 				Expect(stored["checksum"]).To(HavePrefix("sha256:"))
 				Expect(stored["transcript"]).NotTo(BeEmpty())
+				Expect(stored["agent"]).NotTo(BeEmpty())
 			})
 
 			It("transcript can be decompressed from note", func() {

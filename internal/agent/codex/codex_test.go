@@ -245,6 +245,37 @@ func TestParseSessionMeta(t *testing.T) {
 	}
 }
 
+func TestParseTranscriptExtractsModel(t *testing.T) {
+	a := &Agent{}
+	rollout := strings.Join([]string{
+		`{"timestamp":"2025-01-01T00:00:00Z","type":"session_meta","payload":{"id":"sess-1","cwd":"/tmp","cli_version":"1.0.0","model_provider":"openai"}}`,
+		`{"timestamp":"2025-01-01T00:00:01Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Hello"}]}}`,
+	}, "\n")
+
+	transcript, err := a.ParseTranscript(strings.NewReader(rollout))
+	if err != nil {
+		t.Fatalf("ParseTranscript() error: %v", err)
+	}
+
+	if transcript.Model != "openai" {
+		t.Errorf("Model = %q, want %q", transcript.Model, "openai")
+	}
+}
+
+func TestParseTranscriptNoSessionMeta(t *testing.T) {
+	a := &Agent{}
+	rollout := `{"timestamp":"2025-01-01T00:00:01Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Hello"}]}}`
+
+	transcript, err := a.ParseTranscript(strings.NewReader(rollout))
+	if err != nil {
+		t.Fatalf("ParseTranscript() error: %v", err)
+	}
+
+	if transcript.Model != "" {
+		t.Errorf("Model = %q, want empty", transcript.Model)
+	}
+}
+
 func TestGetCodexHome(t *testing.T) {
 	t.Run("default", func(t *testing.T) {
 		// Unset CODEX_HOME to test default

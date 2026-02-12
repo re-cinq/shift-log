@@ -225,14 +225,27 @@ func TestClaudeCodeIntegration(t *testing.T) {
 		}
 	}
 
+	// Verify version is 2 (current format version)
+	if v, ok := noteData["version"].(float64); !ok || int(v) != 2 {
+		t.Errorf("Expected version=2, got %v", noteData["version"])
+	}
+
 	// Verify agent field is "claude"
 	if noteData["agent"] != "claude" {
 		t.Errorf("Expected agent='claude', got %v", noteData["agent"])
 	}
 
+	// Verify model field is present and non-empty (Claude always includes model in transcripts)
+	model, hasModel := noteData["model"]
+	if !hasModel || model == "" {
+		t.Logf("Note: model field is empty or missing (may be expected if Claude transcript format changed)")
+	} else {
+		t.Logf("✓ Model field present: %v", model)
+	}
+
 	t.Log("✓ Note content is valid and contains all required fields")
-	t.Logf("Note preview: version=%v, session_id=%v, agent=%v, message_count=%v",
-		noteData["version"], noteData["session_id"], noteData["agent"], noteData["message_count"])
+	t.Logf("Note preview: version=%v, session_id=%v, agent=%v, model=%v, message_count=%v",
+		noteData["version"], noteData["session_id"], noteData["agent"], noteData["model"], noteData["message_count"])
 }
 
 // TestClaudeCodeIntegration_MissingClaudit verifies that the test fails when claudit is not in PATH

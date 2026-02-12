@@ -5,6 +5,12 @@ import (
 	"time"
 )
 
+// NoteFormatVersion is the current version of the git note format.
+// Version history:
+//   - 1: initial format (agent field added later with omitempty for compat)
+//   - 2: added model field for tracking the AI model used
+const NoteFormatVersion = 2
+
 // StoredConversation represents the format stored in git notes
 type StoredConversation struct {
 	Version      int    `json:"version"`
@@ -14,8 +20,9 @@ type StoredConversation struct {
 	GitBranch    string `json:"git_branch"`
 	MessageCount int    `json:"message_count"`
 	Checksum     string `json:"checksum"`
-	Transcript   string `json:"transcript"` // base64-encoded gzipped JSONL
-	Agent        string `json:"agent,omitempty"` // coding agent name (empty = "claude" for backward compat)
+	Transcript   string `json:"transcript"`        // base64-encoded gzipped JSONL
+	Agent        string `json:"agent,omitempty"`    // coding agent name (empty = "claude" for backward compat)
+	Model        string `json:"model,omitempty"`    // AI model identifier (e.g. "claude-sonnet-4-5-20250514")
 }
 
 // NewStoredConversation creates a new StoredConversation from transcript data
@@ -28,7 +35,7 @@ func NewStoredConversation(sessionID, projectPath, gitBranch string, messageCoun
 	}
 
 	return &StoredConversation{
-		Version:      1,
+		Version:      NoteFormatVersion,
 		SessionID:    sessionID,
 		Timestamp:    time.Now().UTC().Format(time.RFC3339),
 		ProjectPath:  projectPath,

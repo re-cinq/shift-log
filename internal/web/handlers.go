@@ -30,6 +30,8 @@ type ConversationResponse struct {
 	SessionID        string                   `json:"session_id"`
 	Timestamp        string                   `json:"timestamp"`
 	MessageCount     int                      `json:"message_count"`
+	Agent            string                   `json:"agent,omitempty"`
+	Model            string                   `json:"model,omitempty"`
 	Transcript       []agent.TranscriptEntry `json:"transcript"`
 	IsIncremental    bool                     `json:"is_incremental"`
 	ParentCommitSHA  string                   `json:"parent_commit_sha,omitempty"`
@@ -266,6 +268,8 @@ func (s *Server) handleCommitDetail(w http.ResponseWriter, r *http.Request) {
 		SessionID:        stored.SessionID,
 		Timestamp:        stored.Timestamp,
 		MessageCount:     stored.MessageCount,
+		Agent:            stored.Agent,
+		Model:            stored.Model,
 		Transcript:       entries,
 		IsIncremental:    isIncremental,
 		ParentCommitSHA:  parentSHA,

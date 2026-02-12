@@ -14,8 +14,8 @@ func TestNewStoredConversation(t *testing.T) {
 		t.Fatalf("NewStoredConversation() error: %v", err)
 	}
 
-	if sc.Version != 1 {
-		t.Errorf("Version = %d, want 1", sc.Version)
+	if sc.Version != NoteFormatVersion {
+		t.Errorf("Version = %d, want %d", sc.Version, NoteFormatVersion)
 	}
 	if sc.SessionID != "session-1" {
 		t.Errorf("SessionID = %q, want %q", sc.SessionID, "session-1")
@@ -156,5 +156,96 @@ func TestUnmarshalInvalidJSON(t *testing.T) {
 	_, err := UnmarshalStoredConversation([]byte("not json"))
 	if err == nil {
 		t.Error("UnmarshalStoredConversation() should fail on invalid JSON")
+	}
+}
+
+func TestUnmarshalV1NoteBackwardCompat(t *testing.T) {
+	// Simulate a v1 note (no model field) to verify backward compatibility
+	v1Note := `{
+		"version": 1,
+		"session_id": "old-session",
+		"timestamp": "2025-01-01T00:00:00Z",
+		"project_path": "/old/project",
+		"git_branch": "main",
+		"message_count": 3,
+		"checksum": "sha256:abc123",
+		"transcript": "H4sIAAAAAAAAA6tWKkktLlGyUlAqS8wpTtVRSs7PS8nMS1eqBQBHsjzMGgAAAA==",
+		"agent": "claude"
+	}`
+
+	sc, err := UnmarshalStoredConversation([]byte(v1Note))
+	if err != nil {
+		t.Fatalf("UnmarshalStoredConversation() failed on v1 note: %v", err)
+	}
+
+	if sc.Version != 1 {
+		t.Errorf("Version = %d, want 1", sc.Version)
+	}
+	if sc.Agent != "claude" {
+		t.Errorf("Agent = %q, want %q", sc.Agent, "claude")
+	}
+	if sc.Model != "" {
+		t.Errorf("Model = %q, want empty for v1 note", sc.Model)
+	}
+}
+
+func TestMarshalIncludesModelField(t *testing.T) {
+	transcript := []byte(`{"uuid":"1","type":"user"}`)
+
+	sc, err := NewStoredConversation("session-1", "/test", "main", 1, transcript)
+	if err != nil {
+		t.Fatalf("NewStoredConversation() error: %v", err)
+	}
+
+	sc.Agent = "claude"
+	sc.Model = "claude-sonnet-4-5-20250514"
+
+	data, err := sc.Marshal()
+	if err != nil {
+		t.Fatalf("Marshal() error: %v", err)
+	}
+
+	// Verify round-trip preserves model
+	restored, err := UnmarshalStoredConversation(data)
+	if err != nil {
+		t.Fatalf("UnmarshalStoredConversation() error: %v", err)
+	}
+	if restored.Model != "claude-sonnet-4-5-20250514" {
+		t.Errorf("Model = %q, want %q", restored.Model, "claude-sonnet-4-5-20250514")
+	}
+	if restored.Version != NoteFormatVersion {
+		t.Errorf("Version = %d, want %d", restored.Version, NoteFormatVersion)
+	}
+
+	// Verify JSON contains the model field
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("Failed to parse marshaled JSON: %v", err)
+	}
+	if raw["model"] != "claude-sonnet-4-5-20250514" {
+		t.Errorf("JSON model = %v, want %q", raw["model"], "claude-sonnet-4-5-20250514")
+	}
+}
+
+func TestMarshalOmitsEmptyModel(t *testing.T) {
+	transcript := []byte(`{"uuid":"1","type":"user"}`)
+
+	sc, err := NewStoredConversation("session-1", "/test", "main", 1, transcript)
+	if err != nil {
+		t.Fatalf("NewStoredConversation() error: %v", err)
+	}
+
+	// Don't set Model — it should be omitted from JSON
+	data, err := sc.Marshal()
+	if err != nil {
+		t.Fatalf("Marshal() error: %v", err)
+	}
+
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("Failed to parse marshaled JSON: %v", err)
+	}
+	if _, exists := raw["model"]; exists {
+		t.Error("JSON should not contain 'model' key when Model is empty")
 	}
 }

@@ -100,6 +100,7 @@ func (a *Agent) ParseTranscript(r io.Reader) (*agent.Transcript, error) {
 	}
 
 	var entries []agent.TranscriptEntry
+	var model string
 
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSpace(line)
@@ -110,6 +111,16 @@ func (a *Agent) ParseTranscript(r io.Reader) (*agent.Transcript, error) {
 		var rl rolloutLine
 		if err := json.Unmarshal([]byte(line), &rl); err != nil {
 			continue
+		}
+
+		// Extract model_provider from session_meta
+		if model == "" && rl.Type == "session_meta" {
+			var meta struct {
+				ModelProvider string `json:"model_provider"`
+			}
+			if json.Unmarshal(rl.Payload, &meta) == nil && meta.ModelProvider != "" {
+				model = meta.ModelProvider
+			}
 		}
 
 		if rl.Type != "response_item" {
@@ -127,7 +138,7 @@ func (a *Agent) ParseTranscript(r io.Reader) (*agent.Transcript, error) {
 		}
 	}
 
-	return &agent.Transcript{Entries: entries}, nil
+	return &agent.Transcript{Entries: entries, Model: model}, nil
 }
 
 // parseResponseItem converts a Codex response_item into a TranscriptEntry.

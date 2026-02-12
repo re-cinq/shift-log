@@ -69,6 +69,7 @@ func (m *Message) UnmarshalJSON(data []byte) error {
 // Transcript represents a parsed conversation transcript.
 type Transcript struct {
 	Entries []TranscriptEntry
+	Model   string // model identifier extracted from transcript (e.g. "claude-sonnet-4-5-20250514")
 }
 
 // MessageCount returns the number of entries in the transcript.

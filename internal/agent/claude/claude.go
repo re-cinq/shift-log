@@ -290,6 +290,7 @@ func ParseJSONLTranscript(r io.Reader) (*agent.Transcript, error) {
 	scanner.Buffer(buf, 10*1024*1024)
 
 	var entries []agent.TranscriptEntry
+	var model string
 
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -301,13 +302,24 @@ func ParseJSONLTranscript(r io.Reader) (*agent.Transcript, error) {
 		_ = json.Unmarshal(line, &entry)
 		entry.Raw = json.RawMessage(line)
 		entries = append(entries, entry)
+
+		// Extract model from the first assistant entry that has one.
+		// Claude Code JSONL entries include a top-level "model" field.
+		if model == "" {
+			var raw struct {
+				Model string `json:"model"`
+			}
+			if json.Unmarshal(line, &raw) == nil && raw.Model != "" {
+				model = raw.Model
+			}
+		}
 	}
 
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
 
-	return &agent.Transcript{Entries: entries}, nil
+	return &agent.Transcript{Entries: entries, Model: model}, nil
 }
 
 // extractFirstPrompt extracts the first user message from transcript data.

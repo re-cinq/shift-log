@@ -204,6 +204,7 @@ func storeConversation(ag agent.Agent, sessionID, transcriptPath string) error {
 	}
 
 	stored.Agent = string(ag.Name())
+	stored.Model = transcript.Model
 
 	noteContent, err := stored.Marshal()
 	if err != nil {

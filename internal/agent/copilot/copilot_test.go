@@ -150,6 +150,45 @@ func TestParseCopilotTranscriptWithToolCalls(t *testing.T) {
 	}
 }
 
+func TestParseCopilotTranscriptExtractsModel(t *testing.T) {
+	events := strings.Join([]string{
+		`{"type":"session.start","data":{}}`,
+		`{"type":"session.model_change","data":{"content":"gpt-4o"}}`,
+		`{"type":"user.message","data":{"content":"Hello"}}`,
+		`{"type":"assistant.message","data":{"message":"Hi there"}}`,
+	}, "\n")
+
+	transcript, err := parseCopilotTranscript(strings.NewReader(events))
+	if err != nil {
+		t.Fatalf("parseCopilotTranscript() error: %v", err)
+	}
+
+	if transcript.Model != "gpt-4o" {
+		t.Errorf("Model = %q, want %q", transcript.Model, "gpt-4o")
+	}
+
+	// model_change events should not produce transcript entries
+	if len(transcript.Entries) != 2 {
+		t.Errorf("Expected 2 entries, got %d", len(transcript.Entries))
+	}
+}
+
+func TestParseCopilotTranscriptNoModel(t *testing.T) {
+	events := strings.Join([]string{
+		`{"type":"session.start","data":{}}`,
+		`{"type":"user.message","data":{"content":"Hello"}}`,
+	}, "\n")
+
+	transcript, err := parseCopilotTranscript(strings.NewReader(events))
+	if err != nil {
+		t.Fatalf("parseCopilotTranscript() error: %v", err)
+	}
+
+	if transcript.Model != "" {
+		t.Errorf("Model = %q, want empty", transcript.Model)
+	}
+}
+
 func TestParseCopilotTranscriptEmpty(t *testing.T) {
 	transcript, err := parseCopilotTranscript(strings.NewReader(""))
 	if err != nil {

@@ -241,6 +241,7 @@ func parseCopilotTranscript(r io.Reader) (*agent.Transcript, error) {
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
 	var entries []agent.TranscriptEntry
+	var model string
 	idx := 0
 
 	for scanner.Scan() {
@@ -257,6 +258,14 @@ func parseCopilotTranscript(r io.Reader) (*agent.Transcript, error) {
 		rawBytes := []byte(line)
 
 		switch event.Type {
+		case "session.model_change":
+			// Capture the model from model_change events.
+			// The data.content field typically holds the model identifier.
+			if event.Data.Content != "" {
+				model = event.Data.Content
+			}
+			continue
+
 		case "user.message":
 			entries = append(entries, agent.TranscriptEntry{
 				UUID: fmt.Sprintf("copilot-%d", idx),
@@ -325,7 +334,7 @@ func parseCopilotTranscript(r io.Reader) (*agent.Transcript, error) {
 			idx++
 
 		default:
-			// Skip session.start, session.model_change, assistant.turn_start/end, tool.execution_start
+			// Skip session.start, assistant.turn_start/end, tool.execution_start
 			continue
 		}
 	}
@@ -334,7 +343,7 @@ func parseCopilotTranscript(r io.Reader) (*agent.Transcript, error) {
 		return nil, fmt.Errorf("failed to read events.jsonl: %w", err)
 	}
 
-	return &agent.Transcript{Entries: entries}, nil
+	return &agent.Transcript{Entries: entries, Model: model}, nil
 }
 
 // extractCommand extracts the shell command from toolArgs.

@@ -24,6 +24,7 @@ func SampleTranscript() string {
 			"uuid":       "assistant-1",
 			"parentUuid": "user-1",
 			"type":       "assistant",
+			"model":      "claude-sonnet-4-5-20250514",
 			"message": map[string]interface{}{
 				"role": "assistant",
 				"content": []map[string]interface{}{
