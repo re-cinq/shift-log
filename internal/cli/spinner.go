@@ -5,8 +5,6 @@ import (
 	"os"
 	"sync"
 	"time"
-
-	"golang.org/x/sys/unix"
 )
 
 // Spinner displays an animated spinner on stderr while a long operation runs.
@@ -81,10 +79,4 @@ func (s *Spinner) run() {
 			i++
 		}
 	}
-}
-
-// isTerminal checks if a file is a terminal.
-func isTerminal(f *os.File) bool {
-	_, err := unix.IoctlGetTermios(int(f.Fd()), unix.TCGETS)
-	return err == nil
 }
