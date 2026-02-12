@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -480,7 +479,3 @@ func pathsEqual(a, b string) bool {
 	return a == b
 }
 
-// LookupBinary checks if the claude binary is in PATH.
-func LookupBinary() (string, error) {
-	return exec.LookPath("claude")
-}

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -397,7 +396,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 	return msg
 }
 
-// LookupBinary checks if the opencode binary is in PATH.
-func LookupBinary() (string, error) {
-	return exec.LookPath("opencode")
-}

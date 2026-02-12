@@ -122,15 +122,6 @@ func MergeNotes() error {
 	return cmd.Run()
 }
 
-// FetchNotes fetches remote notes and merges them into the local ref.
-// This is the high-level operation used by sync pull.
-func FetchNotes(remote string) error {
-	if err := FetchNotesToTracking(remote); err != nil {
-		return err
-	}
-	return MergeNotes()
-}
-
 // CopyNote copies a note from one commit to another.
 // If the destination already has a note, the copy is forced (overwritten).
 func CopyNote(fromSHA, toSHA string) error {

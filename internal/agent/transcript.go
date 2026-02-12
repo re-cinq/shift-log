@@ -71,18 +71,6 @@ type Transcript struct {
 	Entries []TranscriptEntry
 }
 
-// ToJSONL converts the transcript back to JSONL format.
-func (t *Transcript) ToJSONL() ([]byte, error) {
-	var result []byte
-	for i, entry := range t.Entries {
-		if i > 0 {
-			result = append(result, '\n')
-		}
-		result = append(result, entry.Raw...)
-	}
-	return result, nil
-}
-
 // MessageCount returns the number of entries in the transcript.
 func (t *Transcript) MessageCount() int {
 	return len(t.Entries)

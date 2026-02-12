@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -459,7 +458,3 @@ func hasClauditCommandEntry(hookConfig interface{}, command string) bool {
 	return false
 }
 
-// LookupBinary checks if the copilot binary is in PATH.
-func LookupBinary() (string, error) {
-	return exec.LookPath("copilot")
-}

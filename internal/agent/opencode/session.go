@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"sort"
 	"strings"
 )
 
@@ -74,117 +73,12 @@ func GetMessageDir(sessionID string) (string, error) {
 	return filepath.Join(dataDir, "storage", "message", sessionID), nil
 }
 
-// SessionInfo represents an OpenCode session JSON file.
-type SessionInfo struct {
+// sessionInfo represents an OpenCode session JSON file.
+type sessionInfo struct {
 	ID        string `json:"id"`
-	Slug      string `json:"slug,omitempty"`
 	ProjectID string `json:"projectID,omitempty"`
 	Directory string `json:"directory,omitempty"`
-	ParentID  string `json:"parentID,omitempty"`
 	Title     string `json:"title,omitempty"`
-	Version   string `json:"version,omitempty"`
-	Time      struct {
-		Created  string `json:"created,omitempty"`
-		Updated  string `json:"updated,omitempty"`
-	} `json:"time,omitempty"`
-}
-
-// MessageInfo represents an OpenCode message JSON file.
-type MessageInfo struct {
-	ID        string `json:"id"`
-	SessionID string `json:"sessionID,omitempty"`
-	Role      string `json:"role"`
-	Content   string `json:"content,omitempty"`
-	Time      struct {
-		Created string `json:"created,omitempty"`
-	} `json:"time,omitempty"`
-}
-
-// ReadSession reads a session JSON file.
-func ReadSession(path string) (*SessionInfo, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-
-	var session SessionInfo
-	if err := json.Unmarshal(data, &session); err != nil {
-		return nil, err
-	}
-
-	return &session, nil
-}
-
-// ListSessions lists all session files for a project.
-func ListSessions(projectPath string) ([]SessionInfo, error) {
-	sessionDir, err := GetSessionDir(projectPath)
-	if err != nil {
-		return nil, err
-	}
-
-	entries, err := os.ReadDir(sessionDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-
-	var sessions []SessionInfo
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
-			continue
-		}
-
-		session, err := ReadSession(filepath.Join(sessionDir, entry.Name()))
-		if err != nil {
-			continue
-		}
-		sessions = append(sessions, *session)
-	}
-
-	return sessions, nil
-}
-
-// ReadMessages reads all messages for a session.
-func ReadMessages(sessionID string) ([]MessageInfo, error) {
-	msgDir, err := GetMessageDir(sessionID)
-	if err != nil {
-		return nil, err
-	}
-
-	entries, err := os.ReadDir(msgDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-
-	var messages []MessageInfo
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
-			continue
-		}
-
-		data, err := os.ReadFile(filepath.Join(msgDir, entry.Name()))
-		if err != nil {
-			continue
-		}
-
-		var msg MessageInfo
-		if err := json.Unmarshal(data, &msg); err != nil {
-			continue
-		}
-		messages = append(messages, msg)
-	}
-
-	// Sort by filename (which are ordered by ID)
-	sort.Slice(messages, func(i, j int) bool {
-		return messages[i].ID < messages[j].ID
-	})
-
-	return messages, nil
 }
 
 // WriteSessionFile writes a session and its messages to OpenCode's storage.
@@ -201,7 +95,7 @@ func WriteSessionFile(projectPath, sessionID string, transcriptData []byte) (str
 	sessionPath := filepath.Join(sessionDir, sessionID+".json")
 
 	// Write a minimal session file
-	session := SessionInfo{
+	session := sessionInfo{
 		ID:        sessionID,
 		ProjectID: GetProjectID(projectPath),
 		Directory: projectPath,

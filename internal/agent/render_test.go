@@ -147,7 +147,7 @@ func TestRendererTranscript(t *testing.T) {
 		},
 	}
 
-	err := r.RenderTranscript(transcript)
+	err := r.RenderEntries(transcript.Entries)
 	if err != nil {
 		t.Fatalf("RenderTranscript failed: %v", err)
 	}
@@ -343,7 +343,7 @@ func TestRendererSkipsProgressEntries(t *testing.T) {
 		},
 	}
 
-	r.RenderTranscript(transcript)
+	r.RenderEntries(transcript.Entries)
 
 	output := buf.String()
 	if !strings.Contains(output, "Hello") {

@@ -31,23 +31,6 @@ func Get(name Name) (Agent, error) {
 	return a, nil
 }
 
-// All returns all registered agents.
-func All() []Agent {
-	mu.RLock()
-	defer mu.RUnlock()
-	agents := make([]Agent, 0, len(registry))
-	for _, a := range registry {
-		agents = append(agents, a)
-	}
-	return agents
-}
-
-// Default returns the default agent (Claude).
-func Default() Agent {
-	a, _ := Get(Claude)
-	return a
-}
-
 // supportedNames returns a comma-separated list of registered agent names.
 func supportedNames() string {
 	names := make([]string, 0, len(registry))

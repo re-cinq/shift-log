@@ -39,11 +39,6 @@ func (r *Renderer) color(code string) string {
 	return ""
 }
 
-// RenderTranscript renders the full transcript to the writer.
-func (r *Renderer) RenderTranscript(t *Transcript) error {
-	return r.RenderEntries(t.Entries)
-}
-
 // RenderEntries renders a slice of transcript entries to the writer.
 func (r *Renderer) RenderEntries(entries []TranscriptEntry) error {
 	hadPrevious := false
