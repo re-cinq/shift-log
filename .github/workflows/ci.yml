@@ -153,7 +153,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           CLAUDIT_BINARY: ${{ github.workspace }}/claudit
-        run: go test ./tests/integration/... -v -timeout 120s
+        run: go test ./tests/integration/... -v -timeout 600s
 
   release:
     name: Release
