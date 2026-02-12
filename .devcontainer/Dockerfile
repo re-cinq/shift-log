@@ -137,6 +137,15 @@ RUN sh -c "$(wget -O- https://github.com/deluan/zsh-in-docker/releases/download/
 # Install Claude Code
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 
+# Install coding agent CLIs (for integration tests)
+RUN npm install -g @openai/codex \
+  && npm install -g @github/copilot \
+  && npm install -g @google/gemini-cli \
+  && npm install -g opencode-ai@latest
+
+# Install act (run GitHub Actions locally, requires Docker-in-Docker feature)
+RUN curl -sSf https://raw.githubusercontent.com/nektos/act/master/install.sh | bash -s -- -b /home/node/.local/bin
+
 # Install OpenSpec (spec-driven development for AI coding assistants)
 RUN npm install -g @fission-ai/openspec@latest
 
