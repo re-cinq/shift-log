@@ -66,10 +66,25 @@ func (m *Message) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// UsageMetrics holds cumulative API token usage from a transcript.
+type UsageMetrics struct {
+	InputTokens              int64 `json:"input_tokens,omitempty"`
+	OutputTokens             int64 `json:"output_tokens,omitempty"`
+	CacheCreationInputTokens int64 `json:"cache_creation_input_tokens,omitempty"`
+	CacheReadInputTokens     int64 `json:"cache_read_input_tokens,omitempty"`
+}
+
+// TotalTokens returns the sum of input and output tokens.
+func (u UsageMetrics) TotalTokens() int64 {
+	return u.InputTokens + u.OutputTokens
+}
+
 // Transcript represents a parsed conversation transcript.
 type Transcript struct {
 	Entries []TranscriptEntry
-	Model   string // model identifier extracted from transcript (e.g. "claude-sonnet-4-5-20250514")
+	Model   string       // model identifier extracted from transcript (e.g. "claude-sonnet-4-5-20250514")
+	Usage   UsageMetrics // cumulative token usage (Claude Code only)
+	Turns   int          // number of user turns (all agents)
 }
 
 // MessageCount returns the number of entries in the transcript.
@@ -93,6 +108,30 @@ func (t *Transcript) FindEntryIndex(uuid string) int {
 		}
 	}
 	return -1
+}
+
+// CountTurns counts user turns that have text content (excludes pure tool_result entries).
+func (t *Transcript) CountTurns() int {
+	turns := 0
+	for _, entry := range t.Entries {
+		if entry.Type != MessageTypeUser {
+			continue
+		}
+		if entry.Message == nil {
+			continue
+		}
+		hasText := false
+		for _, block := range entry.Message.Content {
+			if block.Type == "text" && block.Text != "" {
+				hasText = true
+				break
+			}
+		}
+		if hasText {
+			turns++
+		}
+	}
+	return turns
 }
 
 // GetEntriesSince returns entries that come after the given UUID.

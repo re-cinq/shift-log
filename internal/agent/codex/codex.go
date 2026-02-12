@@ -138,7 +138,9 @@ func (a *Agent) ParseTranscript(r io.Reader) (*agent.Transcript, error) {
 		}
 	}
 
-	return &agent.Transcript{Entries: entries, Model: model}, nil
+	t := &agent.Transcript{Entries: entries, Model: model}
+	t.Turns = t.CountTurns()
+	return t, nil
 }
 
 // parseResponseItem converts a Codex response_item into a TranscriptEntry.

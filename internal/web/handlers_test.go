@@ -68,10 +68,16 @@ func (r *testRepo) commit(message string) string {
 
 func (r *testRepo) addConversation(commitSHA, sessionID string, transcriptData []byte, messageCount int) {
 	r.t.Helper()
+	r.addConversationWithEffort(commitSHA, sessionID, transcriptData, messageCount, nil)
+}
+
+func (r *testRepo) addConversationWithEffort(commitSHA, sessionID string, transcriptData []byte, messageCount int, effort *storage.Effort) {
+	r.t.Helper()
 	stored, err := storage.NewStoredConversation(sessionID, r.path, "master", messageCount, transcriptData)
 	if err != nil {
 		r.t.Fatal(err)
 	}
+	stored.Effort = effort
 	data, err := stored.Marshal()
 	if err != nil {
 		r.t.Fatal(err)
@@ -1200,5 +1206,167 @@ func TestGetGraphDataForRef(t *testing.T) {
 	}
 	if len(nodes[0].Parents) != 1 || nodes[0].Parents[0] != sha1 {
 		t.Errorf("first node parents: want [%s], got %v", sha1, nodes[0].Parents)
+	}
+}
+
+// --- Effort metrics tests ---
+
+func TestHandleCommitsWithEffort(t *testing.T) {
+	repo := newTestRepo(t)
+	chdir(t, repo.path)
+
+	repo.writeFile("a.txt", "a")
+	sha1 := repo.commit("First commit")
+	repo.addConversationWithEffort(sha1, "session-1", sampleTranscript(), 2, &storage.Effort{
+		Turns:        3,
+		InputTokens:  12345,
+		OutputTokens: 6789,
+	})
+
+	srv := NewServer(0, repo.path)
+
+	t.Run("commit list includes effort", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/commits", nil)
+		w := httptest.NewRecorder()
+		srv.mux.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status: want 200, got %d", w.Code)
+		}
+
+		var commits []CommitInfo
+		decodeJSON(t, w, &commits)
+
+		var found *CommitInfo
+		for i, c := range commits {
+			if c.SHA == sha1 {
+				found = &commits[i]
+			}
+		}
+		if found == nil {
+			t.Fatal("commit not found")
+		}
+		if found.Effort == nil {
+			t.Fatal("Effort should not be nil")
+		}
+		if found.Effort.Turns != 3 {
+			t.Errorf("Effort.Turns = %d, want 3", found.Effort.Turns)
+		}
+		if found.Effort.InputTokens != 12345 {
+			t.Errorf("Effort.InputTokens = %d, want 12345", found.Effort.InputTokens)
+		}
+		if found.Effort.OutputTokens != 6789 {
+			t.Errorf("Effort.OutputTokens = %d, want 6789", found.Effort.OutputTokens)
+		}
+	})
+}
+
+func TestHandleCommitDetailWithEffort(t *testing.T) {
+	repo := newTestRepo(t)
+	chdir(t, repo.path)
+
+	repo.writeFile("a.txt", "a")
+	sha1 := repo.commit("First commit")
+	repo.addConversationWithEffort(sha1, "session-1", sampleTranscript(), 2, &storage.Effort{
+		Turns:                    5,
+		InputTokens:              50000,
+		OutputTokens:             25000,
+		CacheCreationInputTokens: 1000,
+		CacheReadInputTokens:     2000,
+	})
+
+	srv := NewServer(0, repo.path)
+
+	t.Run("detail includes effort", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/commits/"+sha1, nil)
+		w := httptest.NewRecorder()
+		srv.mux.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status: want 200, got %d: %s", w.Code, w.Body.String())
+		}
+
+		var resp ConversationResponse
+		decodeJSON(t, w, &resp)
+		if resp.Effort == nil {
+			t.Fatal("Effort should not be nil")
+		}
+		if resp.Effort.Turns != 5 {
+			t.Errorf("Effort.Turns = %d, want 5", resp.Effort.Turns)
+		}
+		if resp.Effort.InputTokens != 50000 {
+			t.Errorf("Effort.InputTokens = %d, want 50000", resp.Effort.InputTokens)
+		}
+		if resp.Effort.OutputTokens != 25000 {
+			t.Errorf("Effort.OutputTokens = %d, want 25000", resp.Effort.OutputTokens)
+		}
+		if resp.Effort.CacheCreationInputTokens != 1000 {
+			t.Errorf("CacheCreationInputTokens = %d, want 1000", resp.Effort.CacheCreationInputTokens)
+		}
+		if resp.Effort.CacheReadInputTokens != 2000 {
+			t.Errorf("CacheReadInputTokens = %d, want 2000", resp.Effort.CacheReadInputTokens)
+		}
+	})
+}
+
+func TestHandleCommitDetailWithoutEffort(t *testing.T) {
+	repo := newTestRepo(t)
+	chdir(t, repo.path)
+
+	repo.writeFile("a.txt", "a")
+	sha1 := repo.commit("First commit")
+	repo.addConversation(sha1, "session-1", sampleTranscript(), 2)
+
+	srv := NewServer(0, repo.path)
+
+	t.Run("detail omits effort when nil", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/commits/"+sha1, nil)
+		w := httptest.NewRecorder()
+		srv.mux.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status: want 200, got %d: %s", w.Code, w.Body.String())
+		}
+
+		var resp ConversationResponse
+		decodeJSON(t, w, &resp)
+		if resp.Effort != nil {
+			t.Error("Effort should be nil for conversation without effort data")
+		}
+
+		// Also check raw JSON doesn't have effort key
+		var raw map[string]interface{}
+		w2 := httptest.NewRecorder()
+		req2 := httptest.NewRequest("GET", "/api/commits/"+sha1, nil)
+		srv.mux.ServeHTTP(w2, req2)
+		if err := json.NewDecoder(w2.Body).Decode(&raw); err != nil {
+			t.Fatal(err)
+		}
+		if _, exists := raw["effort"]; exists {
+			t.Error("JSON should not contain 'effort' key when Effort is nil")
+		}
+	})
+}
+
+func TestHTMLContainsEffortElements(t *testing.T) {
+	repo := newTestRepo(t)
+	srv := NewServer(0, repo.path)
+
+	req := httptest.NewRequest("GET", "/", nil)
+	w := httptest.NewRecorder()
+	srv.mux.ServeHTTP(w, req)
+
+	body := w.Body.String()
+
+	elements := []string{
+		`id="meta-turns"`,
+		`id="meta-input-tokens"`,
+		`id="meta-output-tokens"`,
+		"function formatTokenCount(",
+	}
+	for _, elem := range elements {
+		if !strings.Contains(body, elem) {
+			t.Errorf("index.html missing effort element: %s", elem)
+		}
 	}
 }

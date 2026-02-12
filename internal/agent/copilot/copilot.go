@@ -343,7 +343,9 @@ func parseCopilotTranscript(r io.Reader) (*agent.Transcript, error) {
 		return nil, fmt.Errorf("failed to read events.jsonl: %w", err)
 	}
 
-	return &agent.Transcript{Entries: entries, Model: model}, nil
+	t := &agent.Transcript{Entries: entries, Model: model}
+	t.Turns = t.CountTurns()
+	return t, nil
 }
 
 // extractCommand extracts the shell command from toolArgs.

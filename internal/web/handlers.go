@@ -16,12 +16,13 @@ import (
 
 // CommitInfo represents commit data for the API
 type CommitInfo struct {
-	SHA             string `json:"sha"`
-	Message         string `json:"message"`
-	Author          string `json:"author"`
-	Date            string `json:"date"`
-	HasConversation bool   `json:"has_conversation"`
-	MessageCount    int    `json:"message_count,omitempty"`
+	SHA             string          `json:"sha"`
+	Message         string          `json:"message"`
+	Author          string          `json:"author"`
+	Date            string          `json:"date"`
+	HasConversation bool            `json:"has_conversation"`
+	MessageCount    int             `json:"message_count,omitempty"`
+	Effort          *storage.Effort `json:"effort,omitempty"`
 }
 
 // ConversationResponse represents the full conversation data
@@ -32,6 +33,7 @@ type ConversationResponse struct {
 	MessageCount     int                      `json:"message_count"`
 	Agent            string                   `json:"agent,omitempty"`
 	Model            string                   `json:"model,omitempty"`
+	Effort           *storage.Effort          `json:"effort,omitempty"`
 	Transcript       []agent.TranscriptEntry `json:"transcript"`
 	IsIncremental    bool                     `json:"is_incremental"`
 	ParentCommitSHA  string                   `json:"parent_commit_sha,omitempty"`
@@ -184,10 +186,11 @@ func (s *Server) handleCommits(w http.ResponseWriter, r *http.Request) {
 			HasConversation: hasConv,
 		}
 
-		// Get message count if has conversation
+		// Get message count and effort if has conversation
 		if hasConv {
 			if stored, err := storage.GetStoredConversation(commit.SHA); err == nil && stored != nil {
 				info.MessageCount = stored.MessageCount
+				info.Effort = stored.Effort
 			}
 		}
 
@@ -270,6 +273,7 @@ func (s *Server) handleCommitDetail(w http.ResponseWriter, r *http.Request) {
 		MessageCount:     stored.MessageCount,
 		Agent:            stored.Agent,
 		Model:            stored.Model,
+		Effort:           stored.Effort,
 		Transcript:       entries,
 		IsIncremental:    isIncremental,
 		ParentCommitSHA:  parentSHA,

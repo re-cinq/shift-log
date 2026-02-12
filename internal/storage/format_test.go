@@ -249,3 +249,135 @@ func TestMarshalOmitsEmptyModel(t *testing.T) {
 		t.Error("JSON should not contain 'model' key when Model is empty")
 	}
 }
+
+func TestEffortV3RoundTrip(t *testing.T) {
+	transcript := []byte(`{"uuid":"1","type":"user"}`)
+
+	sc, err := NewStoredConversation("session-1", "/test", "main", 1, transcript)
+	if err != nil {
+		t.Fatalf("NewStoredConversation() error: %v", err)
+	}
+
+	sc.Effort = &Effort{
+		Turns:                    5,
+		InputTokens:              12345,
+		OutputTokens:             6789,
+		CacheCreationInputTokens: 1000,
+		CacheReadInputTokens:     2000,
+	}
+
+	data, err := sc.Marshal()
+	if err != nil {
+		t.Fatalf("Marshal() error: %v", err)
+	}
+
+	restored, err := UnmarshalStoredConversation(data)
+	if err != nil {
+		t.Fatalf("UnmarshalStoredConversation() error: %v", err)
+	}
+
+	if restored.Effort == nil {
+		t.Fatal("Effort should not be nil after round-trip")
+	}
+	if restored.Effort.Turns != 5 {
+		t.Errorf("Turns = %d, want 5", restored.Effort.Turns)
+	}
+	if restored.Effort.InputTokens != 12345 {
+		t.Errorf("InputTokens = %d, want 12345", restored.Effort.InputTokens)
+	}
+	if restored.Effort.OutputTokens != 6789 {
+		t.Errorf("OutputTokens = %d, want 6789", restored.Effort.OutputTokens)
+	}
+	if restored.Effort.CacheCreationInputTokens != 1000 {
+		t.Errorf("CacheCreationInputTokens = %d, want 1000", restored.Effort.CacheCreationInputTokens)
+	}
+	if restored.Effort.CacheReadInputTokens != 2000 {
+		t.Errorf("CacheReadInputTokens = %d, want 2000", restored.Effort.CacheReadInputTokens)
+	}
+	if restored.Version != NoteFormatVersion {
+		t.Errorf("Version = %d, want %d", restored.Version, NoteFormatVersion)
+	}
+}
+
+func TestEffortV1V2BackwardCompat(t *testing.T) {
+	// v1 note has no effort field
+	v1Note := `{
+		"version": 1,
+		"session_id": "old-session",
+		"timestamp": "2025-01-01T00:00:00Z",
+		"project_path": "/old/project",
+		"git_branch": "main",
+		"message_count": 3,
+		"checksum": "sha256:abc123",
+		"transcript": "H4sIAAAAAAAAA6tWKkktLlGyUlAqS8wpTtVRSs7PS8nMS1eqBQBHsjzMGgAAAA=="
+	}`
+
+	sc, err := UnmarshalStoredConversation([]byte(v1Note))
+	if err != nil {
+		t.Fatalf("UnmarshalStoredConversation() failed on v1 note: %v", err)
+	}
+
+	if sc.Effort != nil {
+		t.Error("Effort should be nil for v1 note")
+	}
+
+	// v2 note with model but no effort
+	v2Note := `{
+		"version": 2,
+		"session_id": "v2-session",
+		"timestamp": "2025-06-01T00:00:00Z",
+		"project_path": "/v2/project",
+		"git_branch": "main",
+		"message_count": 5,
+		"checksum": "sha256:def456",
+		"transcript": "H4sIAAAAAAAAA6tWKkktLlGyUlAqS8wpTtVRSs7PS8nMS1eqBQBHsjzMGgAAAA==",
+		"model": "claude-sonnet-4-5-20250514"
+	}`
+
+	sc, err = UnmarshalStoredConversation([]byte(v2Note))
+	if err != nil {
+		t.Fatalf("UnmarshalStoredConversation() failed on v2 note: %v", err)
+	}
+
+	if sc.Effort != nil {
+		t.Error("Effort should be nil for v2 note")
+	}
+	if sc.Model != "claude-sonnet-4-5-20250514" {
+		t.Errorf("Model = %q, want %q", sc.Model, "claude-sonnet-4-5-20250514")
+	}
+}
+
+func TestEffortTotalTokensNilSafe(t *testing.T) {
+	var e *Effort
+	if e.TotalTokens() != 0 {
+		t.Errorf("nil Effort TotalTokens() = %d, want 0", e.TotalTokens())
+	}
+
+	e = &Effort{InputTokens: 100, OutputTokens: 50}
+	if e.TotalTokens() != 150 {
+		t.Errorf("TotalTokens() = %d, want 150", e.TotalTokens())
+	}
+}
+
+func TestEffortOmittedWhenNil(t *testing.T) {
+	transcript := []byte(`{"uuid":"1","type":"user"}`)
+
+	sc, err := NewStoredConversation("session-1", "/test", "main", 1, transcript)
+	if err != nil {
+		t.Fatalf("NewStoredConversation() error: %v", err)
+	}
+
+	// Don't set Effort — it should be omitted from JSON
+	data, err := sc.Marshal()
+	if err != nil {
+		t.Fatalf("Marshal() error: %v", err)
+	}
+
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("Failed to parse marshaled JSON: %v", err)
+	}
+	if _, exists := raw["effort"]; exists {
+		t.Error("JSON should not contain 'effort' key when Effort is nil")
+	}
+}

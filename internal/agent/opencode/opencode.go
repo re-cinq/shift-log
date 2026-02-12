@@ -120,7 +120,9 @@ func (a *Agent) ParseTranscript(r io.Reader) (*agent.Transcript, error) {
 					}
 				}
 			}
-			return &agent.Transcript{Entries: entries}, nil
+			t := &agent.Transcript{Entries: entries}
+			t.Turns = t.CountTurns()
+			return t, nil
 		}
 	}
 
@@ -142,7 +144,9 @@ func (a *Agent) ParseTranscript(r io.Reader) (*agent.Transcript, error) {
 		}
 	}
 
-	return &agent.Transcript{Entries: entries}, nil
+	t := &agent.Transcript{Entries: entries}
+	t.Turns = t.CountTurns()
+	return t, nil
 }
 
 // ParseTranscriptFile parses an OpenCode session from the message directory.

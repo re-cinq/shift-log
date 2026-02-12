@@ -283,6 +283,20 @@ func (a *Agent) ToolAliases() map[string]string {
 	return nil
 }
 
+// lineMetadata holds fields extracted from each JSONL line during parsing.
+type lineMetadata struct {
+	Model   string `json:"model"`
+	Message *struct {
+		Role  string `json:"role"`
+		Usage *struct {
+			InputTokens              int64 `json:"input_tokens"`
+			OutputTokens             int64 `json:"output_tokens"`
+			CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
+			CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
+		} `json:"usage"`
+	} `json:"message"`
+}
+
 // ParseJSONLTranscript parses a JSONL transcript from a reader.
 func ParseJSONLTranscript(r io.Reader) (*agent.Transcript, error) {
 	scanner := bufio.NewScanner(r)
@@ -291,6 +305,7 @@ func ParseJSONLTranscript(r io.Reader) (*agent.Transcript, error) {
 
 	var entries []agent.TranscriptEntry
 	var model string
+	var usage agent.UsageMetrics
 
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -303,14 +318,19 @@ func ParseJSONLTranscript(r io.Reader) (*agent.Transcript, error) {
 		entry.Raw = json.RawMessage(line)
 		entries = append(entries, entry)
 
-		// Extract model from the first assistant entry that has one.
-		// Claude Code JSONL entries include a top-level "model" field.
-		if model == "" {
-			var raw struct {
-				Model string `json:"model"`
+		// Extract model and usage from each line
+		var meta lineMetadata
+		if json.Unmarshal(line, &meta) == nil {
+			if model == "" && meta.Model != "" {
+				model = meta.Model
 			}
-			if json.Unmarshal(line, &raw) == nil && raw.Model != "" {
-				model = raw.Model
+			// Accumulate token usage from assistant message.usage
+			if meta.Message != nil && meta.Message.Usage != nil {
+				u := meta.Message.Usage
+				usage.InputTokens += u.InputTokens
+				usage.OutputTokens += u.OutputTokens
+				usage.CacheCreationInputTokens += u.CacheCreationInputTokens
+				usage.CacheReadInputTokens += u.CacheReadInputTokens
 			}
 		}
 	}
@@ -319,7 +339,9 @@ func ParseJSONLTranscript(r io.Reader) (*agent.Transcript, error) {
 		return nil, err
 	}
 
-	return &agent.Transcript{Entries: entries, Model: model}, nil
+	t := &agent.Transcript{Entries: entries, Model: model, Usage: usage}
+	t.Turns = t.CountTurns()
+	return t, nil
 }
 
 // extractFirstPrompt extracts the first user message from transcript data.

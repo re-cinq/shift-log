@@ -9,7 +9,25 @@ import (
 // Version history:
 //   - 1: initial format (agent field added later with omitempty for compat)
 //   - 2: added model field for tracking the AI model used
-const NoteFormatVersion = 2
+//   - 3: added effort field for tracking turns and token usage
+const NoteFormatVersion = 3
+
+// Effort captures quantified AI effort metrics for a commit.
+type Effort struct {
+	Turns                    int   `json:"turns,omitempty"`
+	InputTokens              int64 `json:"input_tokens,omitempty"`
+	OutputTokens             int64 `json:"output_tokens,omitempty"`
+	CacheCreationInputTokens int64 `json:"cache_creation_input_tokens,omitempty"`
+	CacheReadInputTokens     int64 `json:"cache_read_input_tokens,omitempty"`
+}
+
+// TotalTokens returns the sum of input and output tokens, nil-safe.
+func (e *Effort) TotalTokens() int64 {
+	if e == nil {
+		return 0
+	}
+	return e.InputTokens + e.OutputTokens
+}
 
 // StoredConversation represents the format stored in git notes
 type StoredConversation struct {
@@ -21,8 +39,9 @@ type StoredConversation struct {
 	MessageCount int    `json:"message_count"`
 	Checksum     string `json:"checksum"`
 	Transcript   string `json:"transcript"`        // base64-encoded gzipped JSONL
-	Agent        string `json:"agent,omitempty"`    // coding agent name (empty = "claude" for backward compat)
-	Model        string `json:"model,omitempty"`    // AI model identifier (e.g. "claude-sonnet-4-5-20250514")
+	Agent        string  `json:"agent,omitempty"`    // coding agent name (empty = "claude" for backward compat)
+	Model        string  `json:"model,omitempty"`    // AI model identifier (e.g. "claude-sonnet-4-5-20250514")
+	Effort       *Effort `json:"effort,omitempty"`   // AI effort metrics (turns, tokens)
 }
 
 // NewStoredConversation creates a new StoredConversation from transcript data

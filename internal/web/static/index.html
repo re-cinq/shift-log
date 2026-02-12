@@ -813,6 +813,18 @@
                     <span class="meta-label">model</span>
                     <span class="meta-value" id="meta-model-value"></span>
                 </span>
+                <span class="meta-badge" id="meta-turns" style="display: none;">
+                    <span class="meta-label">turns</span>
+                    <span class="meta-value" id="meta-turns-value"></span>
+                </span>
+                <span class="meta-badge" id="meta-input-tokens" style="display: none;">
+                    <span class="meta-label">in</span>
+                    <span class="meta-value" id="meta-input-tokens-value"></span>
+                </span>
+                <span class="meta-badge" id="meta-output-tokens" style="display: none;">
+                    <span class="meta-label">out</span>
+                    <span class="meta-value" id="meta-output-tokens-value"></span>
+                </span>
             </div>
             <div class="incremental-info" id="incremental-info" style="display: none;">
                 <span id="incremental-info-text"></span>
@@ -1110,6 +1122,7 @@
                     <div class="commit-sha">
                         ${commit.sha.substring(0, 7)}
                         ${commit.has_conversation ? `<span class="badge">${commit.message_count} msgs</span>` : ''}
+                        ${commit.effort && commit.effort.turns > 0 ? `<span class="badge" style="background-color: var(--bg-tertiary);">${commit.effort.turns} turns</span>` : ''}
                     </div>
                     <div class="commit-message">${escapeHtml(commit.message)}</div>
                     <div class="commit-meta">${formatDate(commit.date)} by ${escapeHtml(commit.author)}</div>
@@ -1218,13 +1231,29 @@
 
             const hasAgent = data.agent && data.agent !== '';
             const hasModel = data.model && data.model !== '';
+            const effort = data.effort;
+            const hasTurns = effort && effort.turns > 0;
+            const hasInputTokens = effort && effort.input_tokens > 0;
+            const hasOutputTokens = effort && effort.output_tokens > 0;
 
             agentBadge.style.display = hasAgent ? 'inline-flex' : 'none';
             modelBadge.style.display = hasModel ? 'inline-flex' : 'none';
-            metaBar.classList.toggle('visible', hasAgent || hasModel);
+
+            const turnsBadge = document.getElementById('meta-turns');
+            const inputTokensBadge = document.getElementById('meta-input-tokens');
+            const outputTokensBadge = document.getElementById('meta-output-tokens');
+
+            turnsBadge.style.display = hasTurns ? 'inline-flex' : 'none';
+            inputTokensBadge.style.display = hasInputTokens ? 'inline-flex' : 'none';
+            outputTokensBadge.style.display = hasOutputTokens ? 'inline-flex' : 'none';
+
+            metaBar.classList.toggle('visible', hasAgent || hasModel || hasTurns || hasInputTokens || hasOutputTokens);
 
             if (hasAgent) agentVal.textContent = data.agent;
             if (hasModel) modelVal.textContent = data.model;
+            if (hasTurns) document.getElementById('meta-turns-value').textContent = effort.turns;
+            if (hasInputTokens) document.getElementById('meta-input-tokens-value').textContent = formatTokenCount(effort.input_tokens);
+            if (hasOutputTokens) document.getElementById('meta-output-tokens-value').textContent = formatTokenCount(effort.output_tokens);
 
             if (!data.transcript || data.transcript.length === 0) {
                 content.innerHTML = `
@@ -1493,6 +1522,12 @@
                 }
                 return false;
             }).length;
+        }
+
+        function formatTokenCount(n) {
+            if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+            if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
+            return String(n);
         }
 
         function formatDate(dateStr) {

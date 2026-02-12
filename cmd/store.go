@@ -206,6 +206,18 @@ func storeConversation(ag agent.Agent, sessionID, transcriptPath string) error {
 	stored.Agent = string(ag.Name())
 	stored.Model = transcript.Model
 
+	// Populate effort metrics from transcript
+	stored.Effort = &storage.Effort{
+		Turns:                    transcript.Turns,
+		InputTokens:              transcript.Usage.InputTokens,
+		OutputTokens:             transcript.Usage.OutputTokens,
+		CacheCreationInputTokens: transcript.Usage.CacheCreationInputTokens,
+		CacheReadInputTokens:     transcript.Usage.CacheReadInputTokens,
+	}
+	if stored.Effort.Turns == 0 && stored.Effort.TotalTokens() == 0 {
+		stored.Effort = nil
+	}
+
 	noteContent, err := stored.Marshal()
 	if err != nil {
 		return fmt.Errorf("failed to marshal conversation: %w", err)

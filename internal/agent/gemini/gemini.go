@@ -282,7 +282,9 @@ func ParseGeminiTranscript(r io.Reader) (*agent.Transcript, error) {
 		entries = append(entries, entry)
 	}
 
-	return &agent.Transcript{Entries: entries}, nil
+	t := &agent.Transcript{Entries: entries}
+	t.Turns = t.CountTurns()
+	return t, nil
 }
 
 
