@@ -61,7 +61,7 @@ jobs:
           go-version: '1.24'
 
       - name: Run browser tests
-        run: go test ./tests/browser/... -v -timeout 60s
+        run: go test ./tests/browser/... -v -timeout 120s
 
   install-test:
     name: Install Script Test

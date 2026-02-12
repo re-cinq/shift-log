@@ -92,6 +92,27 @@ func marshalTranscript(entries []map[string]interface{}) []byte {
 	return []byte(strings.Join(lines, "\n"))
 }
 
+// allocCtx is a shared Chrome allocator context created once in TestMain.
+// All tests create browser tabs from this context, avoiding repeated cold starts.
+var allocCtx context.Context
+
+func TestMain(m *testing.M) {
+	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.Flag("headless", true),
+		chromedp.Flag("no-sandbox", true),
+		chromedp.Flag("disable-gpu", true),
+		chromedp.Flag("disable-dev-shm-usage", true),
+		chromedp.WSURLReadTimeout(45*time.Second),
+	)
+
+	ctx, cancel := chromedp.NewExecAllocator(context.Background(), opts...)
+	allocCtx = ctx
+
+	code := m.Run()
+	cancel()
+	os.Exit(code)
+}
+
 // chdir changes CWD to dir for git functions that operate on CWD.
 func chdir(t *testing.T, dir string) {
 	t.Helper()
@@ -105,27 +126,11 @@ func chdir(t *testing.T, dir string) {
 	t.Cleanup(func() { os.Chdir(orig) })
 }
 
-// newBrowserContext creates a headless Chrome context for testing.
+// newBrowserContext creates a new browser tab from the shared Chrome allocator.
 func newBrowserContext(t *testing.T) (context.Context, context.CancelFunc) {
 	t.Helper()
 
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("headless", true),
-		chromedp.Flag("no-sandbox", true),
-		chromedp.Flag("disable-gpu", true),
-		chromedp.Flag("disable-dev-shm-usage", true),
-		chromedp.WSURLReadTimeout(45*time.Second),
-	)
-
-	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
-
-	ctx, ctxCancel := chromedp.NewContext(allocCtx)
-
-	cancel := func() {
-		ctxCancel()
-		allocCancel()
-	}
-
+	ctx, cancel := chromedp.NewContext(allocCtx)
 	t.Cleanup(cancel)
 	return ctx, cancel
 }
