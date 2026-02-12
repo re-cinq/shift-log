@@ -17,6 +17,16 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 
 <!-- OPENSPEC:END -->
 
+# Integration Tests
+
+When running integration tests, use `CLAUDE_CODE_OAUTH_TOKEN` (not `ANTHROPIC_API_KEY`):
+
+```bash
+go build -o claudit . && CLAUDIT_BINARY=./claudit go test ./tests/integration/... -v -timeout 600s
+```
+
+Tests skip gracefully when env vars or agent binaries are missing.
+
 # Beads Task Tracking
 
 Automatically manage Beads issues without requiring user commands:
