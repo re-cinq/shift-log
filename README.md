@@ -37,6 +37,7 @@ claudit list
 ```bash
 claudit summarise        # Summarise HEAD conversation
 claudit tldr HEAD~1      # Alias, works the same way
+claudit tldr --focus="security"  # Prioritise security-related changes
 ```
 
 **Resume a past session:**

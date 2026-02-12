@@ -23,7 +23,10 @@ import (
 
 const summariseTimeout = 120 * time.Second
 
-var summariseAgent string
+var (
+	summariseAgent string
+	summariseFocus string
+)
 
 var summariseCmd = &cobra.Command{
 	Use:     "summarise [ref]",
@@ -42,13 +45,15 @@ Examples:
   claudit summarise            # Summarise conversation for HEAD
   claudit tldr                 # Same, using the alias
   claudit summarise HEAD~1     # Summarise for previous commit
-  claudit summarise --agent=claude abc123  # Use Claude Code explicitly`,
+  claudit summarise --agent=claude abc123  # Use Claude Code explicitly
+  claudit tldr --focus="security changes"  # Prioritise security in summary`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runSummarise,
 }
 
 func init() {
 	summariseCmd.Flags().StringVar(&summariseAgent, "agent", "", "Agent to use for summarisation (e.g. claude, codex)")
+	summariseCmd.Flags().StringVarP(&summariseFocus, "focus", "f", "", "What to prioritise in the summary (e.g. \"security changes\", \"API design\")")
 	rootCmd.AddCommand(summariseCmd)
 }
 
@@ -90,7 +95,7 @@ func runSummarise(cmd *cobra.Command, args []string) error {
 	}
 
 	// Build the summary prompt
-	prompt := agent.BuildSummaryPrompt(transcript.Entries, agent.DefaultMaxPromptChars)
+	prompt := agent.BuildSummaryPromptWithFocus(transcript.Entries, agent.DefaultMaxPromptChars, summariseFocus)
 	if prompt == "" {
 		return fmt.Errorf("transcript has no summarisable content for commit %s", fullSHA[:7])
 	}

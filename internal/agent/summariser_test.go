@@ -210,6 +210,65 @@ func TestBuildSummaryPrompt_CodexToolUseInText(t *testing.T) {
 	}
 }
 
+func TestBuildSummaryPromptWithFocus(t *testing.T) {
+	entries := []TranscriptEntry{
+		{
+			Type: MessageTypeUser,
+			Message: &Message{
+				Role: "user",
+				Content: []ContentBlock{
+					{Type: "text", Text: "Refactor the auth module and fix the SQL injection"},
+				},
+			},
+		},
+		{
+			Type: MessageTypeAssistant,
+			Message: &Message{
+				Role: "assistant",
+				Content: []ContentBlock{
+					{Type: "text", Text: "I'll fix the security issues first."},
+				},
+			},
+		},
+	}
+
+	prompt := BuildSummaryPromptWithFocus(entries, DefaultMaxPromptChars, "security changes")
+
+	if !strings.Contains(prompt, "Pay particular attention to: security changes") {
+		t.Error("prompt should contain the focus hint")
+	}
+	if !strings.Contains(prompt, "Refactor the auth module") {
+		t.Error("prompt should still contain the transcript")
+	}
+	if !strings.Contains(prompt, "Summarise") {
+		t.Error("prompt should still contain the base instruction")
+	}
+}
+
+func TestBuildSummaryPromptWithFocus_EmptyFocus(t *testing.T) {
+	entries := []TranscriptEntry{
+		{
+			Type: MessageTypeUser,
+			Message: &Message{
+				Role: "user",
+				Content: []ContentBlock{
+					{Type: "text", Text: "Hello"},
+				},
+			},
+		},
+	}
+
+	withFocus := BuildSummaryPromptWithFocus(entries, DefaultMaxPromptChars, "")
+	withoutFocus := BuildSummaryPrompt(entries, DefaultMaxPromptChars)
+
+	if withFocus != withoutFocus {
+		t.Error("empty focus should produce the same prompt as BuildSummaryPrompt")
+	}
+	if strings.Contains(withFocus, "Pay particular attention to") {
+		t.Error("empty focus should not include focus hint")
+	}
+}
+
 func TestBuildSummaryPrompt_NilMessage(t *testing.T) {
 	entries := []TranscriptEntry{
 		{

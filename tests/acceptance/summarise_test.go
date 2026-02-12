@@ -115,6 +115,46 @@ SUMMARY
 			Expect(stdout).To(ContainSubstring("User asked for help"))
 			Expect(stdout).To(ContainSubstring("Bash tool"))
 		})
+
+		It("passes focus hint to the agent prompt", func() {
+			storeConversation("session-summarise-focus")
+
+			// Create a mock "claude" binary that echoes stdin so we can verify the prompt
+			mockDir, err := os.MkdirTemp("", "claudit-mock-focus-*")
+			Expect(err).NotTo(HaveOccurred())
+			defer os.RemoveAll(mockDir)
+
+			// Mock agent echoes the prompt it received on stdin
+			mockScript := `#!/bin/sh
+cat
+`
+			mockPath := filepath.Join(mockDir, "claude")
+			Expect(os.WriteFile(mockPath, []byte(mockScript), 0755)).To(Succeed())
+
+			env := []string{"PATH=" + mockDir + ":" + os.Getenv("PATH")}
+			stdout, _, err := testutil.RunClauditInDirWithEnv(repo.Path, env, "summarise", "--agent=claude", "--focus=security changes")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(stdout).To(ContainSubstring("Pay particular attention to: security changes"))
+		})
+
+		It("works without focus flag", func() {
+			storeConversation("session-summarise-no-focus")
+
+			mockDir, err := os.MkdirTemp("", "claudit-mock-nofocus-*")
+			Expect(err).NotTo(HaveOccurred())
+			defer os.RemoveAll(mockDir)
+
+			mockScript := `#!/bin/sh
+cat
+`
+			mockPath := filepath.Join(mockDir, "claude")
+			Expect(os.WriteFile(mockPath, []byte(mockScript), 0755)).To(Succeed())
+
+			env := []string{"PATH=" + mockDir + ":" + os.Getenv("PATH")}
+			stdout, _, err := testutil.RunClauditInDirWithEnv(repo.Path, env, "summarise", "--agent=claude")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(stdout).NotTo(ContainSubstring("Pay particular attention to"))
+		})
 	})
 
 	Describe("ref resolution", func() {
