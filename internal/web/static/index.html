@@ -718,6 +718,40 @@
         ::-webkit-scrollbar-thumb:hover {
             background: var(--text-secondary);
         }
+
+        .conversation-meta {
+            display: none;
+            gap: 8px;
+            padding: 8px 16px;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 12px;
+            color: var(--text-secondary);
+            align-items: center;
+        }
+
+        .conversation-meta.visible {
+            display: flex;
+        }
+
+        .meta-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 8px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 11px;
+        }
+
+        .meta-badge .meta-label {
+            color: var(--text-secondary);
+        }
+
+        .meta-badge .meta-value {
+            color: var(--text-primary);
+        }
     </style>
 </head>
 <body>
@@ -769,6 +803,16 @@
                         Resume Session
                     </button>
                 </div>
+            </div>
+            <div class="conversation-meta" id="conversation-meta">
+                <span class="meta-badge" id="meta-agent" style="display: none;">
+                    <span class="meta-label">agent</span>
+                    <span class="meta-value" id="meta-agent-value"></span>
+                </span>
+                <span class="meta-badge" id="meta-model" style="display: none;">
+                    <span class="meta-label">model</span>
+                    <span class="meta-value" id="meta-model-value"></span>
+                </span>
             </div>
             <div class="incremental-info" id="incremental-info" style="display: none;">
                 <span id="incremental-info-text"></span>
@@ -1091,6 +1135,7 @@
             resumeBtn.disabled = !commit.has_conversation;
 
             if (!commit.has_conversation) {
+                document.getElementById('conversation-meta').classList.remove('visible');
                 document.getElementById('conversation-content').innerHTML = `
                     <div class="empty-state">
                         <div class="empty-state-icon">&#x1F4ED;</div>
@@ -1163,6 +1208,23 @@
 
         function renderConversation(data) {
             const content = document.getElementById('conversation-content');
+
+            // Update agent/model metadata badges
+            const metaBar = document.getElementById('conversation-meta');
+            const agentBadge = document.getElementById('meta-agent');
+            const modelBadge = document.getElementById('meta-model');
+            const agentVal = document.getElementById('meta-agent-value');
+            const modelVal = document.getElementById('meta-model-value');
+
+            const hasAgent = data.agent && data.agent !== '';
+            const hasModel = data.model && data.model !== '';
+
+            agentBadge.style.display = hasAgent ? 'inline-flex' : 'none';
+            modelBadge.style.display = hasModel ? 'inline-flex' : 'none';
+            metaBar.classList.toggle('visible', hasAgent || hasModel);
+
+            if (hasAgent) agentVal.textContent = data.agent;
+            if (hasModel) modelVal.textContent = data.model;
 
             if (!data.transcript || data.transcript.length === 0) {
                 content.innerHTML = `
