@@ -187,6 +187,20 @@ func ListBranches(repoDir string) ([]BranchInfo, error) {
 	return branches, nil
 }
 
+// MergeBase returns the best common ancestor (merge-base) of two refs.
+// If repoDir is non-empty, the git command runs in that directory.
+func MergeBase(repoDir, refA, refB string) (string, error) {
+	cmd := exec.Command("git", "merge-base", refA, refB)
+	if repoDir != "" {
+		cmd.Dir = repoDir
+	}
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
 // GetCommitInfo returns the commit message and author date for a commit
 func GetCommitInfo(commitSHA string) (message string, date string, err error) {
 	// Get commit message (first line)

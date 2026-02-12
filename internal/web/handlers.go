@@ -42,6 +42,7 @@ type GraphNode struct {
 	Parents         []string `json:"parents"`
 	HasConversation bool     `json:"has_conversation"`
 	Message         string   `json:"message"`
+	Date            string   `json:"date,omitempty"`
 }
 
 // BranchSummary represents a branch in the branches API response.
@@ -58,11 +59,18 @@ type BranchGraphData struct {
 	Branches []BranchGraphEntry `json:"branches"`
 }
 
+// ForkPoint describes where a branch diverged from another branch.
+type ForkPoint struct {
+	ParentBranch string `json:"parent_branch"`
+	CommitSHA    string `json:"commit_sha"`
+}
+
 // BranchGraphEntry holds graph nodes for a single branch.
 type BranchGraphEntry struct {
-	Name      string      `json:"name"`
-	IsCurrent bool        `json:"is_current"`
+	Name      string     `json:"name"`
+	IsCurrent bool       `json:"is_current"`
 	Nodes     []GraphNode `json:"nodes"`
+	ForkPoint *ForkPoint `json:"fork_point,omitempty"`
 }
 
 // writeJSONError writes a JSON error response with the given status code.
@@ -447,7 +455,7 @@ func getCommitList(limit int, repoDir string) ([]CommitData, error) {
 // getGraphData returns commit graph data
 func getGraphData(limit int, repoDir string) ([]GraphNode, error) {
 	cmd := exec.Command("git", "log", fmt.Sprintf("--max-count=%d", limit),
-		"--format=%H%x00%P%x00%s")
+		"--format=%H%x00%P%x00%s%x00%ci")
 	cmd.Dir = repoDir
 	output, err := cmd.Output()
 	if err != nil {
@@ -491,7 +499,7 @@ func getCommitListForRef(ref string, limit int, repoDir string) ([]CommitData, e
 // getGraphDataForRef returns commit graph data for a specific ref.
 func getGraphDataForRef(ref string, limit int, repoDir string) ([]GraphNode, error) {
 	cmd := exec.Command("git", "log", ref, fmt.Sprintf("--max-count=%d", limit),
-		"--format=%H%x00%P%x00%s")
+		"--format=%H%x00%P%x00%s%x00%ci")
 	cmd.Dir = repoDir
 	output, err := cmd.Output()
 	if err != nil {
@@ -509,7 +517,7 @@ func parseGraphNodes(output []byte) []GraphNode {
 		if line == "" {
 			continue
 		}
-		parts := strings.SplitN(line, fieldSep, 3)
+		parts := strings.SplitN(line, fieldSep, 4)
 		if len(parts) < 3 {
 			continue
 		}
@@ -519,11 +527,16 @@ func parseGraphNodes(output []byte) []GraphNode {
 			parents = strings.Split(parts[1], " ")
 		}
 
-		nodes = append(nodes, GraphNode{
+		node := GraphNode{
 			SHA:     parts[0],
 			Parents: parents,
 			Message: parts[2],
-		})
+		}
+		if len(parts) >= 4 {
+			node.Date = parts[3]
+		}
+
+		nodes = append(nodes, node)
 	}
 
 	return nodes
@@ -612,6 +625,47 @@ func (s *Server) handleBranchGraph(w http.ResponseWriter, r *http.Request) {
 			IsCurrent: b.IsCurrent,
 			Nodes:     nodes,
 		})
+	}
+
+	// Compute fork points: for each non-root branch, find where it diverged.
+	// Use the current branch (or first) as root; all others get fork_point relative to it.
+	rootIdx := 0
+	for i, e := range entries {
+		if e.IsCurrent {
+			rootIdx = i
+			break
+		}
+	}
+	for i := range entries {
+		if i == rootIdx {
+			continue
+		}
+		// First try merge-base with root branch
+		mb, err := git.MergeBase(s.repoDir, entries[i].Name, entries[rootIdx].Name)
+		if err == nil && mb != "" {
+			parent := entries[rootIdx].Name
+			// Check if a closer parent exists among other branches
+			for j := range entries {
+				if j == i || j == rootIdx {
+					continue
+				}
+				mb2, err2 := git.MergeBase(s.repoDir, entries[i].Name, entries[j].Name)
+				if err2 != nil || mb2 == "" {
+					continue
+				}
+				// If mb2 is a descendant of mb, it's a closer fork point
+				chk := exec.Command("git", "merge-base", "--is-ancestor", mb, mb2)
+				chk.Dir = s.repoDir
+				if chk.Run() == nil && mb2 != mb {
+					mb = mb2
+					parent = entries[j].Name
+				}
+			}
+			entries[i].ForkPoint = &ForkPoint{
+				ParentBranch: parent,
+				CommitSHA:    mb,
+			}
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

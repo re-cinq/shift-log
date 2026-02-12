@@ -88,68 +88,166 @@
             font-family: 'SF Mono', Monaco, 'Courier New', monospace;
         }
 
-        /* Overview container */
+        /* Overview container — scrollable viewport */
         #overview-container {
             flex: 1;
-            overflow-y: auto;
-            padding: 16px;
+            overflow: auto;
+            position: relative;
         }
 
         #overview-container.hidden { display: none; }
         #detail-container.hidden { display: none; }
 
-        .branch-lanes {
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
+        #overview-canvas {
+            padding: 0 24px 24px 24px;
         }
 
-        .branch-lane {
+        /* Column headers — sticky while scrolling */
+        .column-headers {
             display: flex;
-            align-items: center;
-            height: 56px;
-            padding: 0 12px;
-            border-radius: 6px;
+            gap: 0;
+            margin-bottom: 4px;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            background-color: var(--bg-primary);
+            padding-top: 24px;
+        }
+
+        .col-header {
+            width: 200px;
+            min-width: 200px;
+            padding: 10px 16px;
+            text-align: center;
+            border-bottom: 2px solid var(--border-color);
             cursor: pointer;
-            transition: background-color 0.2s;
         }
 
-        .branch-lane:hover {
+        .col-header:hover {
             background-color: var(--bg-secondary);
         }
 
-        .branch-lane-label {
-            width: 160px;
-            min-width: 160px;
-            font-size: 13px;
-            font-weight: 500;
+        .col-header-name {
+            font-size: 14px;
+            font-weight: 600;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-            padding-right: 12px;
         }
 
-        .branch-lane-label.current {
+        .col-header-name.current {
             color: var(--accent);
         }
 
-        .branch-lane-svg {
-            flex: 1;
-            height: 40px;
-            overflow: hidden;
-        }
-
-        .branch-lane-meta {
-            width: 80px;
-            min-width: 80px;
-            text-align: right;
-            font-size: 12px;
+        .col-header-count {
+            font-size: 11px;
             color: var(--text-secondary);
+            margin-top: 2px;
         }
 
-        .lane-conv-count {
-            font-weight: 600;
-            color: var(--text-primary);
+        /* Commit grid */
+        .grid-wrapper {
+            position: relative;
+        }
+
+        .commit-grid {
+            display: grid;
+            gap: 0;
+        }
+
+        .grid-cell {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 3px 10px;
+        }
+
+        /* Scroll indicators — sticky at bottom of viewport */
+        .scroll-indicators {
+            position: sticky;
+            bottom: 0;
+            display: flex;
+            z-index: 10;
+            pointer-events: none;
+            background: linear-gradient(transparent, var(--bg-primary) 60%);
+            padding: 20px 0 8px 0;
+        }
+
+        .scroll-arrow {
+            width: 200px;
+            min-width: 200px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-secondary);
+            font-size: 13px;
+            opacity: 0;
+            transition: opacity 0.2s;
+            gap: 4px;
+        }
+
+        .scroll-arrow.visible {
+            opacity: 0.6;
+        }
+
+        /* Down-arrow hints in empty grid cells */
+        .grid-cell-hint {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-secondary);
+            font-size: 14px;
+            opacity: 0.12;
+        }
+
+        /* Commit box */
+        .commit-box {
+            width: 180px;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            line-height: 1.4;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            cursor: pointer;
+            position: relative;
+            z-index: 1;
+        }
+
+        .commit-box:hover {
+            filter: brightness(1.2);
+        }
+
+        .commit-box.has-conv {
+            border-width: 2px;
+            border-style: solid;
+        }
+
+        .commit-box.no-conv {
+            border-width: 1px;
+            border-style: solid;
+            opacity: 0.5;
+        }
+
+        .commit-box.no-conv:hover {
+            opacity: 0.75;
+        }
+
+        .commit-box-sha {
+            font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+            font-size: 10px;
+            opacity: 0.7;
+            margin-bottom: 2px;
+        }
+
+        .commit-box-msg {
+            overflow: hidden;
+            display: -webkit-box;
+            -webkit-line-clamp: 1;
+            -webkit-box-orient: vertical;
         }
 
         /* Detail container (existing layout) */
@@ -628,16 +726,17 @@
         <span class="navbar-brand">Claudit</span>
         <div class="navbar-tabs" id="navbar-tabs">
             <button class="navbar-tab active" id="nav-branches" onclick="switchView('overview')">Branches</button>
-            <button class="navbar-tab" id="nav-detail" onclick="switchView('detail')">Detail</button>
         </div>
         <span class="navbar-branch-indicator" id="branch-indicator"></span>
     </nav>
 
-    <!-- Overview container (Concourse-style lanes) -->
+    <!-- Overview container (vertical columns) -->
     <div id="overview-container">
-        <div class="branch-lanes" id="branch-lanes">
-            <div class="loading">
-                <div class="spinner"></div>
+        <div id="overview-canvas">
+            <div id="overview-content">
+                <div class="loading">
+                    <div class="spinner"></div>
+                </div>
             </div>
         </div>
     </div>
@@ -704,20 +803,20 @@
             const overviewEl = document.getElementById('overview-container');
             const detailEl = document.getElementById('detail-container');
             const navBranches = document.getElementById('nav-branches');
-            const navDetail = document.getElementById('nav-detail');
             const indicator = document.getElementById('branch-indicator');
 
             if (view === 'overview') {
                 overviewEl.classList.remove('hidden');
                 detailEl.classList.add('hidden');
                 navBranches.classList.add('active');
-                navDetail.classList.remove('active');
                 indicator.textContent = '';
+                // Reset scroll position
+                const oc = document.getElementById('overview-container');
+                if (oc) { oc.scrollTop = 0; oc.scrollLeft = 0; }
             } else {
                 overviewEl.classList.add('hidden');
                 detailEl.classList.remove('hidden');
                 navBranches.classList.remove('active');
-                navDetail.classList.add('active');
                 indicator.textContent = currentBranch ? currentBranch : '';
             }
         }
@@ -734,6 +833,16 @@
             fetchCommitsForBranch(branchName).then(() => {
                 selectCommit(sha);
             });
+        }
+
+        function scrollToBranchStart(branchName) {
+            const selector = `.commit-box[data-branch="${CSS.escape(branchName)}"]`;
+            const box = document.querySelector(selector);
+            if (box) {
+                box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                box.style.outline = '2px solid var(--accent)';
+                setTimeout(() => { box.style.outline = ''; }, 1500);
+            }
         }
 
         // --- Overview mode ---
@@ -761,73 +870,157 @@
             }
         }
 
+        const COL_WIDTH = 200; // px per branch column
+        const ROW_HEIGHT = 76; // px per timeline row
+
+        // Topological sort: children before parents (newest at top).
+        // Unrelated commits sorted by date.
+        function topoSortNewestFirst(allNodes) {
+            const nodeMap = new Map();
+            for (const n of allNodes) nodeMap.set(n.sha, n);
+
+            // childrenOf[sha] = SHAs that list sha as a parent
+            const childrenOf = new Map();
+            for (const n of allNodes) {
+                for (const p of (n.parents || [])) {
+                    if (nodeMap.has(p)) {
+                        if (!childrenOf.has(p)) childrenOf.set(p, []);
+                        childrenOf.get(p).push(n.sha);
+                    }
+                }
+            }
+
+            // In-degree = number of children in our set
+            const inDeg = new Map();
+            for (const n of allNodes) {
+                inDeg.set(n.sha, (childrenOf.get(n.sha) || []).length);
+            }
+
+            // Start with branch tips (no children)
+            let queue = [];
+            for (const n of allNodes) {
+                if (inDeg.get(n.sha) === 0) queue.push(n.sha);
+            }
+            queue.sort((a, b) => new Date(nodeMap.get(b).date) - new Date(nodeMap.get(a).date));
+
+            const result = [];
+            while (queue.length > 0) {
+                const sha = queue.shift();
+                result.push(sha);
+                const node = nodeMap.get(sha);
+                for (const p of (node.parents || [])) {
+                    if (!inDeg.has(p)) continue;
+                    inDeg.set(p, inDeg.get(p) - 1);
+                    if (inDeg.get(p) === 0) queue.push(p);
+                }
+                // Re-sort to keep newest-first tie-breaking
+                queue.sort((a, b) => new Date(nodeMap.get(b).date) - new Date(nodeMap.get(a).date));
+            }
+            return result;
+        }
+
         function renderOverview(graphData) {
-            const container = document.getElementById('branch-lanes');
+            const container = document.getElementById('overview-content');
 
             if (!graphData.branches || graphData.branches.length === 0) {
                 container.innerHTML = '<div class="empty-state"><p>No branches found</p></div>';
                 return;
             }
 
-            container.innerHTML = graphData.branches.map((branch, idx) => {
+            lastGraphData = graphData;
+
+            // 1. Build unified node map
+            const nodeMap = new Map();
+            for (const branch of graphData.branches) {
+                for (const node of branch.nodes) {
+                    if (!nodeMap.has(node.sha)) {
+                        nodeMap.set(node.sha, node);
+                    }
+                }
+            }
+
+            // 2. Topological sort (newest first)
+            const timeline = topoSortNewestFirst([...nodeMap.values()]);
+            const rowOf = new Map();
+            timeline.forEach((sha, idx) => rowOf.set(sha, idx));
+
+            const numCols = graphData.branches.length;
+            const numRows = timeline.length;
+
+            // 3. Column headers
+            const headersHtml = graphData.branches.map((branch, idx) => {
                 const color = LANE_COLORS[idx % LANE_COLORS.length];
                 const summary = branchData.find(b => b.name === branch.name);
                 const convCount = summary ? summary.conversation_count : 0;
-                const labelClass = branch.is_current ? 'branch-lane-label current' : 'branch-lane-label';
-
-                return `
-                    <div class="branch-lane" onclick="drillIntoBranch('${escapeAttr(branch.name)}')">
-                        <div class="${labelClass}" title="${escapeAttr(branch.name)}">${escapeHtml(branch.name)}${branch.is_current ? ' *' : ''}</div>
-                        <div class="branch-lane-svg">
-                            ${renderLaneSVG(branch.nodes, color)}
-                        </div>
-                        <div class="branch-lane-meta">
-                            <span class="lane-conv-count">${convCount}</span> conv
-                        </div>
-                    </div>
-                `;
+                const nameClass = branch.is_current ? 'col-header-name current' : 'col-header-name';
+                const branchNameAttr = escapeAttr(branch.name);
+                return `<div class="col-header" onclick="scrollToBranchStart('${branchNameAttr}')" style="border-bottom-color:${color}">
+                    <div class="${nameClass}">${escapeHtml(branch.name)}${branch.is_current ? ' *' : ''}</div>
+                    <div class="col-header-count">${convCount} conversation${convCount !== 1 ? 's' : ''}</div>
+                </div>`;
             }).join('');
-        }
 
-        function renderLaneSVG(nodes, color) {
-            if (!nodes || nodes.length === 0) {
-                return '<svg width="100%" height="40"></svg>';
+            // 4. Grid cells — one per (branch, row) where branch has that commit
+            let cellsHtml = '';
+            for (const branch of graphData.branches) {
+                const colIdx = graphData.branches.indexOf(branch);
+                const color = LANE_COLORS[colIdx % LANE_COLORS.length];
+                const branchNameAttr = escapeAttr(branch.name);
+
+                for (const node of branch.nodes) {
+                    const row = rowOf.get(node.sha);
+                    const shortSha = node.sha.substring(0, 7);
+                    const hasConv = node.has_conversation;
+                    const cls = hasConv ? 'commit-box has-conv' : 'commit-box no-conv';
+                    const bg = hasConv ? color + '22' : 'transparent';
+                    const borderColor = hasConv ? color : color + '66';
+                    const textColor = hasConv ? 'var(--text-primary)' : 'var(--text-secondary)';
+
+                    cellsHtml += `<div class="grid-cell" style="grid-column:${colIdx + 1};grid-row:${row + 1}">
+                        <div class="${cls}" data-sha="${node.sha}" data-branch="${branchNameAttr}" data-col="${colIdx}" data-row="${row}" style="background:${bg};border-color:${borderColor};color:${textColor}" title="${escapeAttr(node.message)}" onclick="event.stopPropagation();drillIntoCommit('${branchNameAttr}','${node.sha}')">
+                            <div class="commit-box-sha" style="color:${color}">${shortSha}</div>
+                            <div class="commit-box-msg">${escapeHtml(node.message)}</div>
+                        </div>
+                    </div>`;
+                }
             }
 
-            const count = nodes.length;
-            // Nodes are newest-first from git log; reverse so oldest is on the left
-            const reversed = [...nodes].reverse();
-            const spacing = 28;
-            const svgWidth = Math.max(count * spacing + 20, 60);
-            const cy = 20;
-
-            let circles = '';
-            let tooltips = '';
-
-            reversed.forEach((node, i) => {
-                const cx = 14 + i * spacing;
-                const r = node.has_conversation ? 7 : 5;
-                const shortSha = node.sha.substring(0, 7);
-                const msg = escapeAttr(node.message.substring(0, 50));
-                const branchName = ''; // passed through parent onclick
-
-                if (node.has_conversation) {
-                    circles += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${color}" stroke="${color}" stroke-width="2" data-sha="${node.sha}">
-                        <title>${shortSha} - ${msg}</title>
-                    </circle>`;
-                } else {
-                    circles += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${color}" stroke-width="2" stroke-opacity="0.5" data-sha="${node.sha}">
-                        <title>${shortSha} - ${msg}</title>
-                    </circle>`;
+            // 5. Down-arrow hints in empty cells where a commit exists below
+            for (const branch of graphData.branches) {
+                const colIdx = graphData.branches.indexOf(branch);
+                const occupiedRows = new Set(
+                    branch.nodes.map(n => rowOf.get(n.sha)).filter(r => r !== undefined)
+                );
+                if (occupiedRows.size === 0) continue;
+                const maxRow = Math.max(...occupiedRows);
+                for (let r = 0; r < maxRow; r++) {
+                    if (!occupiedRows.has(r)) {
+                        cellsHtml += `<div class="grid-cell-hint" style="grid-column:${colIdx + 1};grid-row:${r + 1}">&#x25BC;</div>`;
+                    }
                 }
+            }
+
+            // Build scroll indicator arrows (one per column)
+            const arrowsHtml = graphData.branches.map((branch, idx) => {
+                const ba = escapeAttr(branch.name);
+                return `<div class="scroll-arrow" data-col="${idx}" data-branch="${ba}">&#x25BC; more</div>`;
+            }).join('');
+
+            container.innerHTML = `
+                <div class="column-headers">${headersHtml}</div>
+                <div class="grid-wrapper">
+                    <div class="commit-grid" style="grid-template-columns:repeat(${numCols},${COL_WIDTH}px);grid-auto-rows:${ROW_HEIGHT}px">
+                        ${cellsHtml}
+                    </div>
+                    <svg class="grid-connectors" style="position:absolute;top:0;left:0;width:${numCols * COL_WIDTH}px;height:${numRows * ROW_HEIGHT}px;pointer-events:none;overflow:visible"></svg>
+                </div>
+                <div class="scroll-indicators" id="scroll-indicators">${arrowsHtml}</div>
+            `;
+
+            requestAnimationFrame(() => {
+                drawConnectors(graphData, rowOf);
+                setupScrollIndicators();
             });
-
-            // Horizontal connecting line
-            const lineX1 = 14;
-            const lineX2 = 14 + (count - 1) * spacing;
-            const line = count > 1 ? `<line x1="${lineX1}" y1="${cy}" x2="${lineX2}" y2="${cy}" stroke="${color}" stroke-width="2" stroke-opacity="0.4"/>` : '';
-
-            return `<svg width="${svgWidth}" height="40" style="display:block">${line}${circles}</svg>`;
         }
 
         // --- Detail mode ---
@@ -1270,6 +1463,166 @@
                 switchView('overview');
                 fetchBranchGraph();
             }
+        }
+
+        let lastGraphData = null;
+
+        // --- Draw connector lines (vertical within columns + horizontal fork lines) ---
+
+        function drawConnectors(graphData, rowOf) {
+            const svg = document.querySelector('.grid-connectors');
+            if (!svg) return;
+            svg.innerHTML = '';
+
+            const branches = graphData.branches || [];
+
+            // For each branch column, draw vertical lines between consecutive commits
+            branches.forEach((branch, colIdx) => {
+                const color = LANE_COLORS[colIdx % LANE_COLORS.length];
+                const x = colIdx * COL_WIDTH + COL_WIDTH / 2;
+
+                // Get this branch's commits sorted by row (newest first = lowest row number)
+                const rows = branch.nodes
+                    .map(n => rowOf.get(n.sha))
+                    .filter(r => r !== undefined)
+                    .sort((a, b) => a - b);
+
+                for (let i = 0; i < rows.length - 1; i++) {
+                    const r1 = rows[i];     // newer (higher up)
+                    const r2 = rows[i + 1]; // older (lower down)
+                    const y1 = r1 * ROW_HEIGHT + ROW_HEIGHT - 3; // bottom of newer cell
+                    const y2 = r2 * ROW_HEIGHT + 3;              // top of older cell
+
+                    // Vertical line from older toward newer
+                    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                    line.setAttribute('x1', x);
+                    line.setAttribute('y1', y2);
+                    line.setAttribute('x2', x);
+                    line.setAttribute('y2', y1);
+                    line.setAttribute('stroke', color);
+                    line.setAttribute('stroke-width', '2');
+                    line.setAttribute('stroke-opacity', '0.4');
+                    svg.appendChild(line);
+
+                    // Arrowhead pointing up (toward newer commit)
+                    const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    arrow.setAttribute('d', `M ${x - 4} ${y1 + 7} L ${x} ${y1} L ${x + 4} ${y1 + 7}`);
+                    arrow.setAttribute('fill', 'none');
+                    arrow.setAttribute('stroke', color);
+                    arrow.setAttribute('stroke-width', '2');
+                    arrow.setAttribute('stroke-opacity', '0.5');
+                    arrow.setAttribute('stroke-linecap', 'round');
+                    arrow.setAttribute('stroke-linejoin', 'round');
+                    svg.appendChild(arrow);
+                }
+            });
+
+            // Fork connectors: from side of parent box to bottom of child's first unique commit
+            const BOX_HALF = 90; // half of 180px box width
+
+            branches.forEach((branch, colIdx) => {
+                if (!branch.fork_point) return;
+                const forkSHA = branch.fork_point.commit_sha;
+                const parentName = branch.fork_point.parent_branch;
+                const parentIdx = branches.findIndex(b => b.name === parentName);
+                if (parentIdx < 0) return;
+
+                const forkRow = rowOf.get(forkSHA);
+                if (forkRow === undefined) return;
+
+                const childColor = LANE_COLORS[colIdx % LANE_COLORS.length];
+                const parentCX = parentIdx * COL_WIDTH + COL_WIDTH / 2;
+                const childCX = colIdx * COL_WIDTH + COL_WIDTH / 2;
+
+                // Find the parent branch box at or nearest the fork row
+                const parentBranch = branches[parentIdx];
+                const parentNodeRows = parentBranch.nodes
+                    .map(n => rowOf.get(n.sha))
+                    .filter(r => r !== undefined)
+                    .sort((a, b) => a - b);
+                // Nearest parent box at or just above fork row
+                let startRow = forkRow;
+                const atOrAbove = parentNodeRows.filter(r => r <= forkRow);
+                if (atOrAbove.length > 0) {
+                    startRow = atOrAbove[atOrAbove.length - 1]; // largest row <= forkRow
+                } else if (parentNodeRows.length > 0) {
+                    startRow = parentNodeRows[parentNodeRows.length - 1];
+                }
+
+                // Find child's first unique commit (closest to fork, above fork row)
+                const childNodeRows = branch.nodes
+                    .map(n => rowOf.get(n.sha))
+                    .filter(r => r !== undefined)
+                    .sort((a, b) => a - b);
+                const uniqueAboveFork = childNodeRows.filter(r => r < forkRow);
+                let endRow;
+                if (uniqueAboveFork.length > 0) {
+                    endRow = uniqueAboveFork[uniqueAboveFork.length - 1]; // largest row < forkRow
+                } else if (childNodeRows.length > 0) {
+                    endRow = childNodeRows[0]; // fallback: topmost child commit
+                } else {
+                    return;
+                }
+
+                // Start: side of child box facing parent, at child's Y midpoint
+                const x1 = parentIdx < colIdx
+                    ? childCX - BOX_HALF    // parent is left, child's left edge
+                    : childCX + BOX_HALF;   // parent is right, child's right edge
+                const y1 = endRow * ROW_HEIGHT + ROW_HEIGHT / 2;
+
+                // End: center X of parent box, at its bottom
+                const x2 = parentCX;
+                const y2 = startRow * ROW_HEIGHT + ROW_HEIGHT - 3;
+
+                // L-path: horizontal from child side to parent center, vertical to parent bottom
+                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                path.setAttribute('d', `M ${x1} ${y1} L ${x2} ${y1} L ${x2} ${y2}`);
+                path.setAttribute('fill', 'none');
+                path.setAttribute('stroke', childColor);
+                path.setAttribute('stroke-width', '2');
+                path.setAttribute('stroke-opacity', '0.4');
+                path.setAttribute('stroke-dasharray', '4 3');
+                svg.appendChild(path);
+            });
+        }
+
+        // --- Scroll indicators for overview columns ---
+
+        function setupScrollIndicators() {
+            const container = document.getElementById('overview-container');
+            if (!container || container._scrollSetup) return;
+            container._scrollSetup = true;
+            container.addEventListener('scroll', updateScrollIndicators);
+            updateScrollIndicators();
+        }
+
+        function updateScrollIndicators() {
+            const container = document.getElementById('overview-container');
+            const arrows = document.querySelectorAll('.scroll-arrow');
+            if (!container || !arrows.length) return;
+
+            const containerRect = container.getBoundingClientRect();
+
+            arrows.forEach(arrow => {
+                const branchName = arrow.dataset.branch;
+                const selector = `.commit-box[data-branch="${CSS.escape(branchName)}"]`;
+                const boxes = document.querySelectorAll(selector);
+
+                if (!boxes.length) {
+                    arrow.classList.remove('visible');
+                    return;
+                }
+
+                // Check if any commit box is below the visible area
+                let anyBelow = false;
+                for (const box of boxes) {
+                    if (box.getBoundingClientRect().top > containerRect.bottom) {
+                        anyBelow = true;
+                        break;
+                    }
+                }
+                arrow.classList.toggle('visible', anyBelow);
+            });
         }
 
         init();

@@ -1024,6 +1024,36 @@ func TestHandleBranchGraph(t *testing.T) {
 		}
 	})
 
+	t.Run("includes fork point for feature branch", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/graph/branches?per_branch=10", nil)
+		w := httptest.NewRecorder()
+		srv.mux.ServeHTTP(w, req)
+
+		var data BranchGraphData
+		decodeJSON(t, w, &data)
+
+		// Find the feature-x branch entry
+		var featureEntry *BranchGraphEntry
+		for i := range data.Branches {
+			if data.Branches[i].Name == "feature-x" {
+				featureEntry = &data.Branches[i]
+				break
+			}
+		}
+		if featureEntry == nil {
+			t.Fatal("feature-x branch not found")
+		}
+		if featureEntry.ForkPoint == nil {
+			t.Fatal("feature-x should have a fork_point")
+		}
+		if featureEntry.ForkPoint.ParentBranch != "master" {
+			t.Errorf("fork parent: want master, got %s", featureEntry.ForkPoint.ParentBranch)
+		}
+		if featureEntry.ForkPoint.CommitSHA == "" {
+			t.Error("fork_point commit_sha should not be empty")
+		}
+	})
+
 	t.Run("method not allowed", func(t *testing.T) {
 		req := httptest.NewRequest("POST", "/api/graph/branches", nil)
 		w := httptest.NewRecorder()
