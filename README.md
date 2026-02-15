@@ -32,6 +32,14 @@ Now work with your coding agent as you would normally. Whenever you or the agent
 claudit list
 ```
 
+**Search through past conversations:**
+
+```bash
+claudit search "authentication"          # Text search
+claudit search --agent claude --branch main  # Filter by metadata
+claudit search "jwt" --regex --context 2     # Regex with context lines
+```
+
 **Get a quick summary of a conversation:**
 
 ```bash
@@ -94,6 +102,7 @@ To view notes directly with git: `git log --notes=claude-conversations`
 | ------------------------- | --------------------------------------- |
 | `claudit init`            | Initialize claudit in the current repo  |
 | `claudit list`            | List commits with stored conversations  |
+| `claudit search [query]`  | Search through stored conversations     |
 | `claudit show [ref]`      | Show conversation history for a commit  |
 | `claudit summarise [ref]` | Summarise a conversation using your coding agent |
 | `claudit resume <commit>` | Resume a coding agent session from a commit |
