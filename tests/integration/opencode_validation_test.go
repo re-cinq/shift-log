@@ -260,132 +260,214 @@ var _ = Describe("OpenCode Validation", func() {
 			Expect(dataDir).To(BeADirectory(),
 				"Custom data dir not created. OpenCode may not respect XDG_DATA_HOME.")
 
+			// OpenCode v1.2+ uses SQLite (opencode.db) instead of flat file dirs.
+			// Accept either flat dirs or SQLite database.
+			hasFlatDirs := true
 			for _, subdir := range []string{"storage", "storage/session", "storage/message"} {
 				path := filepath.Join(dataDir, subdir)
-				Expect(path).To(BeADirectory(),
-					"Expected directory %s not found in data dir", subdir)
+				if _, err := os.Stat(path); os.IsNotExist(err) {
+					hasFlatDirs = false
+					break
+				}
 			}
 
-			GinkgoWriter.Printf("Confirmed: XDG_DATA_HOME respected at %s\n", dataDir)
+			hasSQLite := false
+			dbPath := filepath.Join(dataDir, "opencode.db")
+			if _, err := os.Stat(dbPath); err == nil {
+				hasSQLite = true
+			}
+
+			Expect(hasFlatDirs || hasSQLite).To(BeTrue(),
+				"Neither flat storage dirs nor opencode.db found in data dir %s", dataDir)
+
+			if hasSQLite {
+				GinkgoWriter.Printf("Confirmed: XDG_DATA_HOME respected at %s (SQLite mode)\n", dataDir)
+			} else {
+				GinkgoWriter.Printf("Confirmed: XDG_DATA_HOME respected at %s (flat file mode)\n", dataDir)
+			}
 		})
 
 		It("should use root commit hash as project ID", func() {
+			// Try flat file storage first
 			sessionDir := filepath.Join(dataDir, "storage", "session")
-			entries, err := os.ReadDir(sessionDir)
-			Expect(err).NotTo(HaveOccurred(), "Failed to read session dir")
-
 			projectSessionDir := filepath.Join(sessionDir, expectedProjectID)
-			if _, err := os.Stat(projectSessionDir); os.IsNotExist(err) {
-				var found []string
-				for _, e := range entries {
-					found = append(found, e.Name())
-				}
-				Fail("No session directory matching root commit hash.\n" +
-					"Expected project ID: " + expectedProjectID[:12] + "\n" +
-					"Found entries: " + strings.Join(found, ", "))
-			}
+			if _, err := os.Stat(projectSessionDir); err == nil {
+				// Flat file mode: verify session file
+				GinkgoWriter.Printf("Confirmed: session stored under root commit hash %s (flat files)\n", expectedProjectID[:12])
 
-			GinkgoWriter.Printf("Confirmed: session stored under root commit hash %s\n", expectedProjectID[:12])
+				sessionEntries, err := os.ReadDir(projectSessionDir)
+				Expect(err).NotTo(HaveOccurred())
 
-			// Read session file to verify projectID field
-			sessionEntries, err := os.ReadDir(projectSessionDir)
-			Expect(err).NotTo(HaveOccurred())
-
-			for _, e := range sessionEntries {
-				if !strings.HasSuffix(e.Name(), ".json") {
-					continue
-				}
-				data, err := os.ReadFile(filepath.Join(projectSessionDir, e.Name()))
-				if err != nil {
-					continue
-				}
-				var session map[string]interface{}
-				if err := json.Unmarshal(data, &session); err != nil {
-					continue
-				}
-				if pid, ok := session["projectID"]; ok {
-					pidStr, _ := pid.(string)
-					Expect(pidStr).To(Equal(expectedProjectID))
-					GinkgoWriter.Println("Confirmed: session file projectID matches root commit")
-				}
-				break
-			}
-		})
-
-		It("should store sessions at expected paths", func() {
-			projectSessionDir := filepath.Join(dataDir, "storage", "session", expectedProjectID)
-			entries, err := os.ReadDir(projectSessionDir)
-			if err != nil {
-				Skip("Could not read session dir: " + err.Error())
-			}
-
-			for _, e := range entries {
-				if !strings.HasSuffix(e.Name(), ".json") {
-					continue
-				}
-				data, err := os.ReadFile(filepath.Join(projectSessionDir, e.Name()))
-				if err != nil {
-					continue
-				}
-
-				var session map[string]interface{}
-				Expect(json.Unmarshal(data, &session)).To(Succeed(),
-					"Session file %s is not valid JSON", e.Name())
-
-				Expect(session).To(HaveKey("id"),
-					"Session file missing 'id' field (have: %v)", mapKeys(session))
-
-				GinkgoWriter.Printf("Session file %s fields: %v\n", e.Name(), mapKeys(session))
-
-				sessionID, _ := session["id"].(string)
-				expectedName := sessionID + ".json"
-				if e.Name() != expectedName {
-					GinkgoWriter.Printf("Note: session filename %q != id+.json %q\n", e.Name(), expectedName)
-				}
-				break
-			}
-		})
-
-		It("should store messages at expected paths", func() {
-			msgBaseDir := filepath.Join(dataDir, "storage", "message")
-			entries, err := os.ReadDir(msgBaseDir)
-			Expect(err).NotTo(HaveOccurred(), "Failed to read message dir")
-			Expect(entries).NotTo(BeEmpty(), "No message session directories found")
-
-			for _, e := range entries {
-				if !e.IsDir() {
-					continue
-				}
-				sessionMsgDir := filepath.Join(msgBaseDir, e.Name())
-				msgEntries, err := os.ReadDir(sessionMsgDir)
-				if err != nil {
-					continue
-				}
-				GinkgoWriter.Printf("Session %s: %d message files\n", e.Name(), len(msgEntries))
-
-				for _, me := range msgEntries {
-					if !strings.HasSuffix(me.Name(), ".json") {
+				for _, e := range sessionEntries {
+					if !strings.HasSuffix(e.Name(), ".json") {
 						continue
 					}
-					data, err := os.ReadFile(filepath.Join(sessionMsgDir, me.Name()))
+					data, err := os.ReadFile(filepath.Join(projectSessionDir, e.Name()))
 					if err != nil {
 						continue
 					}
-					var msg map[string]interface{}
-					Expect(json.Unmarshal(data, &msg)).To(Succeed(),
-						"Message %s is not valid JSON", me.Name())
-
-					hasRole := msg["role"] != nil
-					hasType := msg["type"] != nil
-					Expect(hasRole || hasType).To(BeTrue(),
-						"Message %s has neither 'role' nor 'type' field (keys: %v)",
-						me.Name(), mapKeys(msg))
-
-					GinkgoWriter.Printf("Message format fields: %v\n", mapKeys(msg))
+					var session map[string]interface{}
+					if err := json.Unmarshal(data, &session); err != nil {
+						continue
+					}
+					if pid, ok := session["projectID"]; ok {
+						pidStr, _ := pid.(string)
+						Expect(pidStr).To(Equal(expectedProjectID))
+						GinkgoWriter.Println("Confirmed: session file projectID matches root commit")
+					}
 					break
 				}
-				break
+				return
 			}
+
+			// SQLite mode: query the database
+			dbPath := filepath.Join(dataDir, "opencode.db")
+			if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+				Fail("Neither flat session dir nor opencode.db found.\n" +
+					"Expected project ID: " + expectedProjectID[:12])
+			}
+
+			cmd := exec.Command("sqlite3", dbPath,
+				"SELECT project_id FROM session LIMIT 1;")
+			output, err := cmd.Output()
+			Expect(err).NotTo(HaveOccurred(), "Failed to query session from SQLite")
+
+			foundProjectID := strings.TrimSpace(string(output))
+			Expect(foundProjectID).To(Equal(expectedProjectID),
+				"SQLite session project_id does not match root commit hash")
+
+			GinkgoWriter.Printf("Confirmed: session stored with project_id=%s (SQLite)\n", expectedProjectID[:12])
+		})
+
+		It("should store sessions at expected paths", func() {
+			// Try flat file storage first
+			projectSessionDir := filepath.Join(dataDir, "storage", "session", expectedProjectID)
+			entries, err := os.ReadDir(projectSessionDir)
+			if err == nil {
+				// Flat file mode
+				for _, e := range entries {
+					if !strings.HasSuffix(e.Name(), ".json") {
+						continue
+					}
+					data, err := os.ReadFile(filepath.Join(projectSessionDir, e.Name()))
+					if err != nil {
+						continue
+					}
+
+					var session map[string]interface{}
+					Expect(json.Unmarshal(data, &session)).To(Succeed(),
+						"Session file %s is not valid JSON", e.Name())
+
+					Expect(session).To(HaveKey("id"),
+						"Session file missing 'id' field (have: %v)", mapKeys(session))
+
+					GinkgoWriter.Printf("Session file %s fields: %v\n", e.Name(), mapKeys(session))
+
+					sessionID, _ := session["id"].(string)
+					expectedName := sessionID + ".json"
+					if e.Name() != expectedName {
+						GinkgoWriter.Printf("Note: session filename %q != id+.json %q\n", e.Name(), expectedName)
+					}
+					break
+				}
+				return
+			}
+
+			// SQLite mode: verify session exists with required fields
+			dbPath := filepath.Join(dataDir, "opencode.db")
+			if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+				Skip("Neither flat session dir nor opencode.db found")
+			}
+
+			cmd := exec.Command("sqlite3", "-json", dbPath,
+				"SELECT id, project_id FROM session LIMIT 1;")
+			output, err := cmd.Output()
+			Expect(err).NotTo(HaveOccurred(), "Failed to query sessions from SQLite")
+
+			var sessions []map[string]interface{}
+			Expect(json.Unmarshal(output, &sessions)).To(Succeed(),
+				"SQLite session query did not return valid JSON")
+			Expect(sessions).NotTo(BeEmpty(), "No sessions found in SQLite database")
+
+			session := sessions[0]
+			Expect(session).To(HaveKey("id"), "Session missing 'id' field")
+			GinkgoWriter.Printf("SQLite session fields: %v\n", mapKeys(session))
+		})
+
+		It("should store messages at expected paths", func() {
+			// Try flat file storage first
+			msgBaseDir := filepath.Join(dataDir, "storage", "message")
+			entries, err := os.ReadDir(msgBaseDir)
+			if err == nil && len(entries) > 0 {
+				// Flat file mode
+				for _, e := range entries {
+					if !e.IsDir() {
+						continue
+					}
+					sessionMsgDir := filepath.Join(msgBaseDir, e.Name())
+					msgEntries, err := os.ReadDir(sessionMsgDir)
+					if err != nil {
+						continue
+					}
+					GinkgoWriter.Printf("Session %s: %d message files\n", e.Name(), len(msgEntries))
+
+					for _, me := range msgEntries {
+						if !strings.HasSuffix(me.Name(), ".json") {
+							continue
+						}
+						data, err := os.ReadFile(filepath.Join(sessionMsgDir, me.Name()))
+						if err != nil {
+							continue
+						}
+						var msg map[string]interface{}
+						Expect(json.Unmarshal(data, &msg)).To(Succeed(),
+							"Message %s is not valid JSON", me.Name())
+
+						hasRole := msg["role"] != nil
+						hasType := msg["type"] != nil
+						Expect(hasRole || hasType).To(BeTrue(),
+							"Message %s has neither 'role' nor 'type' field (keys: %v)",
+							me.Name(), mapKeys(msg))
+
+						GinkgoWriter.Printf("Message format fields: %v\n", mapKeys(msg))
+						break
+					}
+					break
+				}
+				return
+			}
+
+			// SQLite mode: verify messages exist
+			dbPath := filepath.Join(dataDir, "opencode.db")
+			if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+				Skip("Neither flat message dirs nor opencode.db found")
+			}
+
+			cmd := exec.Command("sqlite3", dbPath,
+				"SELECT COUNT(*) FROM message;")
+			output, err := cmd.Output()
+			Expect(err).NotTo(HaveOccurred(), "Failed to query messages from SQLite")
+
+			countStr := strings.TrimSpace(string(output))
+			GinkgoWriter.Printf("SQLite message count: %s\n", countStr)
+			Expect(countStr).NotTo(Equal("0"), "No messages found in SQLite database")
+
+			// Verify message data has expected structure
+			cmd = exec.Command("sqlite3", dbPath,
+				"SELECT data FROM message LIMIT 1;")
+			output, err = cmd.Output()
+			Expect(err).NotTo(HaveOccurred(), "Failed to read message data from SQLite")
+
+			var msg map[string]interface{}
+			Expect(json.Unmarshal(output, &msg)).To(Succeed(),
+				"Message data is not valid JSON")
+
+			hasRole := msg["role"] != nil
+			hasType := msg["type"] != nil
+			Expect(hasRole || hasType).To(BeTrue(),
+				"Message has neither 'role' nor 'type' field (keys: %v)", mapKeys(msg))
+
+			GinkgoWriter.Printf("SQLite message format fields: %v\n", mapKeys(msg))
 		})
 	})
 })

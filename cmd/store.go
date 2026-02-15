@@ -104,7 +104,7 @@ func runHookStore() error {
 		return nil
 	}
 
-	return storeConversation(ag, hookData.SessionID, hookData.TranscriptPath)
+	return storeConversation(ag, hookData.SessionID, hookData.TranscriptPath, hookData.TranscriptData)
 }
 
 // runManualStore handles the manual (post-commit hook) mode.
@@ -143,11 +143,12 @@ func runManualStore() error {
 	}
 
 	cli.LogDebug("store: found session %s", agentSession.SessionID)
-	return storeConversation(ag, agentSession.SessionID, agentSession.TranscriptPath)
+	return storeConversation(ag, agentSession.SessionID, agentSession.TranscriptPath, agentSession.TranscriptData)
 }
 
 // storeConversation stores a conversation for the HEAD commit with duplicate detection.
-func storeConversation(ag agent.Agent, sessionID, transcriptPath string) error {
+// When transcriptData is non-empty, it is used directly instead of reading from transcriptPath.
+func storeConversation(ag agent.Agent, sessionID, transcriptPath string, transcriptData []byte) error {
 	headCommit, err := git.GetHeadCommit()
 	if err != nil {
 		return fmt.Errorf("failed to get HEAD commit: %w", err)
@@ -169,15 +170,20 @@ func storeConversation(ag agent.Agent, sessionID, transcriptPath string) error {
 		}
 	}
 
-	if transcriptPath == "" {
-		return fmt.Errorf("no transcript path provided")
-	}
+	// Use inline transcript data if provided, otherwise read from path
+	if len(transcriptData) == 0 {
+		if transcriptPath == "" {
+			return fmt.Errorf("no transcript path or inline data provided")
+		}
 
-	cli.LogDebug("store: reading transcript from %s", transcriptPath)
+		cli.LogDebug("store: reading transcript from %s", transcriptPath)
 
-	transcriptData, err := readTranscriptData(transcriptPath)
-	if err != nil {
-		return fmt.Errorf("failed to read transcript: %w", err)
+		transcriptData, err = readTranscriptData(transcriptPath)
+		if err != nil {
+			return fmt.Errorf("failed to read transcript: %w", err)
+		}
+	} else {
+		cli.LogDebug("store: using inline transcript data (%d bytes)", len(transcriptData))
 	}
 
 	cli.LogDebug("store: transcript size is %d bytes", len(transcriptData))

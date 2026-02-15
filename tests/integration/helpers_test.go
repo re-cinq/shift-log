@@ -293,7 +293,7 @@ func readCaptureEvents(captureFilePath string) captureEvents {
 // It reads the capture file path from CLAUDIT_HOOK_CAPTURE_FILE env var.
 const capturePluginJS = `// Capture plugin for claudit integration testing
 // Logs raw hook data to validate OpenCode's plugin API
-export const ClauditPlugin = async ({ directory }) => {
+export const ClauditPlugin = async ({ directory, client }) => {
   const fs = await import("fs");
   const captureFile = process.env.CLAUDIT_HOOK_CAPTURE_FILE;
   const pendingCommits = new Map();
@@ -341,6 +341,21 @@ export const ClauditPlugin = async ({ directory }) => {
       if (!pending) return;
       pendingCommits.delete(input.callID);
 
+      let transcriptData = "";
+      if (client && pending.sessionID) {
+        try {
+          const msgs = await client.session.messages({ path: { id: pending.sessionID } });
+          if (msgs && Array.isArray(msgs)) {
+            transcriptData = JSON.stringify(msgs.map(m => ({
+              role: m.role || "",
+              id: m.id || "",
+              content: m.content || "",
+              time: m.time || {},
+            })));
+          }
+        } catch (e) {}
+      }
+
       const dataDir = process.platform === "darwin"
           ? process.env.HOME + "/Library/Application Support/opencode"
           : (process.env.XDG_DATA_HOME || process.env.HOME + "/.local/share") + "/opencode";
@@ -351,6 +366,7 @@ export const ClauditPlugin = async ({ directory }) => {
         project_dir: directory,
         tool_name: pending.tool || "",
         tool_input: { command: pending.command },
+        ...(transcriptData ? { transcript_data: transcriptData } : {}),
       });
 
       try {

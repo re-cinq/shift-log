@@ -192,6 +192,7 @@ type HookData struct {
 	TranscriptPath string
 	ToolName       string
 	Command        string
+	TranscriptData []byte // inline transcript data (e.g. from OpenCode plugin SDK)
 }
 
 // SessionInfo represents a discovered active session.
@@ -200,6 +201,7 @@ type SessionInfo struct {
 	TranscriptPath string
 	StartedAt      string
 	ProjectPath    string
+	TranscriptData []byte // inline transcript data (e.g. from SQLite discovery)
 }
 
 // Agent defines the interface that each coding agent CLI must implement.
