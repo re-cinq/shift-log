@@ -135,6 +135,47 @@ func AddSessionHooks(settings *Settings) {
 	settings.Hooks.SessionEnd = addOrUpdateHook(settings.Hooks.SessionEnd, endHook, "claudit session-end")
 }
 
+// RemoveClauditHook removes claudit store hook entries from AfterTool.
+func RemoveClauditHook(settings *Settings) {
+	filtered := settings.Hooks.AfterTool[:0]
+	for _, hook := range settings.Hooks.AfterTool {
+		isClaudit := false
+		for _, h := range hook.Hooks {
+			if h.Command == "claudit store --agent=gemini" {
+				isClaudit = true
+				break
+			}
+		}
+		if !isClaudit {
+			filtered = append(filtered, hook)
+		}
+	}
+	settings.Hooks.AfterTool = filtered
+}
+
+// RemoveSessionHooks removes claudit session hooks from SessionStart and SessionEnd.
+func RemoveSessionHooks(settings *Settings) {
+	settings.Hooks.SessionStart = removeHookByCommand(settings.Hooks.SessionStart, "claudit session-start --agent=gemini")
+	settings.Hooks.SessionEnd = removeHookByCommand(settings.Hooks.SessionEnd, "claudit session-end --agent=gemini")
+}
+
+func removeHookByCommand(hooks []Hook, command string) []Hook {
+	filtered := hooks[:0]
+	for _, hook := range hooks {
+		isClaudit := false
+		for _, h := range hook.Hooks {
+			if h.Command == command {
+				isClaudit = true
+				break
+			}
+		}
+		if !isClaudit {
+			filtered = append(filtered, hook)
+		}
+	}
+	return filtered
+}
+
 func addOrUpdateHook(hooks []Hook, newHook Hook, commandPrefix string) []Hook {
 	for i, hook := range hooks {
 		for _, h := range hook.Hooks {

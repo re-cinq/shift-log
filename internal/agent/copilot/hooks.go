@@ -107,6 +107,23 @@ func AddClauditHooks(hf *HooksFile) {
 	)
 }
 
+// RemoveClauditHooks removes claudit hook entries from the hooks file.
+func RemoveClauditHooks(hf *HooksFile) {
+	for key, entries := range hf.Hooks {
+		filtered := entries[:0]
+		for _, e := range entries {
+			if !strings.Contains(e.Command, "claudit store") {
+				filtered = append(filtered, e)
+			}
+		}
+		if len(filtered) == 0 {
+			delete(hf.Hooks, key)
+		} else {
+			hf.Hooks[key] = filtered
+		}
+	}
+}
+
 // addOrUpdateHookEntry adds or updates a hook entry matching by command prefix.
 func addOrUpdateHookEntry(entries []HookEntry, newEntry HookEntry, prefix string) []HookEntry {
 	for i, e := range entries {

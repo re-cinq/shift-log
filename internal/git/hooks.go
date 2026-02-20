@@ -88,6 +88,48 @@ func replaceClauditSection(content, newSection string) string {
 	return content[:lineStart] + newSection + content[lineEnd:]
 }
 
+// RemoveHook removes the claudit-managed section from a git hook.
+// If the file reduces to just a shebang line (with optional whitespace),
+// it is deleted entirely. No-op if the hook file doesn't exist or has no claudit section.
+func RemoveHook(gitDir string, hookType HookType) error {
+	hookPath := filepath.Join(gitDir, "hooks", string(hookType))
+
+	data, err := os.ReadFile(hookPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	content := string(data)
+	if !strings.Contains(content, clauditMarker) {
+		return nil
+	}
+
+	// Replace the claudit section with nothing
+	newContent := replaceClauditSection(content, "")
+
+	// If only a shebang line remains (with optional whitespace), delete the file
+	trimmed := strings.TrimSpace(newContent)
+	if trimmed == "" || trimmed == "#!/bin/sh" || trimmed == "#!/bin/bash" {
+		return os.Remove(hookPath)
+	}
+
+	return os.WriteFile(hookPath, []byte(newContent), 0755)
+}
+
+// RemoveAllHooks removes claudit-managed sections from all git hooks.
+func RemoveAllHooks(gitDir string) error {
+	hookTypes := []HookType{HookPrePush, HookPostMerge, HookPostCheckout, HookPostCommit}
+	for _, ht := range hookTypes {
+		if err := RemoveHook(gitDir, ht); err != nil {
+			return fmt.Errorf("failed to remove %s hook: %w", ht, err)
+		}
+	}
+	return nil
+}
+
 // InstallAllHooks installs all claudit git hooks.
 // It resolves the absolute path to the running claudit binary so hooks work
 // even when the shell environment strips PATH (e.g. Codex CLI sandbox).

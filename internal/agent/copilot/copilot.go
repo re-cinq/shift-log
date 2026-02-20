@@ -38,6 +38,27 @@ func (a *Agent) ConfigureHooks(repoRoot string) error {
 	return nil
 }
 
+// RemoveHooks removes claudit hooks from Copilot CLI configuration.
+func (a *Agent) RemoveHooks(repoRoot string) error {
+	hf, err := ReadHooksFile(repoRoot)
+	if err != nil {
+		return nil // no hooks file means nothing to remove
+	}
+
+	RemoveClauditHooks(hf)
+
+	// If no hooks remain, delete the file (it's claudit-owned)
+	if len(hf.Hooks) == 0 && len(hf.Other) == 0 {
+		path := hooksFilePath(repoRoot)
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+
+	return WriteHooksFile(repoRoot, hf)
+}
+
 // DiagnoseHooks validates Copilot CLI hook configuration.
 func (a *Agent) DiagnoseHooks(repoRoot string) []agent.DiagnosticCheck {
 	var checks []agent.DiagnosticCheck

@@ -213,6 +213,9 @@ type Agent interface {
 	// Init: configure CLI-specific hooks/plugins
 	ConfigureHooks(repoRoot string) error
 
+	// Deinit: remove CLI-specific hooks/plugins
+	RemoveHooks(repoRoot string) error
+
 	// Doctor: validate hook configuration
 	DiagnoseHooks(repoRoot string) []DiagnosticCheck
 

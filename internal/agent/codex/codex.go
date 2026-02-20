@@ -27,6 +27,11 @@ func (a *Agent) ConfigureHooks(repoRoot string) error {
 	return nil
 }
 
+// RemoveHooks is a no-op for Codex — it has no per-tool hook mechanism.
+func (a *Agent) RemoveHooks(repoRoot string) error {
+	return nil
+}
+
 // DiagnoseHooks checks that the codex binary is available.
 func (a *Agent) DiagnoseHooks(repoRoot string) []agent.DiagnosticCheck {
 	var checks []agent.DiagnosticCheck

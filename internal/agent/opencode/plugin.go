@@ -101,6 +101,24 @@ func InstallPlugin(repoRoot string) error {
 	return nil
 }
 
+// RemovePlugin removes the claudit plugin file.
+// Also removes the plugins directory if it's empty afterward.
+func RemovePlugin(repoRoot string) error {
+	pluginPath := filepath.Join(repoRoot, ".opencode", "plugins", "claudit.js")
+	if err := os.Remove(pluginPath); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	// Remove plugins dir if empty
+	pluginDir := filepath.Join(repoRoot, ".opencode", "plugins")
+	entries, err := os.ReadDir(pluginDir)
+	if err == nil && len(entries) == 0 {
+		_ = os.Remove(pluginDir)
+	}
+
+	return nil
+}
+
 // HasPlugin checks if the claudit plugin is installed.
 func HasPlugin(repoRoot string) bool {
 	pluginPath := filepath.Join(repoRoot, ".opencode", "plugins", "claudit.js")

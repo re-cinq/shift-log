@@ -38,6 +38,32 @@ func (a *Agent) ConfigureHooks(repoRoot string) error {
 	return nil
 }
 
+// RemoveHooks removes claudit hooks from Gemini CLI settings.
+func (a *Agent) RemoveHooks(repoRoot string) error {
+	geminiDir := filepath.Join(repoRoot, ".gemini")
+	settings, err := ReadSettings(geminiDir)
+	if err != nil {
+		return nil // no settings file means nothing to remove
+	}
+
+	RemoveClauditHook(settings)
+	RemoveSessionHooks(settings)
+
+	// If only claudit content was present, remove the file
+	if len(settings.Other) == 0 &&
+		len(settings.Hooks.AfterTool) == 0 &&
+		len(settings.Hooks.SessionStart) == 0 &&
+		len(settings.Hooks.SessionEnd) == 0 {
+		path := filepath.Join(geminiDir, "settings.json")
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+
+	return WriteSettings(geminiDir, settings)
+}
+
 // DiagnoseHooks validates Gemini CLI hook configuration.
 func (a *Agent) DiagnoseHooks(repoRoot string) []agent.DiagnosticCheck {
 	var checks []agent.DiagnosticCheck

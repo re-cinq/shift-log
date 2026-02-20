@@ -28,6 +28,11 @@ func (a *Agent) ConfigureHooks(repoRoot string) error {
 	return InstallPlugin(repoRoot)
 }
 
+// RemoveHooks removes the claudit plugin for OpenCode.
+func (a *Agent) RemoveHooks(repoRoot string) error {
+	return RemovePlugin(repoRoot)
+}
+
 // DiagnoseHooks validates OpenCode plugin installation.
 func (a *Agent) DiagnoseHooks(repoRoot string) []agent.DiagnosticCheck {
 	var checks []agent.DiagnosticCheck
