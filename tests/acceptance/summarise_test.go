@@ -119,14 +119,15 @@ SUMMARY
 		It("passes focus hint to the agent prompt", func() {
 			storeConversation("session-summarise-focus")
 
-			// Create a mock "claude" binary that echoes stdin so we can verify the prompt
+			// Create a mock "claude" binary that echoes the prompt arg so we can verify it
 			mockDir, err := os.MkdirTemp("", "claudit-mock-focus-*")
 			Expect(err).NotTo(HaveOccurred())
 			defer os.RemoveAll(mockDir)
 
-			// Mock agent echoes the prompt it received on stdin
+			// Mock agent echoes the last positional argument (the prompt)
 			mockScript := `#!/bin/sh
-cat
+for arg; do :; done
+printf '%s' "$arg"
 `
 			mockPath := filepath.Join(mockDir, "claude")
 			Expect(os.WriteFile(mockPath, []byte(mockScript), 0755)).To(Succeed())
@@ -144,8 +145,10 @@ cat
 			Expect(err).NotTo(HaveOccurred())
 			defer os.RemoveAll(mockDir)
 
+			// Mock agent echoes the last positional argument (the prompt)
 			mockScript := `#!/bin/sh
-cat
+for arg; do :; done
+printf '%s' "$arg"
 `
 			mockPath := filepath.Join(mockDir, "claude")
 			Expect(os.WriteFile(mockPath, []byte(mockScript), 0755)).To(Succeed())

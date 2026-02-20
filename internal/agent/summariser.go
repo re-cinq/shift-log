@@ -10,7 +10,7 @@ import (
 // Checked via type assertion: if s, ok := ag.(Summariser); ok { ... }
 type Summariser interface {
 	// SummariseCommand returns the binary name and arguments to run the agent
-	// in non-interactive mode. The prompt is delivered via stdin.
+	// in non-interactive mode. The prompt is appended as a positional argument.
 	SummariseCommand() (binary string, args []string)
 }
 

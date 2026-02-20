@@ -17,14 +17,77 @@ func GetGeminiDir() (string, error) {
 	return filepath.Join(home, ".gemini"), nil
 }
 
+// ProjectsRegistry represents Gemini's ~/.gemini/projects.json file,
+// which maps project paths to slug-based directory names (v0.29+).
+type ProjectsRegistry struct {
+	Projects map[string]ProjectRegistryEntry `json:"projects"`
+}
+
+// ProjectRegistryEntry represents a single project in the registry.
+type ProjectRegistryEntry struct {
+	Slug string `json:"slug"`
+}
+
+// ReadProjectsRegistry reads and parses ~/.gemini/projects.json.
+// Returns nil (no error) if the file does not exist.
+func ReadProjectsRegistry() (*ProjectsRegistry, error) {
+	geminiDir, err := GetGeminiDir()
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := os.ReadFile(filepath.Join(geminiDir, "projects.json"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var reg ProjectsRegistry
+	if err := json.Unmarshal(data, &reg); err != nil {
+		return nil, fmt.Errorf("could not parse projects.json: %w", err)
+	}
+	return &reg, nil
+}
+
+// GetSlugForProject looks up the slug for a project path from the registry.
+// Returns "" if no registry exists or the project is not registered.
+func GetSlugForProject(projectPath string) string {
+	reg, err := ReadProjectsRegistry()
+	if err != nil || reg == nil {
+		return ""
+	}
+	if entry, ok := reg.Projects[projectPath]; ok {
+		return entry.Slug
+	}
+	return ""
+}
+
 // GetSessionDir returns the session directory for a project.
-// Gemini stores sessions at ~/.gemini/tmp/<project_hash>/chats/
+// Gemini v0.29+ uses slug-based paths: ~/.gemini/tmp/<slug>/chats/
+// Earlier versions use SHA256 hash paths: ~/.gemini/tmp/<sha256>/chats/
+// This function tries the slug first, falling back to the hash.
 func GetSessionDir(projectPath string) (string, error) {
 	geminiDir, err := GetGeminiDir()
 	if err != nil {
 		return "", err
 	}
 
+	if slug := GetSlugForProject(projectPath); slug != "" {
+		return filepath.Join(geminiDir, "tmp", slug, "chats"), nil
+	}
+
+	hash := EncodeProjectPath(projectPath)
+	return filepath.Join(geminiDir, "tmp", hash, "chats"), nil
+}
+
+// GetLegacySessionDir returns the SHA256-based session directory (pre-v0.29).
+func GetLegacySessionDir(projectPath string) (string, error) {
+	geminiDir, err := GetGeminiDir()
+	if err != nil {
+		return "", err
+	}
 	hash := EncodeProjectPath(projectPath)
 	return filepath.Join(geminiDir, "tmp", hash, "chats"), nil
 }

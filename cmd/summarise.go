@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -124,6 +123,10 @@ func runSummarise(cmd *cobra.Command, args []string) error {
 
 	binary, cmdArgs := summariser.SummariseCommand()
 
+	// Pass prompt as a positional argument (not stdin) — Claude Code v2.1.49+
+	// drains stdin before reading the prompt in -p mode.
+	cmdArgs = append(cmdArgs, prompt)
+
 	// Check binary exists
 	binaryPath, err := exec.LookPath(binary)
 	if err != nil {
@@ -137,15 +140,10 @@ func runSummarise(cmd *cobra.Command, args []string) error {
 	defer cancel()
 
 	agentCmd := exec.CommandContext(ctx, binaryPath, cmdArgs...)
-	agentCmd.Stdin = strings.NewReader(prompt)
 
-	var stdout bytes.Buffer
+	var stdout, stderr bytes.Buffer
 	agentCmd.Stdout = &stdout
-
-	// In debug mode, pipe agent stderr to our stderr
-	if cli.IsDebugEnabled() {
-		agentCmd.Stderr = os.Stderr
-	}
+	agentCmd.Stderr = &stderr
 
 	// Start spinner
 	spinner := cli.NewSpinner("Summarising conversation...")
@@ -158,7 +156,11 @@ func runSummarise(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("agent timed out after %s", summariseTimeout)
 	}
 	if err != nil {
-		return fmt.Errorf("agent failed: %w", err)
+		errMsg := fmt.Sprintf("agent failed: %v", err)
+		if stderrOut := strings.TrimSpace(stderr.String()); stderrOut != "" {
+			errMsg += "\nstderr: " + stderrOut
+		}
+		return fmt.Errorf("%s", errMsg)
 	}
 
 	// Print summary

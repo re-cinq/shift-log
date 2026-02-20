@@ -315,12 +315,26 @@ func ParseGeminiTranscript(r io.Reader) (*agent.Transcript, error) {
 
 
 // scanForRecentSession scans Gemini's session directory for recent files.
+// It tries the primary directory (slug-based for v0.29+, hash-based otherwise)
+// and falls back to the legacy hash directory if no session is found.
 func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	sessionDir, err := GetSessionDir(projectPath)
 	if err != nil {
 		return nil, nil
 	}
-	return agent.ScanDirForRecentSession(sessionDir, ".json", []string{"sessions-index.json"}, projectPath)
+
+	skipFiles := []string{"sessions-index.json"}
+	info, err := agent.ScanDirForRecentSession(sessionDir, ".json", skipFiles, projectPath)
+	if info != nil || err != nil {
+		return info, err
+	}
+
+	// If the primary dir was slug-based, also check the legacy hash dir.
+	legacyDir, err := GetLegacySessionDir(projectPath)
+	if err != nil || legacyDir == sessionDir {
+		return nil, nil
+	}
+	return agent.ScanDirForRecentSession(legacyDir, ".json", skipFiles, projectPath)
 }
 
 

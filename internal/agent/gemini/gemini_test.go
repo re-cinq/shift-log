@@ -286,6 +286,114 @@ func TestEncodeProjectPath(t *testing.T) {
 	}
 }
 
+func TestReadProjectsRegistry(t *testing.T) {
+	t.Run("valid registry", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		t.Setenv("HOME", tmpDir)
+
+		geminiDir := filepath.Join(tmpDir, ".gemini")
+		if err := os.MkdirAll(geminiDir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		registryJSON := `{
+			"projects": {
+				"/home/user/myproject": {"slug": "myproject-abc123"},
+				"/tmp/other": {"slug": "other-def456"}
+			}
+		}`
+		if err := os.WriteFile(filepath.Join(geminiDir, "projects.json"), []byte(registryJSON), 0600); err != nil {
+			t.Fatal(err)
+		}
+
+		reg, err := ReadProjectsRegistry()
+		if err != nil {
+			t.Fatalf("ReadProjectsRegistry() error: %v", err)
+		}
+		if reg == nil {
+			t.Fatal("ReadProjectsRegistry() returned nil")
+		}
+		if len(reg.Projects) != 2 {
+			t.Fatalf("Expected 2 projects, got %d", len(reg.Projects))
+		}
+		if reg.Projects["/home/user/myproject"].Slug != "myproject-abc123" {
+			t.Errorf("Slug = %q, want %q", reg.Projects["/home/user/myproject"].Slug, "myproject-abc123")
+		}
+	})
+
+	t.Run("missing file returns nil", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		t.Setenv("HOME", tmpDir)
+
+		reg, err := ReadProjectsRegistry()
+		if err != nil {
+			t.Fatalf("ReadProjectsRegistry() error: %v", err)
+		}
+		if reg != nil {
+			t.Errorf("Expected nil registry when file missing, got %+v", reg)
+		}
+	})
+}
+
+func TestGetSlugForProject(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+
+	geminiDir := filepath.Join(tmpDir, ".gemini")
+	if err := os.MkdirAll(geminiDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	registryJSON := `{"projects": {"/home/user/proj": {"slug": "proj-slug"}}}`
+	if err := os.WriteFile(filepath.Join(geminiDir, "projects.json"), []byte(registryJSON), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	if slug := GetSlugForProject("/home/user/proj"); slug != "proj-slug" {
+		t.Errorf("GetSlugForProject() = %q, want %q", slug, "proj-slug")
+	}
+	if slug := GetSlugForProject("/unknown"); slug != "" {
+		t.Errorf("GetSlugForProject(unknown) = %q, want empty", slug)
+	}
+}
+
+func TestGetSessionDir_SlugVsHash(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+
+	projectPath := "/home/user/myproject"
+
+	t.Run("without registry uses hash", func(t *testing.T) {
+		dir, err := GetSessionDir(projectPath)
+		if err != nil {
+			t.Fatalf("GetSessionDir() error: %v", err)
+		}
+		hash := EncodeProjectPath(projectPath)
+		want := filepath.Join(tmpDir, ".gemini", "tmp", hash, "chats")
+		if dir != want {
+			t.Errorf("GetSessionDir() = %q, want %q", dir, want)
+		}
+	})
+
+	t.Run("with registry uses slug", func(t *testing.T) {
+		geminiDir := filepath.Join(tmpDir, ".gemini")
+		if err := os.MkdirAll(geminiDir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		registryJSON := fmt.Sprintf(`{"projects": {%q: {"slug": "myproj-abc"}}}`, projectPath)
+		if err := os.WriteFile(filepath.Join(geminiDir, "projects.json"), []byte(registryJSON), 0600); err != nil {
+			t.Fatal(err)
+		}
+
+		dir, err := GetSessionDir(projectPath)
+		if err != nil {
+			t.Fatalf("GetSessionDir() error: %v", err)
+		}
+		want := filepath.Join(tmpDir, ".gemini", "tmp", "myproj-abc", "chats")
+		if dir != want {
+			t.Errorf("GetSessionDir() = %q, want %q", dir, want)
+		}
+	})
+}
+
 func TestNormalizeGeminiType(t *testing.T) {
 	tests := []struct {
 		input string

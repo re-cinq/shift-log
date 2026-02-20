@@ -131,9 +131,9 @@ jobs:
 
       - name: Install coding agent CLIs
         run: |
-          npm install -g @anthropic-ai/claude-code
+          npm install -g @anthropic-ai/claude-code@2.1
           npm install -g @github/copilot
-          npm install -g @google/gemini-cli
+          npm install -g @google/gemini-cli@0.29
           npm install -g opencode-ai@latest
           npm install -g @openai/codex
 
