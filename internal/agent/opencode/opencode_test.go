@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -343,28 +344,35 @@ func TestGetProjectID(t *testing.T) {
 }
 
 func TestGetDataDir(t *testing.T) {
-	// With XDG_DATA_HOME set (OpenCode respects XDG conventions)
-	t.Setenv("XDG_DATA_HOME", "/custom/data")
-	dir, err := GetDataDir()
-	if err != nil {
-		t.Fatalf("GetDataDir with XDG_DATA_HOME error: %v", err)
-	}
-	if dir != "/custom/data/opencode" {
-		t.Errorf("GetDataDir with XDG_DATA_HOME = %q, want /custom/data/opencode", dir)
+	if runtime.GOOS != "darwin" {
+		// XDG_DATA_HOME is only respected on non-darwin platforms
+		t.Setenv("XDG_DATA_HOME", "/custom/data")
+		dir, err := GetDataDir()
+		if err != nil {
+			t.Fatalf("GetDataDir with XDG_DATA_HOME error: %v", err)
+		}
+		if dir != "/custom/data/opencode" {
+			t.Errorf("GetDataDir with XDG_DATA_HOME = %q, want /custom/data/opencode", dir)
+		}
 	}
 
 	// Without XDG_DATA_HOME, should return default path containing "opencode"
 	t.Setenv("XDG_DATA_HOME", "")
-	dir, err = GetDataDir()
+	dir, err := GetDataDir()
 	if err != nil {
 		t.Fatalf("GetDataDir without env error: %v", err)
 	}
 	if !strings.Contains(dir, "opencode") {
 		t.Errorf("GetDataDir default = %q, should contain 'opencode'", dir)
 	}
-	// On Linux, should be ~/.local/share/opencode
-	if !strings.HasSuffix(dir, ".local/share/opencode") && !strings.Contains(dir, "Application Support/opencode") {
-		t.Errorf("GetDataDir default = %q, expected .local/share/opencode or Application Support/opencode", dir)
+	if runtime.GOOS == "darwin" {
+		if !strings.Contains(dir, "Application Support/opencode") {
+			t.Errorf("GetDataDir default = %q, expected Application Support/opencode on macOS", dir)
+		}
+	} else {
+		if !strings.HasSuffix(dir, ".local/share/opencode") {
+			t.Errorf("GetDataDir default = %q, expected .local/share/opencode on Linux", dir)
+		}
 	}
 }
 
@@ -389,26 +397,35 @@ func TestGetSessionDir(t *testing.T) {
 	gitCommit.Dir = tmpDir
 	gitCommit.CombinedOutput()
 
-	t.Setenv("XDG_DATA_HOME", "/test/data")
 	dir, err := GetSessionDir(tmpDir)
 	if err != nil {
 		t.Fatalf("GetSessionDir error: %v", err)
 	}
 
 	projectID := GetProjectID(tmpDir)
-	expected := filepath.Join("/test/data/opencode", "storage", "session", projectID)
+
+	// On darwin, GetDataDir ignores XDG_DATA_HOME and uses ~/Library/Application Support
+	dataDir, err := GetDataDir()
+	if err != nil {
+		t.Fatalf("GetDataDir error: %v", err)
+	}
+	expected := filepath.Join(dataDir, "storage", "session", projectID)
 	if dir != expected {
 		t.Errorf("GetSessionDir = %q, want %q", dir, expected)
 	}
 }
 
 func TestGetMessageDir(t *testing.T) {
-	t.Setenv("XDG_DATA_HOME", "/test/data")
 	dir, err := GetMessageDir("sess-abc")
 	if err != nil {
 		t.Fatalf("GetMessageDir error: %v", err)
 	}
-	expected := "/test/data/opencode/storage/message/sess-abc"
+
+	dataDir, err := GetDataDir()
+	if err != nil {
+		t.Fatalf("GetDataDir error: %v", err)
+	}
+	expected := filepath.Join(dataDir, "storage", "message", "sess-abc")
 	if dir != expected {
 		t.Errorf("GetMessageDir = %q, want %q", dir, expected)
 	}
