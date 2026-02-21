@@ -30,16 +30,16 @@ func getWorkspaceRoot() string {
 	return "."
 }
 
-// getClauditPath returns the path to the claudit binary, failing the spec if not found.
+// getClauditPath returns the path to the shiftlog binary, failing the spec if not found.
 func getClauditPath() string {
 	GinkgoHelper()
-	clauditPath := os.Getenv("CLAUDIT_BINARY")
-	if clauditPath == "" {
-		clauditPath = filepath.Join(getWorkspaceRoot(), "claudit")
+	shiftlogPath := os.Getenv("SHIFTLOG_BINARY")
+	if shiftlogPath == "" {
+		shiftlogPath = filepath.Join(getWorkspaceRoot(), "shiftlog")
 	}
-	_, err := os.Stat(clauditPath)
-	Expect(err).NotTo(HaveOccurred(), "claudit binary not found at %s - run 'go build'", clauditPath)
-	return clauditPath
+	_, err := os.Stat(shiftlogPath)
+	Expect(err).NotTo(HaveOccurred(), "shiftlog binary not found at %s - run 'go build'", shiftlogPath)
+	return shiftlogPath
 }
 
 // runGit runs a git command in the specified directory, failing the spec on error.
@@ -125,7 +125,7 @@ func initGitRepo(prefix string) string {
 	return tmpDir
 }
 
-// verifyNoteOnHead checks that the HEAD commit has a valid claudit git note
+// verifyNoteOnHead checks that the HEAD commit has a valid shiftlog git note
 // with all required fields and the expected agent value.
 func verifyNoteOnHead(tmpDir, expectedAgent string) {
 	GinkgoHelper()
@@ -136,7 +136,7 @@ func verifyNoteOnHead(tmpDir, expectedAgent string) {
 	Expect(err).NotTo(HaveOccurred(), "Commit was made but no git notes exist!\nOutput: %s", notesOutput)
 	Expect(strings.TrimSpace(string(notesOutput))).NotTo(BeEmpty(), "Commit was made but git notes list is empty!")
 
-	By("Git note was created by claudit hook")
+	By("Git note was created by shiftlog hook")
 
 	cmd = exec.Command("git", "notes", "--ref=refs/notes/claude-conversations", "show", "HEAD")
 	cmd.Dir = tmpDir
@@ -158,24 +158,24 @@ func verifyNoteOnHead(tmpDir, expectedAgent string) {
 		noteData["version"], noteData["session_id"], noteData["agent"], noteData["message_count"])
 }
 
-// setupManualCommitRepo creates a temp git repo, initializes claudit with the
-// given agent, and returns the tmpDir and clauditPath.
-func setupManualCommitRepo(agentName string) (tmpDir, clauditPath string) {
+// setupManualCommitRepo creates a temp git repo, initializes shiftlog with the
+// given agent, and returns the tmpDir and shiftlogPath.
+func setupManualCommitRepo(agentName string) (tmpDir, shiftlogPath string) {
 	GinkgoHelper()
 
-	clauditPath = getClauditPath()
+	shiftlogPath = getClauditPath()
 	tmpDir = initGitRepo(agentName + "-manual-commit")
 
 	initArgs := []string{"init"}
 	if agentName != "claude" {
 		initArgs = append(initArgs, "--agent="+agentName)
 	}
-	cmd := exec.Command(clauditPath, initArgs...)
+	cmd := exec.Command(shiftlogPath, initArgs...)
 	cmd.Dir = tmpDir
 	output, err := cmd.CombinedOutput()
-	Expect(err).NotTo(HaveOccurred(), "claudit init failed:\n%s", output)
+	Expect(err).NotTo(HaveOccurred(), "shiftlog init failed:\n%s", output)
 
-	return tmpDir, clauditPath
+	return tmpDir, shiftlogPath
 }
 
 // manualCommitNewFile creates a new file and commits it manually.
@@ -288,10 +288,10 @@ func readCaptureEvents(captureFilePath string) captureEvents {
 	return events
 }
 
-// capturePluginJS is a modified version of the claudit plugin that also
+// capturePluginJS is a modified version of the shiftlog plugin that also
 // captures the raw data OpenCode provides to plugin hooks for validation.
 // It reads the capture file path from CLAUDIT_HOOK_CAPTURE_FILE env var.
-const capturePluginJS = `// Capture plugin for claudit integration testing
+const capturePluginJS = `// Capture plugin for shiftlog integration testing
 // Logs raw hook data to validate OpenCode's plugin API
 export const ClauditPlugin = async ({ directory, client }) => {
   const fs = await import("fs");
@@ -371,7 +371,7 @@ export const ClauditPlugin = async ({ directory, client }) => {
 
       try {
         const { execSync } = await import("child_process");
-        execSync("claudit store --agent=opencode", {
+        execSync("shiftlog store --agent=opencode", {
           input: hookData,
           cwd: directory,
           timeout: 30000,

@@ -8,7 +8,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/re-cinq/claudit/tests/acceptance/testutil"
+	"github.com/re-cinq/shift-log/tests/acceptance/testutil"
 )
 
 var _ = Describe("Git Hooks Auto-Sync", func() {
@@ -24,11 +24,11 @@ var _ = Describe("Git Hooks Auto-Sync", func() {
 		Expect(local.Commit("Initial commit")).To(Succeed())
 		Expect(local.Run("git", "push", "-u", "origin", "master")).To(Succeed())
 
-		// Initialize claudit (installs hooks)
+		// Initialize shiftlog (installs hooks)
 		_, _, err = testutil.RunClauditInDir(local.Path, "init")
 		Expect(err).NotTo(HaveOccurred())
 
-		// Make sure hooks can find claudit binary
+		// Make sure hooks can find shiftlog binary
 		local.SetBinaryPath(testutil.BinaryPath())
 	})
 
@@ -100,7 +100,7 @@ var _ = Describe("Git Hooks Auto-Sync", func() {
 			Expect(clone.Run("git", "fetch", "origin")).To(Succeed())
 			Expect(clone.Run("git", "checkout", "-b", "master", "origin/master")).To(Succeed())
 
-			// Initialize claudit on clone (installs hooks) - this won't conflict
+			// Initialize shiftlog on clone (installs hooks) - this won't conflict
 			// because we already have .claude committed
 			_, _, err = testutil.RunClauditInDir(clone.Path, "init")
 			Expect(err).NotTo(HaveOccurred())
@@ -146,7 +146,7 @@ var _ = Describe("Sync Command", func() {
 		}
 	})
 
-	Describe("claudit sync with --remote flag", func() {
+	Describe("shiftlog sync with --remote flag", func() {
 		var upstream *testutil.GitRepo
 
 		BeforeEach(func() {
@@ -227,7 +227,7 @@ var _ = Describe("Sync Command", func() {
 		})
 	})
 
-	Describe("claudit sync push", func() {
+	Describe("shiftlog sync push", func() {
 		It("pushes notes to remote", func() {
 			// Create a note on the commit
 			head, err := local.GetHead()
@@ -253,7 +253,7 @@ var _ = Describe("Sync Command", func() {
 		})
 	})
 
-	Describe("claudit sync pull", func() {
+	Describe("shiftlog sync pull", func() {
 		It("fetches notes from remote", func() {
 			head, err := local.GetHead()
 			Expect(err).NotTo(HaveOccurred())
@@ -392,7 +392,7 @@ var _ = Describe("Sync Command", func() {
 			stdout, _, err := testutil.RunClauditInDir(clone.Path, "sync", "push")
 			Expect(err).To(HaveOccurred())
 			Expect(stdout).To(ContainSubstring("Push rejected"))
-			Expect(stdout).To(ContainSubstring("claudit sync pull"))
+			Expect(stdout).To(ContainSubstring("shiftlog sync pull"))
 
 			// Dev2 pulls first, then push succeeds
 			_, _, err = testutil.RunClauditInDir(clone.Path, "sync", "pull")

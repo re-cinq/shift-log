@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/re-cinq/claudit/internal/cli"
-	"github.com/re-cinq/claudit/internal/git"
+	"github.com/re-cinq/shift-log/internal/cli"
+	"github.com/re-cinq/shift-log/internal/git"
 	"github.com/spf13/cobra"
 )
 
@@ -48,7 +48,7 @@ func runSyncPush(cmd *cobra.Command, args []string) error {
 	if err := git.PushNotes(syncRemote); err != nil {
 		if errors.Is(err, git.ErrNonFastForward) {
 			fmt.Println("Push rejected: remote notes have diverged.")
-			fmt.Println("Run 'claudit sync pull' first to merge, then push again.")
+			fmt.Println("Run 'shiftlog sync pull' first to merge, then push again.")
 			return err
 		}
 		// Don't fail if there are no notes to push or remote doesn't exist

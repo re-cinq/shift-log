@@ -22,7 +22,7 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 When running integration tests, use `CLAUDE_CODE_OAUTH_TOKEN` (not `ANTHROPIC_API_KEY`):
 
 ```bash
-go build -o claudit . && CLAUDIT_BINARY=./claudit go test ./tests/integration/... -v -timeout 600s
+go build -o shiftlog . && SHIFTLOG_BINARY=./shiftlog go test ./tests/integration/... -v -timeout 600s
 ```
 
 Tests skip gracefully when env vars or agent binaries are missing.

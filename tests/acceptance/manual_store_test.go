@@ -9,7 +9,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/re-cinq/claudit/tests/acceptance/testutil"
+	"github.com/re-cinq/shift-log/tests/acceptance/testutil"
 )
 
 var _ = Describe("Manual Store Command", func() {
@@ -20,7 +20,7 @@ var _ = Describe("Manual Store Command", func() {
 		repo, err = testutil.NewGitRepo()
 		Expect(err).NotTo(HaveOccurred())
 
-		// Initialize claudit
+		// Initialize shiftlog
 		_, _, err = testutil.RunClauditInDir(repo.Path, "init")
 		Expect(err).NotTo(HaveOccurred())
 	})
@@ -29,7 +29,7 @@ var _ = Describe("Manual Store Command", func() {
 		repo.Cleanup()
 	})
 
-	Describe("claudit store --manual", func() {
+	Describe("shiftlog store --manual", func() {
 		It("exits silently when no active session exists", func() {
 			// Make a commit first
 			repo.WriteFile("test.txt", "content")
@@ -57,8 +57,8 @@ var _ = Describe("Manual Store Command", func() {
 			os.WriteFile(transcriptPath, []byte(transcriptContent), 0644)
 
 			// Create active session file
-			clauditDir := filepath.Join(repo.Path, ".claudit")
-			os.MkdirAll(clauditDir, 0755)
+			shiftlogDir := filepath.Join(repo.Path, ".shiftlog")
+			os.MkdirAll(shiftlogDir, 0755)
 			activeSession := map[string]string{
 				"session_id":      "test-session-123",
 				"transcript_path": transcriptPath,
@@ -66,7 +66,7 @@ var _ = Describe("Manual Store Command", func() {
 				"project_path":    repo.Path,
 			}
 			sessionData, _ := json.MarshalIndent(activeSession, "", "  ")
-			os.WriteFile(filepath.Join(clauditDir, "active-session.json"), sessionData, 0644)
+			os.WriteFile(filepath.Join(shiftlogDir, "active-session.json"), sessionData, 0644)
 
 			// Make a commit - the post-commit hook will run store --manual automatically
 			repo.WriteFile("test.txt", "content")
@@ -93,8 +93,8 @@ var _ = Describe("Manual Store Command", func() {
 			defer os.Remove(transcriptPath)
 
 			// Create active session file
-			clauditDir := filepath.Join(repo.Path, ".claudit")
-			os.MkdirAll(clauditDir, 0755)
+			shiftlogDir := filepath.Join(repo.Path, ".shiftlog")
+			os.MkdirAll(shiftlogDir, 0755)
 			activeSession := map[string]string{
 				"session_id":      "idempotent-session-456",
 				"transcript_path": transcriptPath,
@@ -102,7 +102,7 @@ var _ = Describe("Manual Store Command", func() {
 				"project_path":    repo.Path,
 			}
 			sessionData, _ := json.MarshalIndent(activeSession, "", "  ")
-			os.WriteFile(filepath.Join(clauditDir, "active-session.json"), sessionData, 0644)
+			os.WriteFile(filepath.Join(shiftlogDir, "active-session.json"), sessionData, 0644)
 
 			// Make a commit - the post-commit hook will run store --manual automatically
 			repo.WriteFile("test.txt", "content")
@@ -134,8 +134,8 @@ var _ = Describe("Manual Store Command", func() {
 			os.WriteFile(transcriptPath2, []byte(transcriptContent2), 0644)
 			defer os.Remove(transcriptPath2)
 
-			clauditDir := filepath.Join(repo.Path, ".claudit")
-			os.MkdirAll(clauditDir, 0755)
+			shiftlogDir := filepath.Join(repo.Path, ".shiftlog")
+			os.MkdirAll(shiftlogDir, 0755)
 
 			// First session
 			activeSession1 := map[string]string{
@@ -145,7 +145,7 @@ var _ = Describe("Manual Store Command", func() {
 				"project_path":    repo.Path,
 			}
 			sessionData1, _ := json.MarshalIndent(activeSession1, "", "  ")
-			os.WriteFile(filepath.Join(clauditDir, "active-session.json"), sessionData1, 0644)
+			os.WriteFile(filepath.Join(shiftlogDir, "active-session.json"), sessionData1, 0644)
 
 			// Make a commit
 			repo.WriteFile("test.txt", "content")
@@ -168,7 +168,7 @@ var _ = Describe("Manual Store Command", func() {
 				"project_path":    repo.Path,
 			}
 			sessionData2, _ := json.MarshalIndent(activeSession2, "", "  ")
-			os.WriteFile(filepath.Join(clauditDir, "active-session.json"), sessionData2, 0644)
+			os.WriteFile(filepath.Join(shiftlogDir, "active-session.json"), sessionData2, 0644)
 
 			// Second store should overwrite
 			_, stderr2, err := testutil.RunClauditInDir(repo.Path, "store", "--manual")
@@ -189,8 +189,8 @@ var _ = Describe("Manual Store Command", func() {
 			defer os.Remove(transcriptPath)
 
 			// Create active session file with different project path
-			clauditDir := filepath.Join(repo.Path, ".claudit")
-			os.MkdirAll(clauditDir, 0755)
+			shiftlogDir := filepath.Join(repo.Path, ".shiftlog")
+			os.MkdirAll(shiftlogDir, 0755)
 			activeSession := map[string]string{
 				"session_id":      "wrong-project-session",
 				"transcript_path": transcriptPath,
@@ -198,7 +198,7 @@ var _ = Describe("Manual Store Command", func() {
 				"project_path":    "/different/project/path",
 			}
 			sessionData, _ := json.MarshalIndent(activeSession, "", "  ")
-			os.WriteFile(filepath.Join(clauditDir, "active-session.json"), sessionData, 0644)
+			os.WriteFile(filepath.Join(shiftlogDir, "active-session.json"), sessionData, 0644)
 
 			// Make a commit
 			repo.WriteFile("test.txt", "content")
@@ -233,7 +233,7 @@ var _ = Describe("Manual Store Command", func() {
 			Expect(stderr).To(ContainSubstring("session started"))
 
 			// Verify session file was created
-			sessionPath := filepath.Join(repo.Path, ".claudit", "active-session.json")
+			sessionPath := filepath.Join(repo.Path, ".shiftlog", "active-session.json")
 			Expect(sessionPath).To(BeAnExistingFile())
 
 			// Verify content
@@ -247,10 +247,10 @@ var _ = Describe("Manual Store Command", func() {
 	Describe("session-end command", func() {
 		It("removes active session file", func() {
 			// Create active session file first
-			clauditDir := filepath.Join(repo.Path, ".claudit")
-			os.MkdirAll(clauditDir, 0755)
+			shiftlogDir := filepath.Join(repo.Path, ".shiftlog")
+			os.MkdirAll(shiftlogDir, 0755)
 			sessionData := `{"session_id":"ending-session","transcript_path":"/tmp/test.jsonl","started_at":"2024-01-01T00:00:00Z","project_path":"/test"}`
-			os.WriteFile(filepath.Join(clauditDir, "active-session.json"), []byte(sessionData), 0644)
+			os.WriteFile(filepath.Join(shiftlogDir, "active-session.json"), []byte(sessionData), 0644)
 
 			// Prepare session end input
 			input := map[string]string{
@@ -267,7 +267,7 @@ var _ = Describe("Manual Store Command", func() {
 			Expect(stderr).To(ContainSubstring("session ended"))
 
 			// Verify session file was removed
-			sessionPath := filepath.Join(repo.Path, ".claudit", "active-session.json")
+			sessionPath := filepath.Join(repo.Path, ".shiftlog", "active-session.json")
 			Expect(sessionPath).NotTo(BeAnExistingFile())
 		})
 	})

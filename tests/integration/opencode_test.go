@@ -27,7 +27,7 @@ var _ = Describe("OpenCode CLI Integration", func() {
 		}
 
 		requireBinary("opencode")
-		clauditPath := getClauditPath()
+		shiftlogPath := getClauditPath()
 		tmpDir := initGitRepo("opencode-integration")
 		DeferCleanup(os.RemoveAll, tmpDir)
 
@@ -41,14 +41,14 @@ var _ = Describe("OpenCode CLI Integration", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(os.WriteFile(filepath.Join(tmpDir, "opencode.json"), configData, 0644)).To(Succeed())
 
-		// Initialize claudit with OpenCode agent
-		cmd := exec.Command(clauditPath, "init", "--agent=opencode")
+		// Initialize shiftlog with OpenCode agent
+		cmd := exec.Command(shiftlogPath, "init", "--agent=opencode")
 		cmd.Dir = tmpDir
 		output, err := cmd.CombinedOutput()
-		Expect(err).NotTo(HaveOccurred(), "claudit init --agent=opencode failed:\n%s", output)
+		Expect(err).NotTo(HaveOccurred(), "shiftlog init --agent=opencode failed:\n%s", output)
 
 		// Verify plugin is installed
-		pluginPath := filepath.Join(tmpDir, ".opencode", "plugins", "claudit.js")
+		pluginPath := filepath.Join(tmpDir, ".opencode", "plugins", "shiftlog.js")
 		Expect(pluginPath).To(BeAnExistingFile())
 
 		By("Plugin configuration verified successfully")
@@ -62,7 +62,7 @@ var _ = Describe("OpenCode CLI Integration", func() {
 		)
 		opencodeCmd.Dir = tmpDir
 		opencodeCmd.Env = append(os.Environ(),
-			"PATH="+filepath.Dir(clauditPath)+":"+os.Getenv("PATH"),
+			"PATH="+filepath.Dir(shiftlogPath)+":"+os.Getenv("PATH"),
 			"GOOGLE_GENERATIVE_AI_API_KEY="+apiKey,
 		)
 
@@ -70,8 +70,8 @@ var _ = Describe("OpenCode CLI Integration", func() {
 
 		time.Sleep(2 * time.Second)
 
-		Expect(string(opencodeOutput)).NotTo(ContainSubstring("claudit: warning:"),
-			"claudit logged warnings during execution:\n%s", opencodeOutput)
+		Expect(string(opencodeOutput)).NotTo(ContainSubstring("shiftlog: warning:"),
+			"shiftlog logged warnings during execution:\n%s", opencodeOutput)
 
 		// Check if commit was made
 		cmd = exec.Command("git", "log", "--oneline", "-n", "2")

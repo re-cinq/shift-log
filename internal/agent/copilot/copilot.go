@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/re-cinq/claudit/internal/agent"
+	"github.com/re-cinq/shift-log/internal/agent"
 )
 
 func init() {
@@ -23,7 +23,7 @@ type Agent struct{}
 func (a *Agent) Name() agent.Name   { return agent.Copilot }
 func (a *Agent) DisplayName() string { return "Copilot CLI" }
 
-// ConfigureHooks sets up Copilot CLI hooks in .github/hooks/claudit.json.
+// ConfigureHooks sets up Copilot CLI hooks in .github/hooks/shiftlog.json.
 func (a *Agent) ConfigureHooks(repoRoot string) error {
 	hf, err := ReadHooksFile(repoRoot)
 	if err != nil {
@@ -38,7 +38,7 @@ func (a *Agent) ConfigureHooks(repoRoot string) error {
 	return nil
 }
 
-// RemoveHooks removes claudit hooks from Copilot CLI configuration.
+// RemoveHooks removes shiftlog hooks from Copilot CLI configuration.
 func (a *Agent) RemoveHooks(repoRoot string) error {
 	hf, err := ReadHooksFile(repoRoot)
 	if err != nil {
@@ -47,7 +47,7 @@ func (a *Agent) RemoveHooks(repoRoot string) error {
 
 	RemoveClauditHooks(hf)
 
-	// If no hooks remain, delete the file (it's claudit-owned)
+	// If no hooks remain, delete the file (it's shiftlog-owned)
 	if len(hf.Hooks) == 0 && len(hf.Other) == 0 {
 		path := hooksFilePath(repoRoot)
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
@@ -69,7 +69,7 @@ func (a *Agent) DiagnoseHooks(repoRoot string) []agent.DiagnosticCheck {
 		checks = append(checks, agent.DiagnosticCheck{
 			Name:    "Copilot CLI hook configuration",
 			OK:      false,
-			Message: "No .github/hooks/claudit.json found. Run 'claudit init --agent=copilot' to configure.",
+			Message: "No .github/hooks/shiftlog.json found. Run 'shiftlog init --agent=copilot' to configure.",
 		})
 		return checks
 	}
@@ -79,7 +79,7 @@ func (a *Agent) DiagnoseHooks(repoRoot string) []agent.DiagnosticCheck {
 		checks = append(checks, agent.DiagnosticCheck{
 			Name:    "Copilot CLI hook configuration",
 			OK:      false,
-			Message: fmt.Sprintf("Invalid JSON in .github/hooks/claudit.json: %v", err),
+			Message: fmt.Sprintf("Invalid JSON in .github/hooks/shiftlog.json: %v", err),
 		})
 		return checks
 	}
@@ -89,17 +89,17 @@ func (a *Agent) DiagnoseHooks(repoRoot string) []agent.DiagnosticCheck {
 		checks = append(checks, agent.DiagnosticCheck{
 			Name:    "Copilot CLI hooks",
 			OK:      false,
-			Message: "Missing 'hooks' key in .github/hooks/claudit.json. Run 'claudit init --agent=copilot' to fix.",
+			Message: "Missing 'hooks' key in .github/hooks/shiftlog.json. Run 'shiftlog init --agent=copilot' to fix.",
 		})
 		return checks
 	}
 
 	postToolUse, hasPostToolUse := hooks["postToolUse"]
-	if !hasPostToolUse || !agent.HasFlatHookCommand(postToolUse, "claudit store") {
+	if !hasPostToolUse || !agent.HasFlatHookCommand(postToolUse, "shiftlog store") {
 		checks = append(checks, agent.DiagnosticCheck{
 			Name:    "postToolUse hook",
 			OK:      false,
-			Message: "'claudit store' hook not found in postToolUse. Run 'claudit init --agent=copilot' to fix.",
+			Message: "'shiftlog store' hook not found in postToolUse. Run 'shiftlog init --agent=copilot' to fix.",
 		})
 	} else {
 		checks = append(checks, agent.DiagnosticCheck{

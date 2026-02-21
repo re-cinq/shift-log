@@ -42,7 +42,7 @@ func TestWriteAndReadActiveSession(t *testing.T) {
 	}
 
 	// Verify file was created
-	sessionPath := filepath.Join(tmpDir, ".claudit", "active-session.json")
+	sessionPath := filepath.Join(tmpDir, ".shiftlog", "active-session.json")
 	if _, err := os.Stat(sessionPath); os.IsNotExist(err) {
 		t.Error("active-session.json was not created")
 	}
@@ -139,7 +139,7 @@ func TestClearActiveSession(t *testing.T) {
 	}
 
 	// Verify file was removed
-	sessionPath := filepath.Join(tmpDir, ".claudit", "active-session.json")
+	sessionPath := filepath.Join(tmpDir, ".shiftlog", "active-session.json")
 	if _, err := os.Stat(sessionPath); !os.IsNotExist(err) {
 		t.Error("active-session.json was not removed")
 	}

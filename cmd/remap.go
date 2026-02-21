@@ -3,8 +3,8 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/re-cinq/claudit/internal/cli"
-	"github.com/re-cinq/claudit/internal/git"
+	"github.com/re-cinq/shift-log/internal/cli"
+	"github.com/re-cinq/shift-log/internal/git"
 	"github.com/spf13/cobra"
 )
 
@@ -16,7 +16,7 @@ var remapCmd = &cobra.Command{
 (orphaned after a GitHub rebase merge) and copies them to matching commits
 using git patch-id.
 
-This runs automatically in the post-merge hook after 'claudit sync pull'.
+This runs automatically in the post-merge hook after 'shiftlog sync pull'.
 You can also run it manually after pulling a rebase-merged PR.`,
 	RunE: runRemap,
 }

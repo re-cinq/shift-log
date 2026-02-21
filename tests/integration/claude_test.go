@@ -31,15 +31,15 @@ var _ = Describe("Claude Code Integration", func() {
 			}
 
 			requireBinary("claude")
-			clauditPath := getClauditPath()
+			shiftlogPath := getClauditPath()
 			tmpDir := initGitRepo("claude-integration")
 			DeferCleanup(os.RemoveAll, tmpDir)
 
-			// Initialize claudit
-			cmd := exec.Command(clauditPath, "init")
+			// Initialize shiftlog
+			cmd := exec.Command(shiftlogPath, "init")
 			cmd.Dir = tmpDir
 			output, err := cmd.CombinedOutput()
-			Expect(err).NotTo(HaveOccurred(), "claudit init failed:\n%s", output)
+			Expect(err).NotTo(HaveOccurred(), "shiftlog init failed:\n%s", output)
 
 			// Verify hooks are configured
 			settingsPath := filepath.Join(tmpDir, ".claude", "settings.local.json")
@@ -71,7 +71,7 @@ var _ = Describe("Claude Code Integration", func() {
 			)
 			claudeCmd.Dir = tmpDir
 			claudeCmd.Env = append(os.Environ(),
-				"PATH="+os.Getenv("PATH")+":"+filepath.Dir(clauditPath),
+				"PATH="+os.Getenv("PATH")+":"+filepath.Dir(shiftlogPath),
 			)
 			if apiKey != "" {
 				claudeCmd.Env = append(claudeCmd.Env, "ANTHROPIC_API_KEY="+apiKey)
@@ -85,9 +85,9 @@ var _ = Describe("Claude Code Integration", func() {
 			// Give hooks time to run
 			time.Sleep(2 * time.Second)
 
-			// Check for claudit warnings
-			Expect(string(claudeOutput)).NotTo(ContainSubstring("claudit: warning:"),
-				"claudit logged warnings during execution:\n%s", claudeOutput)
+			// Check for shiftlog warnings
+			Expect(string(claudeOutput)).NotTo(ContainSubstring("shiftlog: warning:"),
+				"shiftlog logged warnings during execution:\n%s", claudeOutput)
 
 			// Check if commit was made
 			cmd = exec.Command("git", "log", "--oneline", "-n", "2")
@@ -109,7 +109,7 @@ var _ = Describe("Claude Code Integration", func() {
 			Expect(err).NotTo(HaveOccurred(), "Commit was made but no git notes exist!\nOutput: %s", notesOutput)
 			Expect(strings.TrimSpace(string(notesOutput))).NotTo(BeEmpty(), "Commit was made but git notes list is empty!")
 
-			By("Git note was created by claudit hook")
+			By("Git note was created by shiftlog hook")
 
 			// Verify note content is valid JSON
 			cmd = exec.Command("git", "notes", "--ref=refs/notes/claude-conversations", "show", "HEAD")
@@ -163,8 +163,8 @@ var _ = Describe("Claude Code Integration", func() {
 		})
 	})
 
-	Describe("missing claudit in PATH", func() {
-		It("should NOT create a note when claudit is not available", func() {
+	Describe("missing shiftlog in PATH", func() {
+		It("should NOT create a note when shiftlog is not available", func() {
 			skipIfEnvSet("SKIP_CLAUDE_INTEGRATION")
 
 			apiKey := os.Getenv("ANTHROPIC_API_KEY")
@@ -187,7 +187,7 @@ var _ = Describe("Claude Code Integration", func() {
 			runGit(tmpDir, "add", "README.md")
 			runGit(tmpDir, "commit", "-m", "Initial commit")
 
-			// Manually create hook configuration WITHOUT adding claudit to PATH
+			// Manually create hook configuration WITHOUT adding shiftlog to PATH
 			settingsDir := filepath.Join(tmpDir, ".claude")
 			Expect(os.MkdirAll(settingsDir, 0755)).To(Succeed())
 
@@ -199,7 +199,7 @@ var _ = Describe("Claude Code Integration", func() {
         "hooks": [
           {
             "type": "command",
-            "command": "claudit store",
+            "command": "shiftlog store",
             "timeout": 30
           }
         ]
@@ -212,7 +212,7 @@ var _ = Describe("Claude Code Integration", func() {
 			// Create a test file
 			Expect(os.WriteFile(filepath.Join(tmpDir, "todo.txt"), []byte("- Test item\n"), 0644)).To(Succeed())
 
-			// Run Claude Code WITHOUT claudit in PATH
+			// Run Claude Code WITHOUT shiftlog in PATH
 			claudeCmd := exec.Command("claude",
 				"--print",
 				"--allowedTools", "Bash(git:*),Read",
@@ -244,29 +244,29 @@ var _ = Describe("Claude Code Integration", func() {
 
 			By("Commit was created")
 
-			// Note should NOT exist because claudit was not in PATH
+			// Note should NOT exist because shiftlog was not in PATH
 			cmd = exec.Command("git", "notes", "--ref=refs/notes/claude-conversations", "list")
 			cmd.Dir = tmpDir
 			notesOutput, err := cmd.CombinedOutput()
 
 			if err == nil && len(strings.TrimSpace(string(notesOutput))) > 0 {
-				Fail("UNEXPECTED: Note was created even though claudit was not in PATH!")
+				Fail("UNEXPECTED: Note was created even though shiftlog was not in PATH!")
 			}
 
-			By("Confirmed: Note was NOT created (as expected when claudit not in PATH)")
+			By("Confirmed: Note was NOT created (as expected when shiftlog not in PATH)")
 		})
 	})
 
 	Describe("store command failure handling", func() {
-		var clauditPath string
+		var shiftlogPath string
 		var tmpDir string
 
 		BeforeEach(func() {
 			skipIfEnvSet("SKIP_CLAUDE_INTEGRATION")
-			clauditPath = getClauditPath()
+			shiftlogPath = getClauditPath()
 
 			var err error
-			tmpDir, err = os.MkdirTemp("", "claudit-store-test-*")
+			tmpDir, err = os.MkdirTemp("", "shiftlog-store-test-*")
 			Expect(err).NotTo(HaveOccurred())
 			DeferCleanup(os.RemoveAll, tmpDir)
 
@@ -288,7 +288,7 @@ var _ = Describe("Claude Code Integration", func() {
 			}
 		}`
 
-			cmd := exec.Command(clauditPath, "store")
+			cmd := exec.Command(shiftlogPath, "store")
 			cmd.Dir = tmpDir
 			cmd.Stdin = strings.NewReader(hookInput)
 			output, err := cmd.CombinedOutput()
@@ -328,7 +328,7 @@ var _ = Describe("Claude Code Integration", func() {
 			}
 		}`, transcriptPath)
 
-			cmd := exec.Command(clauditPath, "store")
+			cmd := exec.Command(shiftlogPath, "store")
 			cmd.Dir = emptyDir
 			cmd.Stdin = strings.NewReader(hookInput)
 			output, err := cmd.CombinedOutput()

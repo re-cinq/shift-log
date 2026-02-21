@@ -35,9 +35,9 @@ The system SHALL detect git commit commands from Amp tool invocations.
 ## MODIFIED Requirements
 
 ### Requirement: Hook handler for commit detection
-The `claudit store` command MUST process hook events from the configured agent and detect git commits.
+The `shiftlog store` command MUST process hook events from the configured agent and detect git commits.
 
 #### Scenario: Agent-specific hook input parsing (Amp)
-- **WHEN** `claudit store --agent=amp` is invoked with hook input
+- **WHEN** `shiftlog store --agent=amp` is invoked with hook input
 - **THEN** the hook input is parsed using Amp's format
 - **AND** `terminal` tool is matched for commit detection

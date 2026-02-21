@@ -1,5 +1,5 @@
 ## Context
-Codex CLI is OpenAI's coding agent. Unlike Claude Code (PostToolUse hooks) and Gemini CLI (AfterTool hooks), Codex has no per-tool hook mechanism. Its `notify` config only fires per-turn, not per-tool-use. Rather than using a fragile, per-turn notification, we rely on the **existing `post-commit` git hook** that claudit already installs for all agents.
+Codex CLI is OpenAI's coding agent. Unlike Claude Code (PostToolUse hooks) and Gemini CLI (AfterTool hooks), Codex has no per-tool hook mechanism. Its `notify` config only fires per-turn, not per-tool-use. Rather than using a fragile, per-turn notification, we rely on the **existing `post-commit` git hook** that shiftlog already installs for all agents.
 
 ## Goals / Non-Goals
 - Goals: Support Codex CLI alongside Claude Code, Gemini CLI, and OpenCode CLI; shared acceptance tests; backward compatibility
@@ -39,7 +39,7 @@ Codex CLI is OpenAI's coding agent. Unlike Claude Code (PostToolUse hooks) and G
 
 5. **IsHookless AgentTestConfig field**: New boolean for agents that produce no hook/plugin config. Allows init tests to:
    - Verify git hooks are installed
-   - Verify `.claudit/config.json` has correct agent
+   - Verify `.shiftlog/config.json` has correct agent
    - Assert no spurious config files were created
 
 ## Risks / Trade-offs

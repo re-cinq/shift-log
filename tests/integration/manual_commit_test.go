@@ -19,7 +19,7 @@ var _ = Describe("Manual Commit", func() {
 		skipEnv  string
 		envVars  []string // at least one must be set
 		binary   string
-		setupCmd func(tmpDir, clauditPath, apiKey string) *exec.Cmd
+		setupCmd func(tmpDir, shiftlogPath, apiKey string) *exec.Cmd
 	}
 
 	agents := []agentConfig{
@@ -28,7 +28,7 @@ var _ = Describe("Manual Commit", func() {
 			skipEnv: "SKIP_CLAUDE_INTEGRATION",
 			envVars: []string{"ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"},
 			binary:  "claude",
-			setupCmd: func(tmpDir, clauditPath, _ string) *exec.Cmd {
+			setupCmd: func(tmpDir, shiftlogPath, _ string) *exec.Cmd {
 				cmd := exec.Command("claude",
 					"--print",
 					"--allowedTools", "Bash",
@@ -38,7 +38,7 @@ var _ = Describe("Manual Commit", func() {
 				)
 				cmd.Dir = tmpDir
 				cmd.Env = append(os.Environ(),
-					"PATH="+filepath.Dir(clauditPath)+":"+os.Getenv("PATH"),
+					"PATH="+filepath.Dir(shiftlogPath)+":"+os.Getenv("PATH"),
 				)
 				if apiKey := os.Getenv("ANTHROPIC_API_KEY"); apiKey != "" {
 					cmd.Env = append(cmd.Env, "ANTHROPIC_API_KEY="+apiKey)
@@ -54,7 +54,7 @@ var _ = Describe("Manual Commit", func() {
 			skipEnv: "SKIP_CODEX_INTEGRATION",
 			envVars: []string{"OPENAI_API_KEY"},
 			binary:  "codex",
-			setupCmd: func(tmpDir, clauditPath, apiKey string) *exec.Cmd {
+			setupCmd: func(tmpDir, shiftlogPath, apiKey string) *exec.Cmd {
 				// Login first
 				loginCmd := exec.Command("bash", "-c",
 					fmt.Sprintf("echo %q | codex login --with-api-key", apiKey))
@@ -68,7 +68,7 @@ var _ = Describe("Manual Commit", func() {
 				)
 				cmd.Dir = tmpDir
 				cmd.Env = append(os.Environ(),
-					"PATH="+filepath.Dir(clauditPath)+":"+os.Getenv("PATH"),
+					"PATH="+filepath.Dir(shiftlogPath)+":"+os.Getenv("PATH"),
 					"OPENAI_API_KEY="+apiKey,
 				)
 				return cmd
@@ -79,14 +79,14 @@ var _ = Describe("Manual Commit", func() {
 			skipEnv: "SKIP_GEMINI_INTEGRATION",
 			envVars: []string{"GEMINI_API_KEY", "GOOGLE_API_KEY"},
 			binary:  "gemini",
-			setupCmd: func(tmpDir, clauditPath, _ string) *exec.Cmd {
+			setupCmd: func(tmpDir, shiftlogPath, _ string) *exec.Cmd {
 				cmd := exec.Command("gemini",
 					"-p", "Run: echo 'hello world'",
 					"--approval-mode", "yolo",
 				)
 				cmd.Dir = tmpDir
 				cmd.Env = append(os.Environ(),
-					"PATH="+filepath.Dir(clauditPath)+":"+os.Getenv("PATH"),
+					"PATH="+filepath.Dir(shiftlogPath)+":"+os.Getenv("PATH"),
 				)
 				if k := os.Getenv("GEMINI_API_KEY"); k != "" {
 					cmd.Env = append(cmd.Env, "GEMINI_API_KEY="+k)
@@ -102,7 +102,7 @@ var _ = Describe("Manual Commit", func() {
 			skipEnv: "SKIP_OPENCODE_INTEGRATION",
 			envVars: []string{"GEMINI_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY"},
 			binary:  "opencode",
-			setupCmd: func(tmpDir, clauditPath, apiKey string) *exec.Cmd {
+			setupCmd: func(tmpDir, shiftlogPath, apiKey string) *exec.Cmd {
 				// Write opencode.json config
 				opencodeConfig := map[string]interface{}{
 					"$schema":    "https://opencode.ai/config.json",
@@ -118,7 +118,7 @@ var _ = Describe("Manual Commit", func() {
 				)
 				cmd.Dir = tmpDir
 				cmd.Env = append(os.Environ(),
-					"PATH="+filepath.Dir(clauditPath)+":"+os.Getenv("PATH"),
+					"PATH="+filepath.Dir(shiftlogPath)+":"+os.Getenv("PATH"),
 					"GOOGLE_GENERATIVE_AI_API_KEY="+apiKey,
 				)
 				return cmd
@@ -129,14 +129,14 @@ var _ = Describe("Manual Commit", func() {
 			skipEnv: "SKIP_COPILOT_INTEGRATION",
 			envVars: []string{"COPILOT_GITHUB_TOKEN"},
 			binary:  "copilot",
-			setupCmd: func(tmpDir, clauditPath, apiKey string) *exec.Cmd {
+			setupCmd: func(tmpDir, shiftlogPath, apiKey string) *exec.Cmd {
 				cmd := exec.Command("copilot",
 					"-p", "Run: echo 'hello world'",
 					"--yolo",
 				)
 				cmd.Dir = tmpDir
 				cmd.Env = append(os.Environ(),
-					"PATH="+filepath.Dir(clauditPath)+":"+os.Getenv("PATH"),
+					"PATH="+filepath.Dir(shiftlogPath)+":"+os.Getenv("PATH"),
 					"COPILOT_GITHUB_TOKEN="+apiKey,
 				)
 				return cmd
@@ -151,11 +151,11 @@ var _ = Describe("Manual Commit", func() {
 			apiKey := requireEnvVar(agent.envVars...)
 			requireBinary(agent.binary)
 
-			tmpDir, clauditPath := setupManualCommitRepo(agent.name)
+			tmpDir, shiftlogPath := setupManualCommitRepo(agent.name)
 			DeferCleanup(os.RemoveAll, tmpDir)
 
 			// Run agent to establish a session
-			agentCmd := agent.setupCmd(tmpDir, clauditPath, apiKey)
+			agentCmd := agent.setupCmd(tmpDir, shiftlogPath, apiKey)
 			_ = runAgentWithTimeout(agentCmd, 90*time.Second)
 
 			By("Agent session established, making manual commit...")

@@ -23,17 +23,17 @@ var _ = Describe("Summarise", func() {
 			}
 
 			requireBinary("claude")
-			clauditPath := getClauditPath()
+			shiftlogPath := getClauditPath()
 			tmpDir := initGitRepo("summarise-integration")
 			DeferCleanup(os.RemoveAll, tmpDir)
 
-			// Initialize claudit
-			cmd := exec.Command(clauditPath, "init")
+			// Initialize shiftlog
+			cmd := exec.Command(shiftlogPath, "init")
 			cmd.Dir = tmpDir
 			output, err := cmd.CombinedOutput()
-			Expect(err).NotTo(HaveOccurred(), "claudit init failed:\n%s", output)
+			Expect(err).NotTo(HaveOccurred(), "shiftlog init failed:\n%s", output)
 
-			pathEnv := "PATH=" + filepath.Dir(clauditPath) + ":" + os.Getenv("PATH")
+			pathEnv := "PATH=" + filepath.Dir(shiftlogPath) + ":" + os.Getenv("PATH")
 
 			// Create a test file for Claude to commit
 			Expect(os.WriteFile(filepath.Join(tmpDir, "todo.txt"),
@@ -80,8 +80,8 @@ var _ = Describe("Summarise", func() {
 			}
 			By("Git note exists, running summarise...")
 
-			// Run claudit summarise
-			summariseCmd := exec.Command(clauditPath, "summarise")
+			// Run shiftlog summarise
+			summariseCmd := exec.Command(shiftlogPath, "summarise")
 			summariseCmd.Dir = tmpDir
 			summariseCmd.Env = append(os.Environ(), pathEnv)
 			if apiKey != "" {
@@ -116,12 +116,12 @@ var _ = Describe("Summarise", func() {
 
 	Describe("tldr alias", func() {
 		It("should resolve to the summarise command", func() {
-			clauditPath := getClauditPath()
+			shiftlogPath := getClauditPath()
 			tmpDir := initGitRepo("tldr-alias")
 			DeferCleanup(os.RemoveAll, tmpDir)
 
-			// Run `claudit tldr`
-			cmd := exec.Command(clauditPath, "tldr")
+			// Run `shiftlog tldr`
+			cmd := exec.Command(shiftlogPath, "tldr")
 			cmd.Dir = tmpDir
 			output, err := cmd.CombinedOutput()
 
@@ -141,7 +141,7 @@ var _ = Describe("Summarise", func() {
 
 	Describe("unsupported agent", func() {
 		It("should produce a helpful error", func() {
-			clauditPath := getClauditPath()
+			shiftlogPath := getClauditPath()
 			tmpDir := initGitRepo("summarise-unsupported")
 			DeferCleanup(os.RemoveAll, tmpDir)
 
@@ -152,15 +152,15 @@ var _ = Describe("Summarise", func() {
 			Expect(os.WriteFile(transcriptPath, []byte(transcriptData), 0644)).To(Succeed())
 
 			hookInput := `{"session_id":"test-session","transcript_path":"` + transcriptPath + `","tool_name":"Bash","tool_input":{"command":"git commit -m 'test'"}}`
-			storeCmd := exec.Command(clauditPath, "store")
+			storeCmd := exec.Command(shiftlogPath, "store")
 			storeCmd.Dir = tmpDir
 			storeCmd.Stdin = strings.NewReader(hookInput)
-			storeCmd.Env = append(os.Environ(), "PATH="+filepath.Dir(clauditPath)+":"+os.Getenv("PATH"))
+			storeCmd.Env = append(os.Environ(), "PATH="+filepath.Dir(shiftlogPath)+":"+os.Getenv("PATH"))
 			storeOutput, err := storeCmd.CombinedOutput()
-			Expect(err).NotTo(HaveOccurred(), "claudit store failed:\n%s", storeOutput)
+			Expect(err).NotTo(HaveOccurred(), "shiftlog store failed:\n%s", storeOutput)
 
 			// Try to summarise with copilot (unsupported)
-			cmd := exec.Command(clauditPath, "summarise", "--agent=copilot")
+			cmd := exec.Command(shiftlogPath, "summarise", "--agent=copilot")
 			cmd.Dir = tmpDir
 			output, err := cmd.CombinedOutput()
 

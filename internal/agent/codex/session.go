@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/re-cinq/claudit/internal/agent"
+	"github.com/re-cinq/shift-log/internal/agent"
 )
 
 // SessionMeta represents the first line of a Codex rollout JSONL file.

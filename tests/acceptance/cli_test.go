@@ -4,11 +4,11 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/re-cinq/claudit/tests/acceptance/testutil"
+	"github.com/re-cinq/shift-log/tests/acceptance/testutil"
 )
 
 var _ = Describe("CLI Foundation", func() {
-	Describe("claudit with no arguments", func() {
+	Describe("shiftlog with no arguments", func() {
 		It("displays help text", func() {
 			stdout, _, err := testutil.RunClaudit()
 			Expect(err).NotTo(HaveOccurred())
@@ -17,15 +17,15 @@ var _ = Describe("CLI Foundation", func() {
 		})
 	})
 
-	Describe("claudit --version", func() {
+	Describe("shiftlog --version", func() {
 		It("displays the version number", func() {
 			stdout, _, err := testutil.RunClaudit("--version")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(stdout).To(ContainSubstring("claudit version"))
+			Expect(stdout).To(ContainSubstring("shiftlog version"))
 		})
 	})
 
-	Describe("claudit --help", func() {
+	Describe("shiftlog --help", func() {
 		It("displays help text", func() {
 			stdout, _, err := testutil.RunClaudit("--help")
 			Expect(err).NotTo(HaveOccurred())

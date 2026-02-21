@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/re-cinq/claudit/internal/config"
+	"github.com/re-cinq/shift-log/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -15,18 +15,18 @@ var (
 
 var debugCmd = &cobra.Command{
 	Use:     "debug",
-	Short:   "Toggle debug logging for claudit",
+	Short:   "Toggle debug logging for shiftlog",
 	GroupID: "human",
-	Long: `Controls debug logging output for claudit commands.
+	Long: `Controls debug logging output for shiftlog commands.
 
-When debug logging is enabled, claudit writes detailed diagnostic
+When debug logging is enabled, shiftlog writes detailed diagnostic
 information to stderr during all operations.
 
 Examples:
-  claudit debug          Show current debug state
-  claudit debug --on     Enable debug logging
-  claudit debug --off    Disable debug logging
-  claudit debug --toggle Toggle debug logging`,
+  shiftlog debug          Show current debug state
+  shiftlog debug --on     Enable debug logging
+  shiftlog debug --off    Disable debug logging
+  shiftlog debug --toggle Toggle debug logging`,
 	RunE: runDebug,
 }
 
@@ -41,10 +41,10 @@ func init() {
 func runDebug(cmd *cobra.Command, args []string) error {
 	exists, err := config.DirExists()
 	if err != nil {
-		return fmt.Errorf("failed to check claudit directory: %w", err)
+		return fmt.Errorf("failed to check shiftlog directory: %w", err)
 	}
 	if !exists {
-		return fmt.Errorf("claudit is not initialized in this repository (run 'claudit init' first)")
+		return fmt.Errorf("shiftlog is not initialized in this repository (run 'shiftlog init' first)")
 	}
 
 	cfg, err := config.Read()

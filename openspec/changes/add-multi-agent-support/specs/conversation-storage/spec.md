@@ -31,26 +31,26 @@ The system SHALL parse OpenCode CLI's SQLite session data into the common transc
 ## MODIFIED Requirements
 
 ### Requirement: Hook handler for commit detection
-The `claudit store` command MUST process hook events from the configured agent and detect git commits.
+The `shiftlog store` command MUST process hook events from the configured agent and detect git commits.
 
 #### Scenario: Detect git commit command
 - Given a coding agent executed a shell command
 - When the hook JSON indicates a command containing `git commit`
-- Then claudit proceeds to store the conversation
+- Then shiftlog proceeds to store the conversation
 
 #### Scenario: Ignore non-commit commands
 - Given a coding agent executed a shell command
 - When the hook JSON indicates a command that is not `git commit`
-- Then claudit exits silently with status 0
+- Then shiftlog exits silently with status 0
 
 #### Scenario: Handle malformed hook input
-- Given claudit receives invalid JSON on stdin
+- Given shiftlog receives invalid JSON on stdin
 - When processing the hook
-- Then claudit logs a warning and exits with status 0
+- Then shiftlog logs a warning and exits with status 0
 - And does not disrupt the user's workflow
 
 #### Scenario: Agent-specific hook input parsing
-- **WHEN** `claudit store --agent=gemini` is invoked
+- **WHEN** `shiftlog store --agent=gemini` is invoked
 - **THEN** the hook input is parsed using Gemini's format
 - **AND** `shell_exec` tool is matched for commit detection
 
@@ -59,10 +59,10 @@ The store command MUST read the transcript from the path provided by the hook, u
 
 #### Scenario: Read transcript from hook-provided path
 - Given the hook JSON contains `transcript_path`
-- When claudit processes the hook
-- Then claudit reads the file at that path using the configured agent's parser
+- When shiftlog processes the hook
+- Then shiftlog reads the file at that path using the configured agent's parser
 
 #### Scenario: Handle missing transcript file
 - Given the hook JSON contains a `transcript_path` that doesn't exist
-- When claudit processes the hook
-- Then claudit logs a warning and exits with status 0
+- When shiftlog processes the hook
+- Then shiftlog logs a warning and exits with status 0

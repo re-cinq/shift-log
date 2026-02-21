@@ -8,15 +8,15 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/re-cinq/claudit/internal/agent"
-	_ "github.com/re-cinq/claudit/internal/agent/claude"   // register Claude agent
-	_ "github.com/re-cinq/claudit/internal/agent/codex"    // register Codex agent
-	_ "github.com/re-cinq/claudit/internal/agent/copilot"  // register Copilot agent
-	_ "github.com/re-cinq/claudit/internal/agent/gemini"   // register Gemini agent
-	_ "github.com/re-cinq/claudit/internal/agent/opencode" // register OpenCode agent
-	"github.com/re-cinq/claudit/internal/cli"
-	"github.com/re-cinq/claudit/internal/config"
-	"github.com/re-cinq/claudit/internal/git"
+	"github.com/re-cinq/shift-log/internal/agent"
+	_ "github.com/re-cinq/shift-log/internal/agent/claude"   // register Claude agent
+	_ "github.com/re-cinq/shift-log/internal/agent/codex"    // register Codex agent
+	_ "github.com/re-cinq/shift-log/internal/agent/copilot"  // register Copilot agent
+	_ "github.com/re-cinq/shift-log/internal/agent/gemini"   // register Gemini agent
+	_ "github.com/re-cinq/shift-log/internal/agent/opencode" // register OpenCode agent
+	"github.com/re-cinq/shift-log/internal/cli"
+	"github.com/re-cinq/shift-log/internal/config"
+	"github.com/re-cinq/shift-log/internal/git"
 	"github.com/spf13/cobra"
 )
 
@@ -24,7 +24,7 @@ var agentFlag string
 
 var initCmd = &cobra.Command{
 	Use:     "init",
-	Short:   "Initialize claudit in the current repository",
+	Short:   "Initialize shiftlog in the current repository",
 	GroupID: "human",
 	Long: `Configures the current git repository for conversation capture.
 
@@ -88,13 +88,13 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	fmt.Println("✓ Installed git hooks (pre-push, post-merge, post-checkout, post-commit)")
 
-	// Add .claudit/ to .gitignore
-	cli.LogDebug("init: ensuring .claudit/ is in .gitignore")
-	if err := ensureGitignoreEntry(repoRoot, ".claudit/"); err != nil {
+	// Add .shiftlog/ to .gitignore
+	cli.LogDebug("init: ensuring .shiftlog/ is in .gitignore")
+	if err := ensureGitignoreEntry(repoRoot, ".shiftlog/"); err != nil {
 		return fmt.Errorf("failed to update .gitignore: %w", err)
 	}
 
-	fmt.Println("✓ Added .claudit/ to .gitignore")
+	fmt.Println("✓ Added .shiftlog/ to .gitignore")
 
 	// Save agent to config
 	cfg, err := config.Read()
@@ -106,12 +106,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 		cli.LogDebug("init: failed to write config: %v", err)
 	}
 
-	// Check if claudit is in PATH
-	if _, err := exec.LookPath("claudit"); err != nil {
+	// Check if shiftlog is in PATH
+	if _, err := exec.LookPath("shiftlog"); err != nil {
 		fmt.Println()
-		fmt.Println("⚠ Warning: 'claudit' is not in your PATH.")
-		fmt.Println("  The hook will not work until claudit is installed.")
-		fmt.Println("  Install with: go install github.com/re-cinq/claudit@latest")
+		fmt.Println("⚠ Warning: 'shiftlog' is not in your PATH.")
+		fmt.Println("  The hook will not work until shiftlog is installed.")
+		fmt.Println("  Install with: go install github.com/re-cinq/shift-log@latest")
 	}
 
 	fmt.Println()

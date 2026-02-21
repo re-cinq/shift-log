@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/re-cinq/claudit/internal/agent"
-	agentclaude "github.com/re-cinq/claudit/internal/agent/claude"
-	"github.com/re-cinq/claudit/internal/git"
-	"github.com/re-cinq/claudit/internal/storage"
+	"github.com/re-cinq/shift-log/internal/agent"
+	agentclaude "github.com/re-cinq/shift-log/internal/agent/claude"
+	"github.com/re-cinq/shift-log/internal/git"
+	"github.com/re-cinq/shift-log/internal/storage"
 )
 
 // CommitInfo represents commit data for the API

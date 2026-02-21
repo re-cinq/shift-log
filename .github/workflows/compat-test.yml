@@ -108,7 +108,7 @@ jobs:
         run: printenv OPENAI_API_KEY | codex login --with-api-key
 
       - name: Build claudit
-        run: CGO_ENABLED=0 go build -o claudit .
+        run: CGO_ENABLED=0 go build -o shiftlog .
 
       - name: Run integration tests
         id: test
@@ -118,7 +118,7 @@ jobs:
           COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          CLAUDIT_BINARY: ${{ github.workspace }}/claudit
+          SHIFTLOG_BINARY: ${{ github.workspace }}/claudit
         run: |
           go test ./tests/integration/... -v -timeout 600s 2>&1 | tee /tmp/test-output.txt
           exit ${PIPESTATUS[0]}

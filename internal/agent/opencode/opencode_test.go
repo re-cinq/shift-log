@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/re-cinq/claudit/internal/agent"
+	"github.com/re-cinq/shift-log/internal/agent"
 )
 
 func TestAgentName(t *testing.T) {
@@ -226,15 +226,15 @@ func TestConfigureHooks(t *testing.T) {
 		t.Fatalf("ConfigureHooks() error: %v", err)
 	}
 
-	pluginPath := filepath.Join(tmpDir, ".opencode", "plugins", "claudit.js")
+	pluginPath := filepath.Join(tmpDir, ".opencode", "plugins", "shiftlog.js")
 	data, err := os.ReadFile(pluginPath)
 	if err != nil {
 		t.Fatalf("Failed to read plugin: %v", err)
 	}
 
 	content := string(data)
-	if !strings.Contains(content, "claudit store --agent=opencode") {
-		t.Error("Plugin should contain 'claudit store --agent=opencode'")
+	if !strings.Contains(content, "shiftlog store --agent=opencode") {
+		t.Error("Plugin should contain 'shiftlog store --agent=opencode'")
 	}
 	if !strings.Contains(content, "tool.execute.after") {
 		t.Error("Plugin should contain 'tool.execute.after'")

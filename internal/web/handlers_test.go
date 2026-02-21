@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/re-cinq/claudit/internal/git"
-	"github.com/re-cinq/claudit/internal/storage"
+	"github.com/re-cinq/shift-log/internal/git"
+	"github.com/re-cinq/shift-log/internal/storage"
 )
 
 // testRepo is a temporary git repository for handler tests.
@@ -23,7 +23,7 @@ type testRepo struct {
 
 func newTestRepo(t *testing.T) *testRepo {
 	t.Helper()
-	dir, err := os.MkdirTemp("", "claudit-web-test-*")
+	dir, err := os.MkdirTemp("", "shiftlog-web-test-*")
 	if err != nil {
 		t.Fatal(err)
 	}

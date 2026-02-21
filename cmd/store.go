@@ -8,16 +8,16 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/re-cinq/claudit/internal/agent"
-	_ "github.com/re-cinq/claudit/internal/agent/claude"   // register Claude agent
-	_ "github.com/re-cinq/claudit/internal/agent/codex"    // register Codex agent
-	_ "github.com/re-cinq/claudit/internal/agent/copilot"  // register Copilot agent
-	_ "github.com/re-cinq/claudit/internal/agent/gemini"   // register Gemini agent
-	_ "github.com/re-cinq/claudit/internal/agent/opencode" // register OpenCode agent
-	"github.com/re-cinq/claudit/internal/cli"
-	"github.com/re-cinq/claudit/internal/config"
-	"github.com/re-cinq/claudit/internal/git"
-	"github.com/re-cinq/claudit/internal/storage"
+	"github.com/re-cinq/shift-log/internal/agent"
+	_ "github.com/re-cinq/shift-log/internal/agent/claude"   // register Claude agent
+	_ "github.com/re-cinq/shift-log/internal/agent/codex"    // register Codex agent
+	_ "github.com/re-cinq/shift-log/internal/agent/copilot"  // register Copilot agent
+	_ "github.com/re-cinq/shift-log/internal/agent/gemini"   // register Gemini agent
+	_ "github.com/re-cinq/shift-log/internal/agent/opencode" // register OpenCode agent
+	"github.com/re-cinq/shift-log/internal/cli"
+	"github.com/re-cinq/shift-log/internal/config"
+	"github.com/re-cinq/shift-log/internal/git"
+	"github.com/re-cinq/shift-log/internal/storage"
 	"github.com/spf13/cobra"
 )
 

@@ -5,7 +5,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/re-cinq/claudit/internal/config"
+	"github.com/re-cinq/shift-log/internal/config"
 )
 
 var (
@@ -13,22 +13,22 @@ var (
 	debugEnabled bool
 )
 
-// LogWarning prints a warning message to stderr with the claudit prefix
+// LogWarning prints a warning message to stderr with the shiftlog prefix
 func LogWarning(format string, args ...interface{}) {
-	fmt.Fprintf(os.Stderr, "claudit: warning: "+format+"\n", args...)
+	fmt.Fprintf(os.Stderr, "shiftlog: warning: "+format+"\n", args...)
 }
 
-// LogInfo prints an info message to stderr with the claudit prefix
+// LogInfo prints an info message to stderr with the shiftlog prefix
 func LogInfo(format string, args ...interface{}) {
-	fmt.Fprintf(os.Stderr, "claudit: "+format+"\n", args...)
+	fmt.Fprintf(os.Stderr, "shiftlog: "+format+"\n", args...)
 }
 
 // LogDebug prints a debug message to stderr if debug logging is enabled
-// in .claudit/config. The config is read once per process invocation.
+// in .shiftlog/config. The config is read once per process invocation.
 func LogDebug(format string, args ...interface{}) {
 	initDebug()
 	if debugEnabled {
-		fmt.Fprintf(os.Stderr, "claudit: debug: "+format+"\n", args...)
+		fmt.Fprintf(os.Stderr, "shiftlog: debug: "+format+"\n", args...)
 	}
 }
 

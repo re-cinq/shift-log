@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/re-cinq/claudit/internal/agent"
+	"github.com/re-cinq/shift-log/internal/agent"
 )
 
 func init() {
@@ -40,7 +40,7 @@ func (a *Agent) ConfigureHooks(repoRoot string) error {
 	return nil
 }
 
-// RemoveHooks removes claudit hooks from Claude Code settings.
+// RemoveHooks removes shiftlog hooks from Claude Code settings.
 func (a *Agent) RemoveHooks(repoRoot string) error {
 	claudeDir := filepath.Join(repoRoot, ".claude")
 	settings, err := ReadSettings(claudeDir)
@@ -51,7 +51,7 @@ func (a *Agent) RemoveHooks(repoRoot string) error {
 	RemoveClauditHook(settings)
 	RemoveSessionHooks(settings)
 
-	// If only claudit content was present, remove the file
+	// If only shiftlog content was present, remove the file
 	if len(settings.Other) == 0 &&
 		len(settings.Hooks.PostToolUse) == 0 &&
 		len(settings.Hooks.SessionStart) == 0 &&
@@ -76,7 +76,7 @@ func (a *Agent) DiagnoseHooks(repoRoot string) []agent.DiagnosticCheck {
 		checks = append(checks, agent.DiagnosticCheck{
 			Name:    "Claude Code hook configuration",
 			OK:      false,
-			Message: "No .claude/settings.local.json found. Run 'claudit init' to configure.",
+			Message: "No .claude/settings.local.json found. Run 'shiftlog init' to configure.",
 		})
 		return checks
 	}
@@ -96,18 +96,18 @@ func (a *Agent) DiagnoseHooks(repoRoot string) []agent.DiagnosticCheck {
 		checks = append(checks, agent.DiagnosticCheck{
 			Name:    "Claude Code hooks",
 			OK:      false,
-			Message: "Missing 'hooks' key in settings. Run 'claudit init' to fix.",
+			Message: "Missing 'hooks' key in settings. Run 'shiftlog init' to fix.",
 		})
 		return checks
 	}
 
 	// Check PostToolUse
 	postToolUse, hasPostToolUse := hooks["PostToolUse"]
-	if !hasPostToolUse || !agent.HasNestedHookCommand(postToolUse, "claudit store") {
+	if !hasPostToolUse || !agent.HasNestedHookCommand(postToolUse, "shiftlog store") {
 		checks = append(checks, agent.DiagnosticCheck{
 			Name:    "PostToolUse hook",
 			OK:      false,
-			Message: "'claudit store' hook not found in PostToolUse. Run 'claudit init' to fix.",
+			Message: "'shiftlog store' hook not found in PostToolUse. Run 'shiftlog init' to fix.",
 		})
 	} else {
 		checks = append(checks, agent.DiagnosticCheck{
@@ -119,11 +119,11 @@ func (a *Agent) DiagnoseHooks(repoRoot string) []agent.DiagnosticCheck {
 
 	// Check SessionStart
 	sessionStart, hasSessionStart := hooks["SessionStart"]
-	if !hasSessionStart || !agent.HasNestedHookCommand(sessionStart, "claudit session-start") {
+	if !hasSessionStart || !agent.HasNestedHookCommand(sessionStart, "shiftlog session-start") {
 		checks = append(checks, agent.DiagnosticCheck{
 			Name:    "SessionStart hook",
 			OK:      false,
-			Message: "Missing SessionStart hook (manual commit capture won't work). Run 'claudit init' to add.",
+			Message: "Missing SessionStart hook (manual commit capture won't work). Run 'shiftlog init' to add.",
 		})
 	} else {
 		checks = append(checks, agent.DiagnosticCheck{
@@ -135,11 +135,11 @@ func (a *Agent) DiagnoseHooks(repoRoot string) []agent.DiagnosticCheck {
 
 	// Check SessionEnd
 	sessionEnd, hasSessionEnd := hooks["SessionEnd"]
-	if !hasSessionEnd || !agent.HasNestedHookCommand(sessionEnd, "claudit session-end") {
+	if !hasSessionEnd || !agent.HasNestedHookCommand(sessionEnd, "shiftlog session-end") {
 		checks = append(checks, agent.DiagnosticCheck{
 			Name:    "SessionEnd hook",
 			OK:      false,
-			Message: "Missing SessionEnd hook (manual commit capture won't work). Run 'claudit init' to add.",
+			Message: "Missing SessionEnd hook (manual commit capture won't work). Run 'shiftlog init' to add.",
 		})
 	} else {
 		checks = append(checks, agent.DiagnosticCheck{
@@ -183,7 +183,7 @@ func (a *Agent) ParseTranscriptFile(path string) (*agent.Transcript, error) {
 // DiscoverSession finds an active or recent Claude Code session.
 // It checks (in order): active-session.json, sessions-index.json, directory scan.
 func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) {
-	// Try active-session.json first (written by claudit session-start hook)
+	// Try active-session.json first (written by shiftlog session-start hook)
 	if info, err := discoverFromActiveSession(projectPath); err == nil && info != nil {
 		return info, nil
 	}
@@ -201,11 +201,11 @@ func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) 
 	return scanForRecentSession(projectPath)
 }
 
-// discoverFromActiveSession checks the .claudit/active-session.json file
+// discoverFromActiveSession checks the .shiftlog/active-session.json file
 // written by the session-start hook for a direct pointer to the active session.
 func discoverFromActiveSession(projectPath string) (*agent.SessionInfo, error) {
 	root := projectPath
-	sessionPath := filepath.Join(root, ".claudit", "active-session.json")
+	sessionPath := filepath.Join(root, ".shiftlog", "active-session.json")
 
 	data, err := os.ReadFile(sessionPath)
 	if err != nil {

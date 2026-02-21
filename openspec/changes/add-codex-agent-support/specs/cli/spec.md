@@ -4,13 +4,13 @@
 The `init` command SHALL accept an `--agent` flag to specify which coding agent to configure.
 
 #### Scenario: Init with Codex
-- **WHEN** user runs `claudit init --agent=codex`
+- **WHEN** user runs `shiftlog init --agent=codex`
 - **THEN** git hooks are installed (pre-push, post-merge, post-checkout, post-commit)
 - **AND** no agent-specific hook or plugin file is created (Codex is hookless)
-- **AND** `.claudit/config.json` stores `agent: "codex"`
+- **AND** `.shiftlog/config.json` stores `agent: "codex"`
 
 #### Scenario: Invalid agent name (updated list)
-- **WHEN** user runs `claudit init --agent=unknown`
+- **WHEN** user runs `shiftlog init --agent=unknown`
 - **THEN** an error message lists supported agents: claude, codex, gemini, opencode
 - **AND** the command exits with non-zero status
 
@@ -27,7 +27,7 @@ Each agent SHALL have its own hook configuration mechanism.
 The `doctor` command SHALL validate configuration for the configured agent.
 
 #### Scenario: Doctor with Codex
-- **WHEN** user runs `claudit doctor` in a Codex-configured repo
+- **WHEN** user runs `shiftlog doctor` in a Codex-configured repo
 - **THEN** the command checks that the `codex` binary is in PATH
 - **AND** reports OK or FAIL
 
@@ -35,7 +35,7 @@ The `doctor` command SHALL validate configuration for the configured agent.
 The system SHALL discover active Codex CLI sessions for conversation capture.
 
 #### Scenario: Discover Codex session
-- **WHEN** `claudit store --manual --agent=codex` is invoked
+- **WHEN** `shiftlog store --manual --agent=codex` is invoked
 - **THEN** sessions are discovered by scanning `~/.codex/sessions/` recursively for recently-modified `.jsonl` rollout files
 - **AND** the `session_meta` line is read to match `cwd` to the current project path
 
@@ -50,8 +50,8 @@ The `runManualStore()` function SHALL use the configured agent's `DiscoverSessio
 
 #### Scenario: Manual store with Codex agent
 - **WHEN** a post-commit hook fires in a Codex-configured repo
-- **AND** `claudit store --manual` is invoked
-- **THEN** the configured agent (Codex) is resolved from `.claudit/config.json`
+- **AND** `shiftlog store --manual` is invoked
+- **THEN** the configured agent (Codex) is resolved from `.shiftlog/config.json`
 - **AND** `ag.DiscoverSession(projectPath)` is called to find the active session
 - **AND** the conversation is stored with `agent: "codex"`
 

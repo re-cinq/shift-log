@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/re-cinq/claudit/internal/agent"
+	"github.com/re-cinq/shift-log/internal/agent"
 )
 
 func init() {
@@ -38,7 +38,7 @@ func (a *Agent) ConfigureHooks(repoRoot string) error {
 	return nil
 }
 
-// RemoveHooks removes claudit hooks from Gemini CLI settings.
+// RemoveHooks removes shiftlog hooks from Gemini CLI settings.
 func (a *Agent) RemoveHooks(repoRoot string) error {
 	geminiDir := filepath.Join(repoRoot, ".gemini")
 	settings, err := ReadSettings(geminiDir)
@@ -49,7 +49,7 @@ func (a *Agent) RemoveHooks(repoRoot string) error {
 	RemoveClauditHook(settings)
 	RemoveSessionHooks(settings)
 
-	// If only claudit content was present, remove the file
+	// If only shiftlog content was present, remove the file
 	if len(settings.Other) == 0 &&
 		len(settings.Hooks.AfterTool) == 0 &&
 		len(settings.Hooks.SessionStart) == 0 &&
@@ -74,7 +74,7 @@ func (a *Agent) DiagnoseHooks(repoRoot string) []agent.DiagnosticCheck {
 		checks = append(checks, agent.DiagnosticCheck{
 			Name:    "Gemini CLI hook configuration",
 			OK:      false,
-			Message: "No .gemini/settings.json found. Run 'claudit init --agent=gemini' to configure.",
+			Message: "No .gemini/settings.json found. Run 'shiftlog init --agent=gemini' to configure.",
 		})
 		return checks
 	}
@@ -94,17 +94,17 @@ func (a *Agent) DiagnoseHooks(repoRoot string) []agent.DiagnosticCheck {
 		checks = append(checks, agent.DiagnosticCheck{
 			Name:    "Gemini CLI hooks",
 			OK:      false,
-			Message: "Missing 'hooks' key in settings. Run 'claudit init --agent=gemini' to fix.",
+			Message: "Missing 'hooks' key in settings. Run 'shiftlog init --agent=gemini' to fix.",
 		})
 		return checks
 	}
 
 	afterTool, hasAfterTool := hooks["AfterTool"]
-	if !hasAfterTool || !agent.HasNestedHookCommand(afterTool, "claudit store") {
+	if !hasAfterTool || !agent.HasNestedHookCommand(afterTool, "shiftlog store") {
 		checks = append(checks, agent.DiagnosticCheck{
 			Name:    "AfterTool hook",
 			OK:      false,
-			Message: "'claudit store' hook not found in AfterTool. Run 'claudit init --agent=gemini' to fix.",
+			Message: "'shiftlog store' hook not found in AfterTool. Run 'shiftlog init --agent=gemini' to fix.",
 		})
 	} else {
 		checks = append(checks, agent.DiagnosticCheck{

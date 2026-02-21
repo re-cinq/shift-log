@@ -14,7 +14,7 @@ const NotesRef = "refs/notes/claude-conversations"
 const NotesTrackingRef = "refs/notes/claude-conversations-remote"
 
 // ErrNonFastForward is returned when a push fails because the remote has diverged.
-var ErrNonFastForward = errors.New("non-fast-forward update: remote notes have diverged, run 'claudit sync pull' first")
+var ErrNonFastForward = errors.New("non-fast-forward update: remote notes have diverged, run 'shiftlog sync pull' first")
 
 // AddNote adds a note to a commit.
 // Content is piped via stdin (-F -) to avoid ARG_MAX limits on large transcripts.

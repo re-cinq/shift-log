@@ -1,15 +1,15 @@
 # yaml-language-server: $schema=https://goreleaser.com/static/schema.json
 version: 2
 
-project_name: claudit
+project_name: shiftlog
 
 before:
   hooks:
     - go mod tidy
 
 builds:
-  - id: claudit
-    binary: claudit
+  - id: shiftlog
+    binary: shiftlog
     env:
       - CGO_ENABLED=0
     goos:
@@ -58,7 +58,7 @@ changelog:
 release:
   github:
     owner: re-cinq
-    name: claudit
+    name: shiftlog
   draft: false
   prerelease: auto
   name_template: "{{.Tag}}"

@@ -1,9 +1,9 @@
 ## Context
-claudit's git layer (notes, compression, sync, remap) is already agent-agnostic. The coupling is in 4 areas: hook configuration, session discovery, transcript parsing, and resume. An interface pattern cleanly separates these.
+shiftlog's git layer (notes, compression, sync, remap) is already agent-agnostic. The coupling is in 4 areas: hook configuration, session discovery, transcript parsing, and resume. An interface pattern cleanly separates these.
 
 ## Goals / Non-Goals
 - Goals: Support Gemini CLI and OpenCode CLI alongside Claude Code; shared acceptance tests; backward compatibility
-- Non-Goals: Renaming "claudit"; auto-detecting which agent is running; supporting agents beyond these three initially
+- Non-Goals: Renaming "shiftlog"; auto-detecting which agent is running; supporting agents beyond these three initially
 
 ## Research Findings
 
@@ -21,8 +21,8 @@ claudit's git layer (notes, compression, sync, remap) is already agent-agnostic.
 ## Decisions
 - **Single notes ref**: `refs/notes/claude-conversations` stores all agents' conversations. `Agent` field in `StoredConversation` enables filtering. No ref proliferation.
 - **Normalize transcripts**: Each agent's parser converts to a common `Transcript` type. Storage layer never changes.
-- **Explicit `--agent` flag**: `claudit init --agent=gemini` sets agent in config. Hook commands include `--agent=X`. No runtime binary sniffing.
-- **Plugin file for OpenCode**: Since OpenCode uses plugins not JSON hooks, `claudit init --agent=opencode` generates a JS plugin file.
+- **Explicit `--agent` flag**: `shiftlog init --agent=gemini` sets agent in config. Hook commands include `--agent=X`. No runtime binary sniffing.
+- **Plugin file for OpenCode**: Since OpenCode uses plugins not JSON hooks, `shiftlog init --agent=opencode` generates a JS plugin file.
 - **Pure Go SQLite**: Use `modernc.org/sqlite` (no CGO) for OpenCode support.
 
 ## Risks / Trade-offs
@@ -46,5 +46,5 @@ type AgentFixtures interface {
 Shared test functions (init, store, list, show, resume) accept fixtures and run identical scenarios. Each agent's test file is thin — just providing fixture data.
 
 ## Open Questions
-- Should `claudit list` default to showing all agents or filter by configured agent?
+- Should `shiftlog list` default to showing all agents or filter by configured agent?
 - Should we rename the notes ref from `claude-conversations` to something generic?

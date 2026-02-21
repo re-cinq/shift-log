@@ -29,7 +29,7 @@ The system SHALL run a daily GitHub Actions workflow that queries the npm regist
 - **THEN** the compatibility test is triggered regardless of version changes
 
 ### Requirement: Full-Suite Compatibility Testing
-The system SHALL provide a reusable GitHub Actions workflow that installs all five agent CLIs at their resolved versions, builds claudit, and runs the full integration test suite.
+The system SHALL provide a reusable GitHub Actions workflow that installs all five agent CLIs at their resolved versions, builds shiftlog, and runs the full integration test suite.
 
 #### Scenario: All agents installed at resolved versions
 - **WHEN** the compat test runs

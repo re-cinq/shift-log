@@ -8,15 +8,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/re-cinq/claudit/internal/agent"
-	_ "github.com/re-cinq/claudit/internal/agent/claude"   // register Claude agent
-	_ "github.com/re-cinq/claudit/internal/agent/codex"    // register Codex agent
-	_ "github.com/re-cinq/claudit/internal/agent/copilot"  // register Copilot agent
-	_ "github.com/re-cinq/claudit/internal/agent/gemini"   // register Gemini agent
-	_ "github.com/re-cinq/claudit/internal/agent/opencode" // register OpenCode agent
-	"github.com/re-cinq/claudit/internal/cli"
-	"github.com/re-cinq/claudit/internal/git"
-	"github.com/re-cinq/claudit/internal/storage"
+	"github.com/re-cinq/shift-log/internal/agent"
+	_ "github.com/re-cinq/shift-log/internal/agent/claude"   // register Claude agent
+	_ "github.com/re-cinq/shift-log/internal/agent/codex"    // register Codex agent
+	_ "github.com/re-cinq/shift-log/internal/agent/copilot"  // register Copilot agent
+	_ "github.com/re-cinq/shift-log/internal/agent/gemini"   // register Gemini agent
+	_ "github.com/re-cinq/shift-log/internal/agent/opencode" // register OpenCode agent
+	"github.com/re-cinq/shift-log/internal/cli"
+	"github.com/re-cinq/shift-log/internal/git"
+	"github.com/re-cinq/shift-log/internal/storage"
 	"github.com/spf13/cobra"
 )
 
@@ -41,11 +41,11 @@ and Codex). Use --agent to override which agent performs the summarisation.
 If no ref is provided, summarises the conversation for HEAD.
 
 Examples:
-  claudit summarise            # Summarise conversation for HEAD
-  claudit tldr                 # Same, using the alias
-  claudit summarise HEAD~1     # Summarise for previous commit
-  claudit summarise --agent=claude abc123  # Use Claude Code explicitly
-  claudit tldr --focus="security changes"  # Prioritise security in summary`,
+  shiftlog summarise            # Summarise conversation for HEAD
+  shiftlog tldr                 # Same, using the alias
+  shiftlog summarise HEAD~1     # Summarise for previous commit
+  shiftlog summarise --agent=claude abc123  # Use Claude Code explicitly
+  shiftlog tldr --focus="security changes"  # Prioritise security in summary`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runSummarise,
 }

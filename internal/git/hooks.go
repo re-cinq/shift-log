@@ -17,10 +17,10 @@ const (
 	HookPostCommit   HookType = "post-commit"
 )
 
-// clauditMarker identifies claudit-managed hook sections
-const clauditMarker = "# claudit-managed"
+// shiftlogMarker identifies shiftlog-managed hook sections
+const shiftlogMarker = "# shiftlog-managed"
 
-// InstallHook installs or updates a git hook with claudit commands
+// InstallHook installs or updates a git hook with shiftlog commands
 func InstallHook(gitDir string, hookType HookType, command string) error {
 	hooksDir := filepath.Join(gitDir, "hooks")
 	if err := os.MkdirAll(hooksDir, 0755); err != nil {
@@ -35,33 +35,33 @@ func InstallHook(gitDir string, hookType HookType, command string) error {
 		existingContent = string(data)
 	}
 
-	// Build the claudit section
-	clauditSection := fmt.Sprintf(`
+	// Build the shiftlog section
+	shiftlogSection := fmt.Sprintf(`
 %s start
 %s
 %s end
-`, clauditMarker, command, clauditMarker)
+`, shiftlogMarker, command, shiftlogMarker)
 
 	var newContent string
 
 	if existingContent == "" {
 		// New hook file
-		newContent = "#!/bin/sh\n" + clauditSection
-	} else if strings.Contains(existingContent, clauditMarker) {
-		// Update existing claudit section
-		newContent = replaceClauditSection(existingContent, clauditSection)
+		newContent = "#!/bin/sh\n" + shiftlogSection
+	} else if strings.Contains(existingContent, shiftlogMarker) {
+		// Update existing shiftlog section
+		newContent = replaceClauditSection(existingContent, shiftlogSection)
 	} else {
 		// Append to existing hook
-		newContent = existingContent + "\n" + clauditSection
+		newContent = existingContent + "\n" + shiftlogSection
 	}
 
 	return os.WriteFile(hookPath, []byte(newContent), 0755)
 }
 
-// replaceClauditSection replaces the claudit-managed section in hook content
+// replaceClauditSection replaces the shiftlog-managed section in hook content
 func replaceClauditSection(content, newSection string) string {
-	startMarker := clauditMarker + " start"
-	endMarker := clauditMarker + " end"
+	startMarker := shiftlogMarker + " start"
+	endMarker := shiftlogMarker + " end"
 
 	startIdx := strings.Index(content, startMarker)
 	endIdx := strings.Index(content, endMarker)
@@ -88,9 +88,9 @@ func replaceClauditSection(content, newSection string) string {
 	return content[:lineStart] + newSection + content[lineEnd:]
 }
 
-// RemoveHook removes the claudit-managed section from a git hook.
+// RemoveHook removes the shiftlog-managed section from a git hook.
 // If the file reduces to just a shebang line (with optional whitespace),
-// it is deleted entirely. No-op if the hook file doesn't exist or has no claudit section.
+// it is deleted entirely. No-op if the hook file doesn't exist or has no shiftlog section.
 func RemoveHook(gitDir string, hookType HookType) error {
 	hookPath := filepath.Join(gitDir, "hooks", string(hookType))
 
@@ -103,11 +103,11 @@ func RemoveHook(gitDir string, hookType HookType) error {
 	}
 
 	content := string(data)
-	if !strings.Contains(content, clauditMarker) {
+	if !strings.Contains(content, shiftlogMarker) {
 		return nil
 	}
 
-	// Replace the claudit section with nothing
+	// Replace the shiftlog section with nothing
 	newContent := replaceClauditSection(content, "")
 
 	// If only a shebang line remains (with optional whitespace), delete the file
@@ -119,7 +119,7 @@ func RemoveHook(gitDir string, hookType HookType) error {
 	return os.WriteFile(hookPath, []byte(newContent), 0755)
 }
 
-// RemoveAllHooks removes claudit-managed sections from all git hooks.
+// RemoveAllHooks removes shiftlog-managed sections from all git hooks.
 func RemoveAllHooks(gitDir string) error {
 	hookTypes := []HookType{HookPrePush, HookPostMerge, HookPostCheckout, HookPostCommit}
 	for _, ht := range hookTypes {
@@ -130,13 +130,13 @@ func RemoveAllHooks(gitDir string) error {
 	return nil
 }
 
-// InstallAllHooks installs all claudit git hooks.
-// It resolves the absolute path to the running claudit binary so hooks work
+// InstallAllHooks installs all shiftlog git hooks.
+// It resolves the absolute path to the running shiftlog binary so hooks work
 // even when the shell environment strips PATH (e.g. Codex CLI sandbox).
 func InstallAllHooks(gitDir string) error {
 	bin, err := resolveClauditBinary()
 	if err != nil {
-		return fmt.Errorf("failed to resolve claudit binary path: %w", err)
+		return fmt.Errorf("failed to resolve shiftlog binary path: %w", err)
 	}
 
 	hooks := map[HookType]string{
@@ -155,7 +155,7 @@ func InstallAllHooks(gitDir string) error {
 	return nil
 }
 
-// resolveClauditBinary returns the absolute path to the running claudit binary.
+// resolveClauditBinary returns the absolute path to the running shiftlog binary.
 func resolveClauditBinary() (string, error) {
 	exe, err := os.Executable()
 	if err != nil {

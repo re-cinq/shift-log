@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/re-cinq/claudit/cmd"
+	"github.com/re-cinq/shift-log/cmd"
 )
 
 func main() {

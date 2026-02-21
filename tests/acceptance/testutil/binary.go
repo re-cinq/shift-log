@@ -9,15 +9,15 @@ import (
 
 var binaryPath string
 
-// BuildBinary builds the claudit binary for testing
+// BuildBinary builds the shiftlog binary for testing
 func BuildBinary() error {
 	// Build to a temp location
-	tmpDir, err := os.MkdirTemp("", "claudit-test-*")
+	tmpDir, err := os.MkdirTemp("", "shiftlog-test-*")
 	if err != nil {
 		return err
 	}
 
-	binaryPath = filepath.Join(tmpDir, "claudit")
+	binaryPath = filepath.Join(tmpDir, "shiftlog")
 
 	cmd := exec.Command("go", "build", "-o", binaryPath, ".")
 	cmd.Dir = findProjectRoot()
@@ -51,12 +51,12 @@ func CleanupBinary() {
 	}
 }
 
-// RunClaudit runs the claudit binary with the given arguments
+// RunClaudit runs the shiftlog binary with the given arguments
 func RunClaudit(args ...string) (string, string, error) {
 	return RunClauditWithStdin("", args...)
 }
 
-// RunClauditWithStdin runs claudit with stdin input
+// RunClauditWithStdin runs shiftlog with stdin input
 func RunClauditWithStdin(stdin string, args ...string) (string, string, error) {
 	cmd := exec.Command(binaryPath, args...)
 
@@ -72,16 +72,16 @@ func RunClauditWithStdin(stdin string, args ...string) (string, string, error) {
 	return stdout.String(), stderr.String(), err
 }
 
-// RunClauditInDir runs claudit in a specific directory
+// RunClauditInDir runs shiftlog in a specific directory
 func RunClauditInDir(dir string, args ...string) (string, string, error) {
 	return RunClauditInDirWithStdin(dir, "", args...)
 }
 
-// RunClauditInDirWithStdin runs claudit in a specific directory with stdin
+// RunClauditInDirWithStdin runs shiftlog in a specific directory with stdin
 func RunClauditInDirWithStdin(dir, stdin string, args ...string) (string, string, error) {
 	cmd := exec.Command(binaryPath, args...)
 	cmd.Dir = dir
-	// Add binary directory to PATH so hooks can find claudit
+	// Add binary directory to PATH so hooks can find shiftlog
 	cmd.Env = append(os.Environ(), "PATH="+filepath.Dir(binaryPath)+":"+os.Getenv("PATH"))
 
 	var stdout, stderr bytes.Buffer
@@ -96,12 +96,12 @@ func RunClauditInDirWithStdin(dir, stdin string, args ...string) (string, string
 	return stdout.String(), stderr.String(), err
 }
 
-// RunClauditInDirWithEnv runs claudit in a specific directory with custom env vars
+// RunClauditInDirWithEnv runs shiftlog in a specific directory with custom env vars
 func RunClauditInDirWithEnv(dir string, extraEnv []string, args ...string) (string, string, error) {
 	return RunClauditInDirWithEnvAndStdin(dir, extraEnv, "", args...)
 }
 
-// RunClauditInDirWithEnvAndStdin runs claudit with custom env vars and stdin
+// RunClauditInDirWithEnvAndStdin runs shiftlog with custom env vars and stdin
 func RunClauditInDirWithEnvAndStdin(dir string, extraEnv []string, stdin string, args ...string) (string, string, error) {
 	cmd := exec.Command(binaryPath, args...)
 	cmd.Dir = dir

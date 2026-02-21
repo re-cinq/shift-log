@@ -7,8 +7,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/re-cinq/claudit/internal/storage"
-	"github.com/re-cinq/claudit/tests/acceptance/testutil"
+	"github.com/re-cinq/shift-log/internal/storage"
+	"github.com/re-cinq/shift-log/tests/acceptance/testutil"
 )
 
 var _ = Describe("Resume Command", func() {

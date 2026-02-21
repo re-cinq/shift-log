@@ -158,7 +158,7 @@ hook registration mechanism. Extension is only via:
 
 This means our `plugin.go` (which generates a JS plugin) is fiction. We need a
 completely different approach for OpenCode hooks — likely an MCP server that
-claudit runs, or relying on the git post-commit hook exclusively (manual store
+shiftlog runs, or relying on the git post-commit hook exclusively (manual store
 mode).
 
 **3. The only shell tool is `bash`.**
@@ -183,7 +183,7 @@ The transcript parser needs to understand the `parts` schema with typed wrappers
 
 ## Part 1: Acceptance Tests (No Credentials Needed)
 
-Acceptance tests use fixture data to test claudit's internal handling of each
+Acceptance tests use fixture data to test shiftlog's internal handling of each
 agent's formats. They validate: parsing, storage, hook handling, init, show, list.
 
 ### Fixture Data Strategy
@@ -211,13 +211,13 @@ agent's formats. They validate: parsing, storage, hook handling, init, show, lis
 Each agent needs these test scenarios (mirroring existing Claude tests):
 
 #### Init Tests (`tests/acceptance/gemini_init_test.go`, `opencode_init_test.go`)
-- `claudit init --agent=gemini` creates correct `.gemini/settings.json`
+- `shiftlog init --agent=gemini` creates correct `.gemini/settings.json`
 - Hook configuration has `AfterTool` with `matcher: "run_shell_command"`
-- Hook command is `claudit store --agent=gemini`
+- Hook command is `shiftlog store --agent=gemini`
 - Idempotent: running init twice doesn't duplicate hooks
 - Preserves existing settings.json content
 
-- `claudit init --agent=opencode` — TBD based on hook strategy (may configure
+- `shiftlog init --agent=opencode` — TBD based on hook strategy (may configure
   git post-commit hook only, or set up an MCP server config)
 
 #### Store Tests (`tests/acceptance/gemini_store_test.go`, `opencode_store_test.go`)
@@ -230,12 +230,12 @@ Each agent needs these test scenarios (mirroring existing Claude tests):
 - Malformed hook input logs warning
 
 #### Show Tests
-- `claudit show` renders Gemini transcript entries correctly
+- `shiftlog show` renders Gemini transcript entries correctly
 - Tool aliases map Gemini/OpenCode tool names to display names
 
 #### Doctor Tests
-- `claudit doctor` with agent=gemini checks `.gemini/settings.json`
-- Reports missing hooks, suggests `claudit init --agent=gemini`
+- `shiftlog doctor` with agent=gemini checks `.gemini/settings.json`
+- Reports missing hooks, suggests `shiftlog init --agent=gemini`
 
 ### Shared Test Infrastructure
 
@@ -266,13 +266,13 @@ pipeline works end-to-end.
 **Prerequisites**:
 - Gemini CLI installed: `npm install -g @google/gemini-cli`
 - Google AI API key: `GOOGLE_API_KEY` or `GEMINI_API_KEY` environment variable
-- claudit binary built
+- shiftlog binary built
 
 **Skip condition**: `SKIP_GEMINI_INTEGRATION=1`
 
 **Test flow** (mirrors `TestClaudeCodeIntegration`):
 1. Create temp git repo with initial commit
-2. Run `claudit init --agent=gemini`
+2. Run `shiftlog init --agent=gemini`
 3. Verify `.gemini/settings.json` has correct hooks
 4. Create a test file for Gemini to commit
 5. Run `gemini` CLI in non-interactive/print mode with a commit prompt
@@ -297,13 +297,13 @@ can't automate the full flow.
 - OpenCode installed: `go install github.com/opencode-ai/opencode@latest` or npm
 - API key for the LLM provider OpenCode is configured to use (likely
   `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` depending on config)
-- claudit binary built
+- shiftlog binary built
 
 **Skip condition**: `SKIP_OPENCODE_INTEGRATION=1`
 
 **Test flow**:
 1. Create temp git repo with initial commit
-2. Run `claudit init --agent=opencode`
+2. Run `shiftlog init --agent=opencode`
 3. Verify hook configuration (whatever approach we settle on)
 4. Create a test file for OpenCode to commit
 5. Run `opencode` in non-interactive mode
@@ -348,7 +348,7 @@ to either:
 | `GOOGLE_API_KEY` | Gemini integration | Gemini integration tests |
 | `SKIP_GEMINI_INTEGRATION` | Test runner | Set to `1` to skip |
 | `SKIP_OPENCODE_INTEGRATION` | Test runner | Set to `1` to skip |
-| `CLAUDIT_BINARY` | All integration | Path to claudit binary (optional) |
+| `SHIFTLOG_BINARY` | All integration | Path to shiftlog binary (optional) |
 
 ---
 

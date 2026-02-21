@@ -8,7 +8,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/re-cinq/claudit/tests/acceptance/testutil"
+	"github.com/re-cinq/shift-log/tests/acceptance/testutil"
 )
 
 var _ = Describe("List Command", func() {
@@ -145,7 +145,7 @@ var _ = Describe("List Command", func() {
 	Describe("outside git repository", func() {
 		It("fails with error", func() {
 			// Create a temp directory that's not a git repo
-			tmpDir, err := os.MkdirTemp("", "claudit-no-git-*")
+			tmpDir, err := os.MkdirTemp("", "shiftlog-no-git-*")
 			Expect(err).NotTo(HaveOccurred())
 			defer os.RemoveAll(tmpDir)
 

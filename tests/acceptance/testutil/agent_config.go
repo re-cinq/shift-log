@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -22,10 +23,10 @@ type AgentTestConfig struct {
 	SampleNonToolInput func(sessionID string) string
 
 	// Init verification
-	SettingsFile    string  // ".claude/settings.local.json" or ".opencode/plugins/claudit.js"
+	SettingsFile    string  // ".claude/settings.local.json" or ".opencode/plugins/shiftlog.js"
 	HookKey         string  // "PostToolUse" or "AfterTool" (empty for plugin-based agents)
 	ToolMatcher     string  // "Bash" or "run_shell_command" (empty for plugin-based agents)
-	StoreCommand    string  // "claudit store" or "claudit store --agent=opencode"
+	StoreCommand    string  // "shiftlog store" or "shiftlog store --agent=opencode"
 	Timeout         float64 // 30 or 30000
 	HasSessionHooks bool    // Gemini has SessionStart/SessionEnd
 	SessionTimeout  float64 // 5000 for Gemini
@@ -36,7 +37,7 @@ type AgentTestConfig struct {
 	// Resume / session verification
 	SessionFileExt         string                                                   // ".jsonl" or ".json"
 	GetSessionDir          func(homeDir, projectPath string) string
-	NeedsBinaryPath        bool                                                     // true when init installs hooks referencing claudit
+	NeedsBinaryPath        bool                                                     // true when init installs hooks referencing shiftlog
 	HasSessionsIndex       bool                                                     // true if agent creates sessions-index.json on restore
 	ReadRestoredTranscript func(homeDir, projectPath, sessionID string) ([]byte, error) // nil = use session file
 
@@ -70,7 +71,7 @@ func ClaudeTestConfig() AgentTestConfig {
 		SettingsFile:    ".claude/settings.local.json",
 		HookKey:         "PostToolUse",
 		ToolMatcher:     "Bash",
-		StoreCommand:    "claudit store",
+		StoreCommand:    "shiftlog store",
 		Timeout:         30,
 		HasSessionHooks: false,
 		IsPluginBased:   false,
@@ -104,7 +105,7 @@ func GeminiTestConfig() AgentTestConfig {
 		SettingsFile:    ".gemini/settings.json",
 		HookKey:         "AfterTool",
 		ToolMatcher:     "run_shell_command",
-		StoreCommand:    "claudit store --agent=gemini",
+		StoreCommand:    "shiftlog store --agent=gemini",
 		Timeout:         30000,
 		HasSessionHooks: true,
 		SessionTimeout:  5000,
@@ -134,10 +135,10 @@ func OpenCodeTestConfig() AgentTestConfig {
 		SampleHookInput:    SampleOpenCodeHookInput,
 		SampleNonToolInput: SampleOpenCodeHookInputNonShell,
 
-		SettingsFile:    ".opencode/plugins/claudit.js",
+		SettingsFile:    ".opencode/plugins/shiftlog.js",
 		HookKey:         "",  // plugin-based, no JSON hook key
 		ToolMatcher:     "",  // plugin-based, no JSON tool matcher
-		StoreCommand:    "claudit store --agent=opencode",
+		StoreCommand:    "shiftlog store --agent=opencode",
 		Timeout:         30000,
 		HasSessionHooks: false,
 		IsPluginBased:   true,
@@ -169,7 +170,7 @@ func CodexTestConfig() AgentTestConfig {
 		SettingsFile:    "",    // no settings file — hookless agent
 		HookKey:         "",    // no hook key
 		ToolMatcher:     "",    // no tool matcher
-		StoreCommand:    "claudit store --agent=codex",
+		StoreCommand:    "shiftlog store --agent=codex",
 		Timeout:         0,
 		HasSessionHooks: false,
 		IsPluginBased:   false,
@@ -199,10 +200,10 @@ func CopilotTestConfig() AgentTestConfig {
 		SampleHookInput:    SampleCopilotHookInput,
 		SampleNonToolInput: SampleCopilotHookInputNonShell,
 
-		SettingsFile:     ".github/hooks/claudit.json",
+		SettingsFile:     ".github/hooks/shiftlog.json",
 		HookKey:          "",     // repo-root hooks, different format
 		ToolMatcher:      "",     // repo-root hooks, different format
-		StoreCommand:     "claudit store --agent=copilot",
+		StoreCommand:     "shiftlog store --agent=copilot",
 		Timeout:          30,
 		HasSessionHooks:  false,
 		IsPluginBased:    false,
@@ -242,13 +243,21 @@ func geminiSessionDir(homeDir, projectPath string) string {
 	return filepath.Join(homeDir, ".gemini", "tmp", hash, "chats")
 }
 
+// opencodeDataDir returns the OpenCode data directory for the given home,
+// mirroring the platform logic in internal/agent/opencode/session.go GetDataDir().
+func opencodeDataDir(homeDir string) string {
+	if runtime.GOOS == "darwin" {
+		return filepath.Join(homeDir, "Library", "Application Support", "opencode")
+	}
+	return filepath.Join(homeDir, ".local", "share", "opencode")
+}
+
 // opencodeSessionDir computes the OpenCode session directory path.
-// OpenCode: ~/.local/share/opencode/storage/session/<project-id>
+// OpenCode: <dataDir>/storage/session/<project-id>
 // where project-id is the root commit hash (or "global" for non-git dirs).
 func opencodeSessionDir(homeDir, projectPath string) string {
-	dataDir := filepath.Join(homeDir, ".local", "share", "opencode")
 	projectID := getOpenCodeProjectID(projectPath)
-	return filepath.Join(dataDir, "storage", "session", projectID)
+	return filepath.Join(opencodeDataDir(homeDir), "storage", "session", projectID)
 }
 
 // getOpenCodeProjectID returns the git root commit hash for the project.

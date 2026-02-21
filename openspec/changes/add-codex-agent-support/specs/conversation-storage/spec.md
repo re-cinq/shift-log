@@ -29,9 +29,9 @@ The system SHALL detect git commit commands from Codex tool invocations.
 ## MODIFIED Requirements
 
 ### Requirement: Hook handler for commit detection
-The `claudit store` command MUST process hook events from the configured agent and detect git commits.
+The `shiftlog store` command MUST process hook events from the configured agent and detect git commits.
 
 #### Scenario: Agent-specific hook input parsing (Codex)
-- **WHEN** `claudit store --agent=codex` is invoked with hook input
+- **WHEN** `shiftlog store --agent=codex` is invoked with hook input
 - **THEN** the hook input is parsed using Codex's format
 - **AND** `shell`, `container.exec`, or `shell_command` tools are matched for commit detection

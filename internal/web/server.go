@@ -12,7 +12,7 @@ import (
 //go:embed static
 var staticFiles embed.FS
 
-// Server represents the claudit web server
+// Server represents the shiftlog web server
 type Server struct {
 	port    int
 	repoDir string

@@ -6,7 +6,7 @@ The resume command MUST checkout the commit and launch the configured coding age
 #### Scenario: Launch Amp with thread
 - **Given** a restored session with agent `"amp"` and a thread ID
 - **When** resuming the session
-- **Then** claudit launches `amp threads continue <threadId>`
+- **Then** shiftlog launches `amp threads continue <threadId>`
 
 ### Requirement: Restore transcript to agent location
 The resume command MUST write the transcript where the configured agent expects it.
@@ -14,5 +14,5 @@ The resume command MUST write the transcript where the configured agent expects 
 #### Scenario: Amp session restore (no local transcript)
 - **Given** a decompressed transcript with agent `"amp"`
 - **When** resuming the session
-- **Then** claudit instructs the user to run `amp threads continue <threadId>` since Amp threads are cloud-hosted
+- **Then** shiftlog instructs the user to run `amp threads continue <threadId>` since Amp threads are cloud-hosted
 - **AND** no local transcript file is written (Amp threads sync from Sourcegraph servers)

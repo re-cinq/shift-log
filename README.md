@@ -1,4 +1,4 @@
-# claudit
+# shiftlog
 
 Save AI coding conversations as Git Notes. Claude. Audit. See what we did there? 🥁
 
@@ -7,7 +7,7 @@ Save AI coding conversations as Git Notes. Claude. Audit. See what we did there?
 ```bash
 curl -fsSL https://raw.githubusercontent.com/re-cinq/claudit/master/scripts/install.sh | bash
 # ...In a Git repo
-claudit init --agent=<agent>
+shiftlog init --agent=<agent>
 ```
 
 Where `<agent>` is `claude` (default), `codex`, `copilot`, `gemini`, or `opencode`.
@@ -18,58 +18,58 @@ Now work with your coding agent as you would normally. Whenever you or the agent
 
 | Agent       | Init command                    | How it hooks in                       |
 | ----------- | ------------------------------- | ------------------------------------- |
-| Claude Code | `claudit init` (default)        | `.claude/settings.json` hooks         |
-| Codex CLI   | `claudit init --agent=codex`    | Post-commit git hook                  |
-| Copilot CLI | `claudit init --agent=copilot`  | `.github/hooks/claudit.json` hook     |
-| Gemini CLI  | `claudit init --agent=gemini`   | `.gemini/settings.json` hooks         |
-| OpenCode    | `claudit init --agent=opencode` | `.opencode/plugins/claudit.js` plugin |
+| Claude Code | `shiftlog init` (default)        | `.claude/settings.json` hooks         |
+| Codex CLI   | `shiftlog init --agent=codex`    | Post-commit git hook                  |
+| Copilot CLI | `shiftlog init --agent=copilot`  | `.github/hooks/shiftlog.json` hook     |
+| Gemini CLI  | `shiftlog init --agent=gemini`   | `.gemini/settings.json` hooks         |
+| OpenCode    | `shiftlog init --agent=opencode` | `.opencode/plugins/shiftlog.js` plugin |
 
 ## Usage
 
 **See what conversations you have:**
 
 ```bash
-claudit list
+shiftlog list
 ```
 
 **Search through past conversations:**
 
 ```bash
-claudit search "authentication"          # Text search
-claudit search --agent claude --branch main  # Filter by metadata
-claudit search "jwt" --regex --context 2     # Regex with context lines
+shiftlog search "authentication"          # Text search
+shiftlog search --agent claude --branch main  # Filter by metadata
+shiftlog search "jwt" --regex --context 2     # Regex with context lines
 ```
 
 **Get a quick summary of a conversation:**
 
 ```bash
-claudit summarise        # Summarise HEAD conversation
-claudit tldr HEAD~1      # Alias, works the same way
-claudit tldr --focus="security"  # Prioritise security-related changes
+shiftlog summarise        # Summarise HEAD conversation
+shiftlog tldr HEAD~1      # Alias, works the same way
+shiftlog tldr --focus="security"  # Prioritise security-related changes
 ```
 
 **Resume a past session:**
 
 ```bash
-claudit resume abc123    # By commit SHA
-claudit resume HEAD~3    # By git ref
+shiftlog resume abc123    # By commit SHA
+shiftlog resume HEAD~3    # By git ref
 ```
 
 **View in your browser:**
 
 ```bash
-claudit serve
+shiftlog serve
 ```
 
 **Pull down conversations from a repo you cloned:**
 
 ```bash
-claudit sync pull
+shiftlog sync pull
 ```
 
-## claudit vs Entire
+## shiftlog vs Entire
 
-|                     | [Entire](https://entire.io) | claudit                                                    |
+|                     | [Entire](https://entire.io) | shiftlog                                                    |
 | ------------------- | --------------------------- | ---------------------------------------------------------- |
 | **Funding**         | $60M seed round             | Claude Code Max plan ($200/mo)                             |
 | **Staffing**        | 12 engineers                | An imbecile spec-driving while not really paying attention |
@@ -86,7 +86,7 @@ In order to understand _how_ and _why_ a commit was made, we need to see the con
 
 ## How It Works
 
-Claudit uses [Git Notes](https://git-scm.com/docs/git-notes) to attach conversations to commits, stored under `refs/notes/claude-conversations` to keep `git log` clean. When you run `claudit init`, it sets up hooks so:
+Claudit uses [Git Notes](https://git-scm.com/docs/git-notes) to attach conversations to commits, stored under `refs/notes/claude-conversations` to keep `git log` clean. When you run `shiftlog init`, it sets up hooks so:
 
 1. When the coding agent makes a commit, the conversation is saved automatically
 2. When you make a commit during an agent session, it's saved too
@@ -100,17 +100,17 @@ To view notes directly with git: `git log --notes=claude-conversations`
 
 | Command                   | Description                             |
 | ------------------------- | --------------------------------------- |
-| `claudit init`            | Initialize claudit in the current repo  |
-| `claudit list`            | List commits with stored conversations  |
-| `claudit search [query]`  | Search through stored conversations     |
-| `claudit show [ref]`      | Show conversation history for a commit  |
-| `claudit summarise [ref]` | Summarise a conversation using your coding agent |
-| `claudit resume <commit>` | Resume a coding agent session from a commit |
-| `claudit serve`           | Start the web visualization server      |
-| `claudit doctor`          | Diagnose claudit configuration issues   |
-| `claudit debug`           | Toggle debug logging                    |
-| `claudit sync push/pull`  | Sync conversation notes with remote     |
-| `claudit remap`           | Remap orphaned notes to rebased commits |
+| `shiftlog init`            | Initialize shiftlog in the current repo  |
+| `shiftlog list`            | List commits with stored conversations  |
+| `shiftlog search [query]`  | Search through stored conversations     |
+| `shiftlog show [ref]`      | Show conversation history for a commit  |
+| `shiftlog summarise [ref]` | Summarise a conversation using your coding agent |
+| `shiftlog resume <commit>` | Resume a coding agent session from a commit |
+| `shiftlog serve`           | Start the web visualization server      |
+| `shiftlog doctor`          | Diagnose shiftlog configuration issues   |
+| `shiftlog debug`           | Toggle debug logging                    |
+| `shiftlog sync push/pull`  | Sync conversation notes with remote     |
+| `shiftlog remap`           | Remap orphaned notes to rebased commits |
 
 ## Requirements
 
@@ -119,38 +119,38 @@ To view notes directly with git: `git log --notes=claude-conversations`
 
 ## Multi-Developer Sync
 
-When multiple developers use claudit on the same repository, each person's conversation notes are synced automatically via git push/pull hooks. Notes from different developers are merged seamlessly because they typically annotate different commits.
+When multiple developers use shiftlog on the same repository, each person's conversation notes are synced automatically via git push/pull hooks. Notes from different developers are merged seamlessly because they typically annotate different commits.
 
-If the remote notes ref has diverged (e.g. two developers pushed notes without pulling first), `claudit sync push` will reject the push and advise you to pull first:
+If the remote notes ref has diverged (e.g. two developers pushed notes without pulling first), `shiftlog sync push` will reject the push and advise you to pull first:
 
 ```bash
-claudit sync pull   # Fetches and merges remote notes
-claudit sync push   # Now succeeds
+shiftlog sync pull   # Fetches and merges remote notes
+shiftlog sync push   # Now succeeds
 ```
 
 In the rare case where two developers annotate the exact same commit SHA, both notes are preserved by concatenation — no data is lost.
 
 ## Git Worktrees
 
-Claudit is worktree-safe. If you use `git worktree` to work on multiple branches simultaneously, each worktree sees only the conversations for commits on its own branch. Hooks are shared across worktrees (as git requires), but `claudit list` and `claudit show` are scoped to the current HEAD.
+Claudit is worktree-safe. If you use `git worktree` to work on multiple branches simultaneously, each worktree sees only the conversations for commits on its own branch. Hooks are shared across worktrees (as git requires), but `shiftlog list` and `shiftlog show` are scoped to the current HEAD.
 
 ## Local Rebase
 
-Conversation notes automatically follow commits when you rebase. During `claudit init`, the `notes.rewriteRef` git config is set to `refs/notes/claude-conversations`, which tells git to remap notes to the new commit SHAs during rebase. No manual steps are needed.
+Conversation notes automatically follow commits when you rebase. During `shiftlog init`, the `notes.rewriteRef` git config is set to `refs/notes/claude-conversations`, which tells git to remap notes to the new commit SHAs during rebase. No manual steps are needed.
 
-If you initialized before this config was added, run `claudit init` again or set it manually:
+If you initialized before this config was added, run `shiftlog init` again or set it manually:
 
 ```bash
 git config notes.rewriteRef refs/notes/claude-conversations
 ```
 
-You can verify the config is set with `claudit doctor`.
+You can verify the config is set with `shiftlog doctor`.
 
 ## GitHub Rebase Merge
 
 When a PR is merged via GitHub's "Rebase and merge" strategy, the commits get new SHAs on the target branch. Since this happens server-side, git's `notes.rewriteRef` does not apply and notes remain keyed to the original (now-orphaned) commit SHAs.
 
-Claudit handles this automatically. After you pull a rebase-merged PR, the post-merge hook runs `claudit remap`, which:
+Claudit handles this automatically. After you pull a rebase-merged PR, the post-merge hook runs `shiftlog remap`, which:
 
 1. Finds notes on commits that are no longer on any branch (orphaned)
 2. Uses `git patch-id` to match each orphaned commit to its rebased counterpart by diff content
@@ -160,10 +160,10 @@ For this to work, the local feature branch must be deleted or pruned so the old 
 
 ```bash
 git branch -D feature-branch
-claudit remap
+shiftlog remap
 ```
 
-You can also run `claudit remap` at any time — it reports how many notes were remapped and how many remain unmatched. Unmatched notes are left in place, not deleted.
+You can also run `shiftlog remap` at any time — it reports how many notes were remapped and how many remain unmatched. Unmatched notes are left in place, not deleted.
 
 **Note:** Remap works with GitHub's "Rebase and merge" strategy. It does not support "Squash and merge", which combines all commits into one new commit with no 1:1 mapping to copy notes from.
 

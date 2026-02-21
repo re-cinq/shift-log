@@ -13,8 +13,8 @@ func TestReadWrite(t *testing.T) {
 	if err := os.Mkdir(gitDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	clauditDir := filepath.Join(tmpDir, ".claudit")
-	if err := os.Mkdir(clauditDir, 0755); err != nil {
+	shiftlogDir := filepath.Join(tmpDir, ".shiftlog")
+	if err := os.Mkdir(shiftlogDir, 0755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -78,16 +78,16 @@ func TestDirExists(t *testing.T) {
 		t.Fatalf("DirExists failed: %v", err)
 	}
 	if exists {
-		t.Error("DirExists = true before creating .claudit")
+		t.Error("DirExists = true before creating .shiftlog")
 	}
 
-	os.Mkdir(filepath.Join(tmpDir, ".claudit"), 0755)
+	os.Mkdir(filepath.Join(tmpDir, ".shiftlog"), 0755)
 
 	exists, err = DirExists()
 	if err != nil {
 		t.Fatalf("DirExists failed: %v", err)
 	}
 	if !exists {
-		t.Error("DirExists = false after creating .claudit")
+		t.Error("DirExists = false after creating .shiftlog")
 	}
 }

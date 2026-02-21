@@ -3,8 +3,8 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/re-cinq/claudit/internal/git"
-	"github.com/re-cinq/claudit/internal/web"
+	"github.com/re-cinq/shift-log/internal/git"
+	"github.com/re-cinq/shift-log/internal/web"
 	"github.com/spf13/cobra"
 )
 
@@ -27,9 +27,9 @@ The web interface provides:
 The server binds to localhost (127.0.0.1) for security.
 
 Examples:
-  claudit serve                 # Start on default port 8080, open browser
-  claudit serve --port 3000     # Start on custom port
-  claudit serve --no-browser    # Start without opening browser`,
+  shiftlog serve                 # Start on default port 8080, open browser
+  shiftlog serve --port 3000     # Start on custom port
+  shiftlog serve --no-browser    # Start without opening browser`,
 	RunE: runServe,
 }
 

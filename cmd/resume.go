@@ -7,15 +7,15 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/re-cinq/claudit/internal/agent"
-	_ "github.com/re-cinq/claudit/internal/agent/claude"   // register Claude agent
-	_ "github.com/re-cinq/claudit/internal/agent/codex"    // register Codex agent
-	_ "github.com/re-cinq/claudit/internal/agent/copilot"  // register Copilot agent
-	_ "github.com/re-cinq/claudit/internal/agent/gemini"   // register Gemini agent
-	_ "github.com/re-cinq/claudit/internal/agent/opencode" // register OpenCode agent
-	"github.com/re-cinq/claudit/internal/cli"
-	"github.com/re-cinq/claudit/internal/git"
-	"github.com/re-cinq/claudit/internal/storage"
+	"github.com/re-cinq/shift-log/internal/agent"
+	_ "github.com/re-cinq/shift-log/internal/agent/claude"   // register Claude agent
+	_ "github.com/re-cinq/shift-log/internal/agent/codex"    // register Codex agent
+	_ "github.com/re-cinq/shift-log/internal/agent/copilot"  // register Copilot agent
+	_ "github.com/re-cinq/shift-log/internal/agent/gemini"   // register Gemini agent
+	_ "github.com/re-cinq/shift-log/internal/agent/opencode" // register OpenCode agent
+	"github.com/re-cinq/shift-log/internal/cli"
+	"github.com/re-cinq/shift-log/internal/git"
+	"github.com/re-cinq/shift-log/internal/storage"
 	"github.com/spf13/cobra"
 )
 
@@ -36,9 +36,9 @@ Accepts various git references:
   - Relative reference: HEAD~2
 
 Examples:
-  claudit resume abc123
-  claudit resume feature-branch
-  claudit resume HEAD~1`,
+  shiftlog resume abc123
+  shiftlog resume feature-branch
+  shiftlog resume HEAD~1`,
 	Args: cobra.ExactArgs(1),
 	RunE: runResume,
 }

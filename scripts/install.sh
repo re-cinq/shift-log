@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# claudit installation script
-# Usage: curl -fsSL https://raw.githubusercontent.com/re-cinq/claudit/main/scripts/install.sh | bash
+# shiftlog installation script
+# Usage: curl -fsSL https://raw.githubusercontent.com/re-cinq/shift-log/main/scripts/install.sh | bash
 #
 # This script must be EXECUTED, never SOURCED
 # WRONG: source install.sh (will exit your shell on errors)
@@ -11,9 +11,9 @@
 
 set -e
 
-GITHUB_REPO="re-cinq/claudit"
-BINARY_NAME="claudit"
-GO_MODULE="github.com/re-cinq/claudit"
+GITHUB_REPO="re-cinq/shift-log"
+BINARY_NAME="shiftlog"
+GO_MODULE="github.com/re-cinq/shift-log"
 MIN_GO_MAJOR=1
 MIN_GO_MINOR=24
 
@@ -167,7 +167,7 @@ install_from_release() {
 
     log_info "Latest version: $version"
 
-    # Build archive name (matches goreleaser naming: claudit_{version}_{os}_{arch}.tar.gz)
+    # Build archive name (matches goreleaser naming: shiftlog_{version}_{os}_{arch}.tar.gz)
     local archive_name="${BINARY_NAME}_${version#v}_${platform}.tar.gz"
     local download_url="https://github.com/${GITHUB_REPO}/releases/download/${version}/${archive_name}"
 
@@ -419,7 +419,7 @@ verify_installation() {
 # Main installation flow
 main() {
     echo ""
-    echo "claudit installer"
+    echo "shiftlog installer"
     echo ""
 
     log_info "Detecting platform..."

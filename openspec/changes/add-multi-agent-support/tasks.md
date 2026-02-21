@@ -24,7 +24,7 @@
 
 - [ ] 3.1 Add `modernc.org/sqlite` dependency
 - [ ] 3.2 Implement OpenCode agent (`internal/agent/opencode/`)
-- [ ] 3.3 OpenCode plugin generator (`.opencode/plugins/claudit.js`)
+- [ ] 3.3 OpenCode plugin generator (`.opencode/plugins/shiftlog.js`)
 - [ ] 3.4 OpenCode SQLite session reader
 - [ ] 3.5 OpenCode transcript parser (SQLite → common Transcript)
 - [ ] 3.6 Acceptance tests for OpenCode using shared framework

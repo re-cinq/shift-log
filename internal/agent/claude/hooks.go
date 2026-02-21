@@ -86,14 +86,14 @@ func WriteSettings(claudeDir string, settings *Settings) error {
 	return os.WriteFile(path, data, 0644)
 }
 
-// AddClauditHook adds or updates the claudit store hook in settings.
+// AddClauditHook adds or updates the shiftlog store hook in settings.
 func AddClauditHook(settings *Settings) {
-	clauditHook := Hook{
+	shiftlogHook := Hook{
 		Matcher: "Bash",
 		Hooks: []HookCmd{
 			{
 				Type:    "command",
-				Command: "claudit store",
+				Command: "shiftlog store",
 				Timeout: 30,
 			},
 		},
@@ -102,15 +102,15 @@ func AddClauditHook(settings *Settings) {
 	for i, hook := range settings.Hooks.PostToolUse {
 		if hook.Matcher == "Bash" && len(hook.Hooks) > 0 {
 			for _, h := range hook.Hooks {
-				if h.Command == "claudit store" {
-					settings.Hooks.PostToolUse[i] = clauditHook
+				if h.Command == "shiftlog store" {
+					settings.Hooks.PostToolUse[i] = shiftlogHook
 					return
 				}
 			}
 		}
 	}
 
-	settings.Hooks.PostToolUse = append(settings.Hooks.PostToolUse, clauditHook)
+	settings.Hooks.PostToolUse = append(settings.Hooks.PostToolUse, shiftlogHook)
 }
 
 // AddSessionHooks adds or updates the SessionStart and SessionEnd hooks.
@@ -120,7 +120,7 @@ func AddSessionHooks(settings *Settings) {
 		Hooks: []HookCmd{
 			{
 				Type:    "command",
-				Command: "claudit session-start",
+				Command: "shiftlog session-start",
 				Timeout: 5,
 			},
 		},
@@ -131,23 +131,23 @@ func AddSessionHooks(settings *Settings) {
 		Hooks: []HookCmd{
 			{
 				Type:    "command",
-				Command: "claudit session-end",
+				Command: "shiftlog session-end",
 				Timeout: 5,
 			},
 		},
 	}
 
-	settings.Hooks.SessionStart = addOrUpdateHook(settings.Hooks.SessionStart, sessionStartHook, "claudit session-start")
-	settings.Hooks.SessionEnd = addOrUpdateHook(settings.Hooks.SessionEnd, sessionEndHook, "claudit session-end")
+	settings.Hooks.SessionStart = addOrUpdateHook(settings.Hooks.SessionStart, sessionStartHook, "shiftlog session-start")
+	settings.Hooks.SessionEnd = addOrUpdateHook(settings.Hooks.SessionEnd, sessionEndHook, "shiftlog session-end")
 }
 
-// RemoveClauditHook removes claudit store hook entries from PostToolUse.
+// RemoveClauditHook removes shiftlog store hook entries from PostToolUse.
 func RemoveClauditHook(settings *Settings) {
 	filtered := settings.Hooks.PostToolUse[:0]
 	for _, hook := range settings.Hooks.PostToolUse {
 		isClaudit := false
 		for _, h := range hook.Hooks {
-			if h.Command == "claudit store" {
+			if h.Command == "shiftlog store" {
 				isClaudit = true
 				break
 			}
@@ -159,10 +159,10 @@ func RemoveClauditHook(settings *Settings) {
 	settings.Hooks.PostToolUse = filtered
 }
 
-// RemoveSessionHooks removes claudit session hooks from SessionStart and SessionEnd.
+// RemoveSessionHooks removes shiftlog session hooks from SessionStart and SessionEnd.
 func RemoveSessionHooks(settings *Settings) {
-	settings.Hooks.SessionStart = removeHookByCommand(settings.Hooks.SessionStart, "claudit session-start")
-	settings.Hooks.SessionEnd = removeHookByCommand(settings.Hooks.SessionEnd, "claudit session-end")
+	settings.Hooks.SessionStart = removeHookByCommand(settings.Hooks.SessionStart, "shiftlog session-start")
+	settings.Hooks.SessionEnd = removeHookByCommand(settings.Hooks.SessionEnd, "shiftlog session-end")
 }
 
 func removeHookByCommand(hooks []Hook, command string) []Hook {

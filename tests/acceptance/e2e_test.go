@@ -8,7 +8,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/re-cinq/claudit/tests/acceptance/testutil"
+	"github.com/re-cinq/shift-log/tests/acceptance/testutil"
 )
 
 var _ = Describe("End-to-End Store Flow", func() {
@@ -19,7 +19,7 @@ var _ = Describe("End-to-End Store Flow", func() {
 		local, remote, err = testutil.NewGitRepoWithRemote()
 		Expect(err).NotTo(HaveOccurred())
 
-		// Set binary path so git hooks can find claudit
+		// Set binary path so git hooks can find shiftlog
 		local.SetBinaryPath(testutil.BinaryPath())
 	})
 
@@ -33,7 +33,7 @@ var _ = Describe("End-to-End Store Flow", func() {
 	})
 
 	It("full flow: init repo, simulate Claude hook, verify note stored, push/pull", func() {
-		// Step 1: Initialize claudit
+		// Step 1: Initialize shiftlog
 		stdout, _, err := testutil.RunClauditInDir(local.Path, "init")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(stdout).To(ContainSubstring("Claudit is now configured"))

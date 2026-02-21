@@ -69,7 +69,7 @@ The project SHALL automatically create GitHub releases when version tags are pus
 #### Scenario: Version injection
 - **WHEN** binaries are built
 - **THEN** the version is injected via ldflags
-- **AND** `claudit --version` shows the correct version
+- **AND** `shiftlog --version` shows the correct version
 
 ### Requirement: Integration Testing
 The project SHALL optionally run integration tests that require Claude Code authentication.

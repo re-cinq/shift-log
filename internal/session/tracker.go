@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/re-cinq/claudit/internal/util"
+	"github.com/re-cinq/shift-log/internal/util"
 )
 
 // ActiveSession represents the currently active coding agent session
@@ -23,17 +23,17 @@ const (
 	staleSessionTimeout = 10 * time.Minute
 )
 
-// WriteActiveSession writes the active session state to .claudit/active-session.json
+// WriteActiveSession writes the active session state to .shiftlog/active-session.json
 func WriteActiveSession(session *ActiveSession) error {
 	sessionPath, err := getActiveSessionPath()
 	if err != nil {
 		return err
 	}
 
-	// Ensure .claudit directory exists
+	// Ensure .shiftlog directory exists
 	dir := filepath.Dir(sessionPath)
 	if err := util.EnsureDir(dir); err != nil {
-		return fmt.Errorf("failed to create .claudit directory: %w", err)
+		return fmt.Errorf("failed to create .shiftlog directory: %w", err)
 	}
 
 	data, err := json.MarshalIndent(session, "", "  ")
@@ -44,7 +44,7 @@ func WriteActiveSession(session *ActiveSession) error {
 	return os.WriteFile(sessionPath, data, 0644)
 }
 
-// ReadActiveSession reads the active session state from .claudit/active-session.json
+// ReadActiveSession reads the active session state from .shiftlog/active-session.json
 // Returns nil if no active session file exists
 func ReadActiveSession() (*ActiveSession, error) {
 	sessionPath, err := getActiveSessionPath()
@@ -99,11 +99,11 @@ func IsSessionActive(session *ActiveSession) bool {
 	return time.Since(info.ModTime()) < staleSessionTimeout
 }
 
-// getActiveSessionPath returns the path to .claudit/active-session.json
+// getActiveSessionPath returns the path to .shiftlog/active-session.json
 func getActiveSessionPath() (string, error) {
 	root, err := util.GetProjectRoot()
 	if err != nil {
 		return "", fmt.Errorf("failed to get project root: %w", err)
 	}
-	return filepath.Join(root, ".claudit", activeSessionFile), nil
+	return filepath.Join(root, ".shiftlog", activeSessionFile), nil
 }

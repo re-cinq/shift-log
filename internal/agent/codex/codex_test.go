@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/re-cinq/claudit/internal/agent"
+	"github.com/re-cinq/shift-log/internal/agent"
 )
 
 func TestAgentName(t *testing.T) {

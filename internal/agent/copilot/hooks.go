@@ -24,7 +24,7 @@ type HookEntry struct {
 
 // hooksFilePath returns the path to the Copilot hooks file.
 func hooksFilePath(repoRoot string) string {
-	return filepath.Join(repoRoot, ".github", "hooks", "claudit.json")
+	return filepath.Join(repoRoot, ".github", "hooks", "shiftlog.json")
 }
 
 // ReadHooksFile reads the Copilot hooks file.
@@ -94,25 +94,25 @@ func WriteHooksFile(repoRoot string, hf *HooksFile) error {
 	return os.WriteFile(path, data, 0644)
 }
 
-// AddClauditHooks adds the claudit store postToolUse hook entry.
+// AddClauditHooks adds the shiftlog store postToolUse hook entry.
 func AddClauditHooks(hf *HooksFile) {
 	entry := HookEntry{
 		Type:       "command",
-		Command:    "claudit store --agent=copilot",
+		Command:    "shiftlog store --agent=copilot",
 		TimeoutSec: 30,
 	}
 
 	hf.Hooks["postToolUse"] = addOrUpdateHookEntry(
-		hf.Hooks["postToolUse"], entry, "claudit store",
+		hf.Hooks["postToolUse"], entry, "shiftlog store",
 	)
 }
 
-// RemoveClauditHooks removes claudit hook entries from the hooks file.
+// RemoveClauditHooks removes shiftlog hook entries from the hooks file.
 func RemoveClauditHooks(hf *HooksFile) {
 	for key, entries := range hf.Hooks {
 		filtered := entries[:0]
 		for _, e := range entries {
-			if !strings.Contains(e.Command, "claudit store") {
+			if !strings.Contains(e.Command, "shiftlog store") {
 				filtered = append(filtered, e)
 			}
 		}

@@ -6,7 +6,7 @@ The resume command MUST write the transcript where the configured agent expects 
 #### Scenario: Write to Codex sessions directory
 - Given a decompressed transcript with session_id and agent `"codex"`
 - When resuming the session
-- Then claudit writes the rollout JSONL to `~/.codex/sessions/` in the date-organized directory structure
+- Then shiftlog writes the rollout JSONL to `~/.codex/sessions/` in the date-organized directory structure
 
 ### Requirement: Checkout and launch coding agent
 The resume command MUST checkout the commit and launch the configured coding agent, with a force option to skip confirmation.
@@ -14,4 +14,4 @@ The resume command MUST checkout the commit and launch the configured coding age
 #### Scenario: Launch Codex with session
 - Given a restored session with agent `"codex"`
 - When resuming the session
-- Then claudit launches `codex resume <session-id>`
+- Then shiftlog launches `codex resume <session-id>`

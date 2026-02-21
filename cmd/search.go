@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/re-cinq/claudit/internal/git"
-	"github.com/re-cinq/claudit/internal/storage"
+	"github.com/re-cinq/shift-log/internal/git"
+	"github.com/re-cinq/shift-log/internal/storage"
 	"github.com/spf13/cobra"
 )
 
@@ -42,12 +42,12 @@ Supports text search through conversation content and metadata filtering.
 Text search is case-insensitive by default.
 
 Examples:
-  claudit search "authentication"             # Find conversations mentioning auth
-  claudit search --agent claude                # All Claude conversations
-  claudit search --branch main --limit 5       # Recent conversations on main
-  claudit search "test" --regex --context 2    # Regex search with context lines
-  claudit search --before 2025-01-01           # Conversations before a date
-  claudit search "bug" --metadata-only         # Only match metadata, not content`,
+  shiftlog search "authentication"             # Find conversations mentioning auth
+  shiftlog search --agent claude                # All Claude conversations
+  shiftlog search --branch main --limit 5       # Recent conversations on main
+  shiftlog search "test" --regex --context 2    # Regex search with context lines
+  shiftlog search --before 2025-01-01           # Conversations before a date
+  shiftlog search "bug" --metadata-only         # Only match metadata, not content`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runSearch,
 }

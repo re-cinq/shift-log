@@ -1,7 +1,7 @@
 # Change: Add GitHub Release Pipeline
 
 ## Why
-Currently, claudit has no automated testing, versioning, or release process. Building and distributing binaries requires manual intervention, making releases error-prone and labor-intensive. Teams cannot easily install claudit from GitHub releases.
+Currently, shiftlog has no automated testing, versioning, or release process. Building and distributing binaries requires manual intervention, making releases error-prone and labor-intensive. Teams cannot easily install shiftlog from GitHub releases.
 
 ## What Changes
 - Add GitHub Actions CI workflow for automated testing on PRs/pushes

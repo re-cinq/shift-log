@@ -23,15 +23,15 @@ var _ = Describe("Gemini CLI Integration", func() {
 		}
 
 		requireBinary("gemini")
-		clauditPath := getClauditPath()
+		shiftlogPath := getClauditPath()
 		tmpDir := initGitRepo("gemini-integration")
 		DeferCleanup(os.RemoveAll, tmpDir)
 
-		// Initialize claudit with Gemini agent
-		cmd := exec.Command(clauditPath, "init", "--agent=gemini")
+		// Initialize shiftlog with Gemini agent
+		cmd := exec.Command(shiftlogPath, "init", "--agent=gemini")
 		cmd.Dir = tmpDir
 		output, err := cmd.CombinedOutput()
-		Expect(err).NotTo(HaveOccurred(), "claudit init --agent=gemini failed:\n%s", output)
+		Expect(err).NotTo(HaveOccurred(), "shiftlog init --agent=gemini failed:\n%s", output)
 
 		// Verify hooks
 		settingsPath := filepath.Join(tmpDir, ".gemini", "settings.json")
@@ -59,7 +59,7 @@ var _ = Describe("Gemini CLI Integration", func() {
 		)
 		geminiCmd.Dir = tmpDir
 		geminiCmd.Env = append(os.Environ(),
-			"PATH="+filepath.Dir(clauditPath)+":"+os.Getenv("PATH"),
+			"PATH="+filepath.Dir(shiftlogPath)+":"+os.Getenv("PATH"),
 		)
 		if geminiAPIKey != "" {
 			geminiCmd.Env = append(geminiCmd.Env, "GEMINI_API_KEY="+geminiAPIKey)
@@ -72,8 +72,8 @@ var _ = Describe("Gemini CLI Integration", func() {
 
 		time.Sleep(2 * time.Second)
 
-		Expect(string(geminiOutput)).NotTo(ContainSubstring("claudit: warning:"),
-			"claudit logged warnings during execution:\n%s", geminiOutput)
+		Expect(string(geminiOutput)).NotTo(ContainSubstring("shiftlog: warning:"),
+			"shiftlog logged warnings during execution:\n%s", geminiOutput)
 
 		// Check if commit was made
 		cmd = exec.Command("git", "log", "--oneline", "-n", "2")

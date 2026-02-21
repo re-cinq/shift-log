@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/re-cinq/claudit/tests/acceptance/testutil"
+	"github.com/re-cinq/shift-log/tests/acceptance/testutil"
 )
 
 var _ = Describe("Summarise Command", func() {
@@ -59,7 +59,7 @@ var _ = Describe("Summarise Command", func() {
 
 	Describe("outside git repository", func() {
 		It("fails with error", func() {
-			tmpDir, err := os.MkdirTemp("", "claudit-no-git-*")
+			tmpDir, err := os.MkdirTemp("", "shiftlog-no-git-*")
 			Expect(err).NotTo(HaveOccurred())
 			defer os.RemoveAll(tmpDir)
 
@@ -94,7 +94,7 @@ var _ = Describe("Summarise Command", func() {
 			storeConversation("session-summarise-mock")
 
 			// Create a mock "claude" binary that echoes a summary
-			mockDir, err := os.MkdirTemp("", "claudit-mock-agent-*")
+			mockDir, err := os.MkdirTemp("", "shiftlog-mock-agent-*")
 			Expect(err).NotTo(HaveOccurred())
 			defer os.RemoveAll(mockDir)
 
@@ -120,7 +120,7 @@ SUMMARY
 			storeConversation("session-summarise-focus")
 
 			// Create a mock "claude" binary that echoes the prompt arg so we can verify it
-			mockDir, err := os.MkdirTemp("", "claudit-mock-focus-*")
+			mockDir, err := os.MkdirTemp("", "shiftlog-mock-focus-*")
 			Expect(err).NotTo(HaveOccurred())
 			defer os.RemoveAll(mockDir)
 
@@ -141,7 +141,7 @@ printf '%s' "$arg"
 		It("works without focus flag", func() {
 			storeConversation("session-summarise-no-focus")
 
-			mockDir, err := os.MkdirTemp("", "claudit-mock-nofocus-*")
+			mockDir, err := os.MkdirTemp("", "shiftlog-mock-nofocus-*")
 			Expect(err).NotTo(HaveOccurred())
 			defer os.RemoveAll(mockDir)
 

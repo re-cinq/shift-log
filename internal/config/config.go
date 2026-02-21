@@ -5,20 +5,20 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/re-cinq/claudit/internal/util"
+	"github.com/re-cinq/shift-log/internal/util"
 )
 
 const configFile = "config"
-const clauditDir = ".claudit"
+const shiftlogDir = ".shiftlog"
 
-// Config represents the claudit configuration stored in .claudit/config
+// Config represents the shiftlog configuration stored in .shiftlog/config
 type Config struct {
 	NotesRef string `json:"notes_ref"`
 	Debug    bool   `json:"debug"`
 	Agent    string `json:"agent,omitempty"` // coding agent name (empty = "claude" for backward compat)
 }
 
-// Read reads the config from .claudit/config in the project root.
+// Read reads the config from .shiftlog/config in the project root.
 // Returns a default config if the file doesn't exist.
 func Read() (*Config, error) {
 	path, err := Path()
@@ -41,7 +41,7 @@ func Read() (*Config, error) {
 	return &cfg, nil
 }
 
-// Write writes the config to .claudit/config in the project root.
+// Write writes the config to .shiftlog/config in the project root.
 func Write(cfg *Config) error {
 	path, err := Path()
 	if err != nil {
@@ -61,22 +61,22 @@ func Write(cfg *Config) error {
 	return os.WriteFile(path, data, 0644)
 }
 
-// Path returns the absolute path to the .claudit/config file.
+// Path returns the absolute path to the .shiftlog/config file.
 func Path() (string, error) {
 	root, err := util.GetProjectRoot()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(root, clauditDir, configFile), nil
+	return filepath.Join(root, shiftlogDir, configFile), nil
 }
 
-// DirExists returns true if the .claudit directory exists in the project root.
+// DirExists returns true if the .shiftlog directory exists in the project root.
 func DirExists() (bool, error) {
 	root, err := util.GetProjectRoot()
 	if err != nil {
 		return false, err
 	}
-	info, err := os.Stat(filepath.Join(root, clauditDir))
+	info, err := os.Stat(filepath.Join(root, shiftlogDir))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return false, nil

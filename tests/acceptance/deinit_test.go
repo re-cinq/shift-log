@@ -8,7 +8,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/re-cinq/claudit/tests/acceptance/testutil"
+	"github.com/re-cinq/shift-log/tests/acceptance/testutil"
 )
 
 var _ = Describe("Deinit Command", func() {
@@ -48,23 +48,23 @@ var _ = Describe("Deinit Command", func() {
 				_, _, err = testutil.RunClauditInDir(repo.Path, "deinit")
 				Expect(err).NotTo(HaveOccurred())
 
-				// Verify claudit hooks are gone
+				// Verify shiftlog hooks are gone
 				if config.IsHookless {
 					// Nothing to check — hookless agents have no settings file
 				} else if config.IsPluginBased {
 					// Plugin file should be removed
 					Expect(repo.FileExists(config.SettingsFile)).To(BeFalse())
 				} else if config.IsRepoRootHooks {
-					// Hooks file should be removed (claudit-owned)
+					// Hooks file should be removed (shiftlog-owned)
 					Expect(repo.FileExists(config.SettingsFile)).To(BeFalse())
 				} else {
-					// Settings file should be removed (claudit-only content)
+					// Settings file should be removed (shiftlog-only content)
 					Expect(repo.FileExists(config.SettingsFile)).To(BeFalse())
 				}
 			})
 
 			if !config.IsHookless && !config.IsPluginBased && !config.IsRepoRootHooks {
-				It("preserves non-claudit settings", func() {
+				It("preserves non-shiftlog settings", func() {
 					// Create pre-existing settings
 					settingsDir := filepath.Dir(filepath.Join(repo.Path, config.SettingsFile))
 					Expect(os.MkdirAll(settingsDir, 0755)).To(Succeed())
@@ -82,13 +82,13 @@ var _ = Describe("Deinit Command", func() {
 					Expect(err).NotTo(HaveOccurred())
 					Expect(content).To(ContainSubstring("existingKey"))
 					Expect(content).To(ContainSubstring("existingValue"))
-					// But should not have claudit hooks
-					Expect(content).NotTo(ContainSubstring("claudit store"))
+					// But should not have shiftlog hooks
+					Expect(content).NotTo(ContainSubstring("shiftlog store"))
 				})
 			}
 
 			if config.IsRepoRootHooks {
-				It("preserves non-claudit hooks in repo-root hooks file", func() {
+				It("preserves non-shiftlog hooks in repo-root hooks file", func() {
 					Expect(os.MkdirAll(filepath.Join(repo.Path, ".github", "hooks"), 0755)).To(Succeed())
 					Expect(repo.WriteFile(config.SettingsFile, `{"version":1,"hooks":{"postToolUse":[{"type":"command","command":"other-tool","timeoutSec":10}]},"existingKey":"existingValue"}`)).To(Succeed())
 
@@ -102,7 +102,7 @@ var _ = Describe("Deinit Command", func() {
 					Expect(err).NotTo(HaveOccurred())
 					Expect(content).To(ContainSubstring("other-tool"))
 					Expect(content).To(ContainSubstring("existingKey"))
-					Expect(content).NotTo(ContainSubstring("claudit store"))
+					Expect(content).NotTo(ContainSubstring("shiftlog store"))
 				})
 			}
 
@@ -146,13 +146,13 @@ var _ = Describe("Deinit Command", func() {
 			_, _, err = testutil.RunClauditInDir(repo.Path, "deinit")
 			Expect(err).NotTo(HaveOccurred())
 
-			// Verify hook files are deleted (they only had claudit content)
+			// Verify hook files are deleted (they only had shiftlog content)
 			for _, hook := range []string{"pre-push", "post-merge", "post-checkout", "post-commit"} {
 				Expect(repo.FileExists(".git/hooks/" + hook)).To(BeFalse())
 			}
 		})
 
-		It("preserves non-claudit hook content", func() {
+		It("preserves non-shiftlog hook content", func() {
 			// Write custom pre-push hook first
 			hooksDir := filepath.Join(repo.Path, ".git", "hooks")
 			Expect(os.MkdirAll(hooksDir, 0755)).To(Succeed())
@@ -162,16 +162,16 @@ var _ = Describe("Deinit Command", func() {
 				0755,
 			)).To(Succeed())
 
-			// Init adds claudit section
+			// Init adds shiftlog section
 			_, _, err := testutil.RunClauditInDir(repo.Path, "init")
 			Expect(err).NotTo(HaveOccurred())
 
 			content, err := repo.ReadFile(".git/hooks/pre-push")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(content).To(ContainSubstring("custom-hook"))
-			Expect(content).To(ContainSubstring("claudit-managed"))
+			Expect(content).To(ContainSubstring("shiftlog-managed"))
 
-			// Deinit removes only claudit section
+			// Deinit removes only shiftlog section
 			_, _, err = testutil.RunClauditInDir(repo.Path, "deinit")
 			Expect(err).NotTo(HaveOccurred())
 
@@ -180,7 +180,7 @@ var _ = Describe("Deinit Command", func() {
 			content, err = repo.ReadFile(".git/hooks/pre-push")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(content).To(ContainSubstring("custom-hook"))
-			Expect(content).NotTo(ContainSubstring("claudit-managed"))
+			Expect(content).NotTo(ContainSubstring("shiftlog-managed"))
 		})
 
 		It("removes git config settings", func() {
@@ -222,7 +222,7 @@ var _ = Describe("Deinit Command", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Verify config has agent=gemini
-			content, err := repo.ReadFile(".claudit/config")
+			content, err := repo.ReadFile(".shiftlog/config")
 			Expect(err).NotTo(HaveOccurred())
 			var cfg map[string]interface{}
 			Expect(json.Unmarshal([]byte(content), &cfg)).To(Succeed())

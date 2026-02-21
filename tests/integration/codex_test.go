@@ -18,15 +18,15 @@ var _ = Describe("Codex CLI Integration", func() {
 		skipIfEnvSet("SKIP_CODEX_INTEGRATION")
 		apiKey := requireEnvVar("OPENAI_API_KEY")
 		requireBinary("codex")
-		clauditPath := getClauditPath()
+		shiftlogPath := getClauditPath()
 		tmpDir := initGitRepo("codex-integration")
 		DeferCleanup(os.RemoveAll, tmpDir)
 
-		// Initialize claudit with Codex agent
-		cmd := exec.Command(clauditPath, "init", "--agent=codex")
+		// Initialize shiftlog with Codex agent
+		cmd := exec.Command(shiftlogPath, "init", "--agent=codex")
 		cmd.Dir = tmpDir
 		output, err := cmd.CombinedOutput()
-		Expect(err).NotTo(HaveOccurred(), "claudit init --agent=codex failed:\n%s", output)
+		Expect(err).NotTo(HaveOccurred(), "shiftlog init --agent=codex failed:\n%s", output)
 
 		// Verify no agent-specific config files were created (hookless agent)
 		for _, path := range []string{".codex/settings.json", ".claude/settings.local.json"} {
@@ -57,7 +57,7 @@ var _ = Describe("Codex CLI Integration", func() {
 		)
 		codexCmd.Dir = tmpDir
 		codexCmd.Env = append(os.Environ(),
-			"PATH="+filepath.Dir(clauditPath)+":"+os.Getenv("PATH"),
+			"PATH="+filepath.Dir(shiftlogPath)+":"+os.Getenv("PATH"),
 			"OPENAI_API_KEY="+apiKey,
 		)
 
@@ -65,8 +65,8 @@ var _ = Describe("Codex CLI Integration", func() {
 
 		time.Sleep(2 * time.Second)
 
-		Expect(string(codexOutput)).NotTo(ContainSubstring("claudit: warning:"),
-			"claudit logged warnings during execution:\n%s", codexOutput)
+		Expect(string(codexOutput)).NotTo(ContainSubstring("shiftlog: warning:"),
+			"shiftlog logged warnings during execution:\n%s", codexOutput)
 
 		// Check if commit was made
 		cmd = exec.Command("git", "log", "--oneline", "-n", "2")

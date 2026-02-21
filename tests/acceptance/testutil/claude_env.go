@@ -18,7 +18,7 @@ type AgentEnv struct {
 
 // NewAgentEnv creates a new isolated environment for testing with the given agent config.
 func NewAgentEnv(config AgentTestConfig) (*AgentEnv, error) {
-	tempHome, err := os.MkdirTemp("", "claudit-test-home-*")
+	tempHome, err := os.MkdirTemp("", "shiftlog-test-home-*")
 	if err != nil {
 		return nil, err
 	}

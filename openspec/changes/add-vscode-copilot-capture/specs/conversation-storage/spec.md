@@ -1,9 +1,9 @@
 ## ADDED Requirements
 ### Requirement: VS Code Coding Agent Hook Input
-The `claudit store` command SHALL process hook events from VS Code coding agent hooks using the same input format as Copilot CLI hooks.
+The `shiftlog store` command SHALL process hook events from VS Code coding agent hooks using the same input format as Copilot CLI hooks.
 
 #### Scenario: Parse VS Code hook input
-- **WHEN** `claudit store --agent=copilot` receives JSON on stdin from a VS Code coding agent hook
+- **WHEN** `shiftlog store --agent=copilot` receives JSON on stdin from a VS Code coding agent hook
 - **AND** the JSON contains `timestamp`, `cwd`, `toolName`, and `toolArgs` fields
 - **THEN** the existing `ParseHookInput()` processes it without changes
 

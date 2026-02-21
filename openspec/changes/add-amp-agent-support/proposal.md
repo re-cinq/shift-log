@@ -1,7 +1,7 @@
 # Change: Add Amp (Sourcegraph) Agent Support
 
 ## Why
-Claudit supports Claude Code, Copilot, Gemini CLI, Codex, and OpenCode CLI. Amp is Sourcegraph's AI coding agent that supports multiple frontier models (Claude Opus 4.6, GPT-5.2, Gemini 3, etc.). Adding Amp extends claudit's multi-agent coverage to another significant player in the AI coding space.
+Claudit supports Claude Code, Copilot, Gemini CLI, Codex, and OpenCode CLI. Amp is Sourcegraph's AI coding agent that supports multiple frontier models (Claude Opus 4.6, GPT-5.2, Gemini 3, etc.). Adding Amp extends shiftlog's multi-agent coverage to another significant player in the AI coding space.
 
 ## What Changes
 - Add Amp agent implementation (`internal/agent/amp/`) following the existing Agent interface pattern
@@ -20,17 +20,17 @@ Claudit supports Claude Code, Copilot, Gemini CLI, Codex, and OpenCode CLI. Amp 
 
 ## Key Design Decisions
 
-1. **No Amp-specific hook config**: Amp has no PostToolUse-style hooks or per-tool lifecycle events. `ConfigureHooks()` is a no-op, identical to the Codex pattern. Conversation capture relies on the existing `post-commit` git hook (`claudit store --manual`).
+1. **No Amp-specific hook config**: Amp has no PostToolUse-style hooks or per-tool lifecycle events. `ConfigureHooks()` is a no-op, identical to the Codex pattern. Conversation capture relies on the existing `post-commit` git hook (`shiftlog store --manual`).
 
 2. **Cloud-first threads**: Amp stores conversations on Sourcegraph's servers (ampcode.com/threads), NOT locally. This is the biggest architectural difference from Claude Code and Codex. Phase 1 works without local transcripts (like Codex). Phase 2 can add local capture via Amp's `--stream-json` flag.
 
-3. **Stream-JSON NDJSON parsing**: Amp's `--stream-json` flag outputs structured NDJSON to stdout. The format includes system init messages, user messages, assistant messages (with text/tool_use/thinking content blocks), and result messages with usage metrics. This maps cleanly to claudit's `TranscriptEntry`/`ContentBlock` types.
+3. **Stream-JSON NDJSON parsing**: Amp's `--stream-json` flag outputs structured NDJSON to stdout. The format includes system init messages, user messages, assistant messages (with text/tool_use/thinking content blocks), and result messages with usage metrics. This maps cleanly to shiftlog's `TranscriptEntry`/`ContentBlock` types.
 
 4. **Multi-model support**: Amp routes to different models based on mode (`smart`=Claude Opus 4.6, `rush`=faster model, `deep`=GPT-5.2 Codex). The model identifier is extracted from assistant message metadata in stream-json output.
 
 5. **Thread-based resume**: Amp uses thread IDs (format: `T-<hex>...`) for session continuity. Resume command is `amp threads continue <threadId>`.
 
-6. **Tool name mapping**: Amp uses tool names like `terminal`, `edit_file`, `create_file`, `search_files`, `list_files`, `read_file` which map to claudit's canonical names.
+6. **Tool name mapping**: Amp uses tool names like `terminal`, `edit_file`, `create_file`, `search_files`, `list_files`, `read_file` which map to shiftlog's canonical names.
 
 ## Research Summary
 
@@ -68,7 +68,7 @@ None provide deterministic post-tool callbacks.
 Hookless agent like Codex. Post-commit git hook records that Amp made a commit. No local transcript capture. `DiscoverSession()` returns nil.
 
 ### Phase 2: Stream-JSON Transcript Capture (future)
-Thin wrapper or skill that runs `amp --stream-json` and tees output to a local NDJSON file at `~/.amp/claudit/<project-hash>/current.ndjson`. Git post-commit hook reads this file for full transcript data.
+Thin wrapper or skill that runs `amp --stream-json` and tees output to a local NDJSON file at `~/.amp/shiftlog/<project-hash>/current.ndjson`. Git post-commit hook reads this file for full transcript data.
 
 ### Phase 3: MCP Server Integration (future)
-Build claudit as an MCP server with a `claudit_store` tool. AGENTS.md instructs Amp to call it after every commit. Captures context through the LLM itself.
+Build shiftlog as an MCP server with a `shiftlog_store` tool. AGENTS.md instructs Amp to call it after every commit. Captures context through the LLM itself.

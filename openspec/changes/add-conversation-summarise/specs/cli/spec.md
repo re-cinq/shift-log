@@ -3,20 +3,20 @@
 The CLI SHALL provide a `summarise` command (alias `tldr`) that produces an LLM-generated summary of a stored conversation by delegating to the user's coding agent in non-interactive mode.
 
 #### Scenario: Basic summarise
-- **WHEN** user runs `claudit summarise` and HEAD has a stored conversation
+- **WHEN** user runs `shiftlog summarise` and HEAD has a stored conversation
 - **THEN** the transcript is extracted, filtered, and sent as a prompt to the configured agent
 - **AND** the agent's summary output is printed to stdout
 
 #### Scenario: Summarise with alias
-- **WHEN** user runs `claudit tldr`
-- **THEN** it behaves identically to `claudit summarise`
+- **WHEN** user runs `shiftlog tldr`
+- **THEN** it behaves identically to `shiftlog summarise`
 
 #### Scenario: Summarise specific commit
-- **WHEN** user runs `claudit summarise <ref>` where `<ref>` is a valid commit with a conversation
+- **WHEN** user runs `shiftlog summarise <ref>` where `<ref>` is a valid commit with a conversation
 - **THEN** the summary is generated for that commit's conversation
 
 #### Scenario: Agent override
-- **WHEN** user runs `claudit summarise --agent=claude`
+- **WHEN** user runs `shiftlog summarise --agent=claude`
 - **THEN** the specified agent is used for summarisation instead of the stored conversation's agent
 
 #### Scenario: Unsupported agent error
@@ -28,7 +28,7 @@ The CLI SHALL provide a `summarise` command (alias `tldr`) that produces an LLM-
 - **THEN** an error is returned indicating the binary was not found
 
 #### Scenario: No conversation found
-- **WHEN** user runs `claudit summarise <ref>` and no conversation exists for that commit
+- **WHEN** user runs `shiftlog summarise <ref>` and no conversation exists for that commit
 - **THEN** an error message indicates no conversation was found
 
 #### Scenario: Empty transcript
@@ -51,11 +51,11 @@ The `summarise` command SHALL display a spinner on stderr while waiting for the 
 - **THEN** no spinner is displayed
 
 ### Requirement: Summarise Debug Mode
-The `summarise` command SHALL support debug output via `claudit debug --on`.
+The `summarise` command SHALL support debug output via `shiftlog debug --on`.
 
 #### Scenario: Debug mode streams agent stderr
 - **WHEN** debug mode is enabled
-- **THEN** the agent's stderr is piped to claudit's stderr
+- **THEN** the agent's stderr is piped to shiftlog's stderr
 - **AND** diagnostic messages are printed showing the agent command and prompt size
 
 ### Requirement: Summariser Interface

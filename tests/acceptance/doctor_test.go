@@ -6,7 +6,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/re-cinq/claudit/tests/acceptance/testutil"
+	"github.com/re-cinq/shift-log/tests/acceptance/testutil"
 )
 
 var _ = Describe("Doctor Command", func() {
@@ -24,7 +24,7 @@ var _ = Describe("Doctor Command", func() {
 		}
 	})
 
-	Describe("claudit doctor", func() {
+	Describe("shiftlog doctor", func() {
 		It("reports issues when not initialized", func() {
 			stdout, _, err := testutil.RunClauditInDir(repo.Path, "doctor")
 			// Should fail because not initialized

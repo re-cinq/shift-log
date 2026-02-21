@@ -1,8 +1,8 @@
 #!/bin/bash
-# Manual integration test for claudit with Claude Code
+# Manual integration test for shiftlog with Claude Code
 #
-# This script helps verify that claudit is properly integrated with Claude Code.
-# Run this after installing claudit and initializing it in a repository.
+# This script helps verify that shiftlog is properly integrated with Claude Code.
+# Run this after installing shiftlog and initializing it in a repository.
 #
 # Usage: ./scripts/test-integration.sh
 
@@ -14,12 +14,12 @@ echo
 # Check prerequisites
 echo "1. Checking prerequisites..."
 
-if ! command -v claudit &> /dev/null; then
-    echo "   ERROR: 'claudit' not found in PATH"
-    echo "   Install with: go install github.com/re-cinq/claudit@latest"
+if ! command -v shiftlog &> /dev/null; then
+    echo "   ERROR: 'shiftlog' not found in PATH"
+    echo "   Install with: go install github.com/re-cinq/shiftlog@latest"
     exit 1
 fi
-echo "   ✓ claudit is in PATH"
+echo "   ✓ shiftlog is in PATH"
 
 if ! git rev-parse --git-dir &> /dev/null; then
     echo "   ERROR: Not in a git repository"
@@ -30,7 +30,7 @@ echo "   ✓ In a git repository"
 # Check if initialized
 if [ ! -f ".claude/settings.local.json" ]; then
     echo "   WARNING: .claude/settings.local.json not found"
-    echo "   Run 'claudit init' first"
+    echo "   Run 'shiftlog init' first"
 else
     echo "   ✓ Claude settings file exists"
 fi
@@ -70,7 +70,7 @@ if [ -z "$CURRENT_HEAD" ]; then
     echo "   Creating initial commit for testing..."
     echo "test" > "$TMPDIR/testfile"
     git add "$TMPDIR/testfile" 2>/dev/null || true
-    git commit --allow-empty -m "Test commit for claudit integration" > /dev/null
+    git commit --allow-empty -m "Test commit for shiftlog integration" > /dev/null
     CURRENT_HEAD=$(git rev-parse HEAD)
     echo "   Created test commit: ${CURRENT_HEAD:0:8}"
 fi
@@ -89,11 +89,11 @@ EOF
 )
 
 echo "   Simulating hook call..."
-if echo "$HOOK_INPUT" | claudit store 2>&1 | grep -q "stored conversation"; then
+if echo "$HOOK_INPUT" | shiftlog store 2>&1 | grep -q "stored conversation"; then
     echo "   ✓ Hook execution successful"
 else
     echo "   ERROR: Hook execution failed or produced no output"
-    echo "   Try running manually: echo '<hook_input>' | claudit store"
+    echo "   Try running manually: echo '<hook_input>' | shiftlog store"
     exit 1
 fi
 
@@ -121,4 +121,4 @@ echo
 echo "To verify with real Claude Code usage:"
 echo "  1. Start Claude Code in this directory"
 echo "  2. Ask Claude to make a commit"
-echo "  3. Run 'claudit list' to see stored conversations"
+echo "  3. Run 'shiftlog list' to see stored conversations"

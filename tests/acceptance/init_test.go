@@ -8,7 +8,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/re-cinq/claudit/tests/acceptance/testutil"
+	"github.com/re-cinq/shift-log/tests/acceptance/testutil"
 )
 
 var _ = Describe("Init Command", func() {
@@ -39,9 +39,9 @@ var _ = Describe("Init Command", func() {
 					_, _, err := testutil.RunClauditInDir(repo.Path, config.InitArgs...)
 					Expect(err).NotTo(HaveOccurred())
 
-					// Verify .claudit/config exists with correct agent
-					Expect(repo.FileExists(".claudit/config")).To(BeTrue())
-					content, err := repo.ReadFile(".claudit/config")
+					// Verify .shiftlog/config exists with correct agent
+					Expect(repo.FileExists(".shiftlog/config")).To(BeTrue())
+					content, err := repo.ReadFile(".shiftlog/config")
 					Expect(err).NotTo(HaveOccurred())
 
 					var cfg map[string]interface{}
@@ -51,13 +51,13 @@ var _ = Describe("Init Command", func() {
 			}
 
 			if config.IsRepoRootHooks {
-				It("creates .github/hooks/claudit.json with correct structure", func() {
+				It("creates .github/hooks/shiftlog.json with correct structure", func() {
 					_, _, err := testutil.RunClauditInDir(repo.Path, config.InitArgs...)
 					Expect(err).NotTo(HaveOccurred())
 
-					Expect(repo.FileExists(".github/hooks/claudit.json")).To(BeTrue())
+					Expect(repo.FileExists(".github/hooks/shiftlog.json")).To(BeTrue())
 
-					content, err := repo.ReadFile(".github/hooks/claudit.json")
+					content, err := repo.ReadFile(".github/hooks/shiftlog.json")
 					Expect(err).NotTo(HaveOccurred())
 
 					var raw map[string]interface{}
@@ -67,7 +67,7 @@ var _ = Describe("Init Command", func() {
 					Expect(raw["version"]).To(BeNumerically("==", 1))
 
 					hooks, ok := raw["hooks"].(map[string]interface{})
-					Expect(ok).To(BeTrue(), "Expected hooks key in claudit.json")
+					Expect(ok).To(BeTrue(), "Expected hooks key in shiftlog.json")
 
 					postToolUse, ok := hooks["postToolUse"].([]interface{})
 					Expect(ok).To(BeTrue(), "Expected postToolUse array")
@@ -84,7 +84,7 @@ var _ = Describe("Init Command", func() {
 					_, _, err = testutil.RunClauditInDir(repo.Path, config.InitArgs...)
 					Expect(err).NotTo(HaveOccurred())
 
-					content, err := repo.ReadFile(".github/hooks/claudit.json")
+					content, err := repo.ReadFile(".github/hooks/shiftlog.json")
 					Expect(err).NotTo(HaveOccurred())
 
 					var raw map[string]interface{}
@@ -95,14 +95,14 @@ var _ = Describe("Init Command", func() {
 					Expect(postToolUse).To(HaveLen(1))
 				})
 
-				It("preserves existing .github/hooks/claudit.json content", func() {
+				It("preserves existing .github/hooks/shiftlog.json content", func() {
 					Expect(os.MkdirAll(filepath.Join(repo.Path, ".github", "hooks"), 0755)).To(Succeed())
-					Expect(repo.WriteFile(".github/hooks/claudit.json", `{"version":1,"hooks":{"postToolUse":[{"type":"command","command":"other-tool","timeoutSec":10}]},"existingKey":"existingValue"}`)).To(Succeed())
+					Expect(repo.WriteFile(".github/hooks/shiftlog.json", `{"version":1,"hooks":{"postToolUse":[{"type":"command","command":"other-tool","timeoutSec":10}]},"existingKey":"existingValue"}`)).To(Succeed())
 
 					_, _, err := testutil.RunClauditInDir(repo.Path, config.InitArgs...)
 					Expect(err).NotTo(HaveOccurred())
 
-					content, err := repo.ReadFile(".github/hooks/claudit.json")
+					content, err := repo.ReadFile(".github/hooks/shiftlog.json")
 					Expect(err).NotTo(HaveOccurred())
 					Expect(content).To(ContainSubstring("existingKey"))
 					Expect(content).To(ContainSubstring("existingValue"))

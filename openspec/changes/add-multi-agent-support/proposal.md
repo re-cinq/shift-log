@@ -1,7 +1,7 @@
 # Change: Multi-Agent Support (Gemini CLI + OpenCode CLI)
 
 ## Why
-A competitor (entire.io, $60M funded) supports Claude Code, Gemini CLI, and soon OpenCode CLI. claudit currently only supports Claude Code. Adding multi-agent support makes claudit the universal conversation-tracking tool for AI coding assistants.
+A competitor (entire.io, $60M funded) supports Claude Code, Gemini CLI, and soon OpenCode CLI. shiftlog currently only supports Claude Code. Adding multi-agent support makes shiftlog the universal conversation-tracking tool for AI coding assistants.
 
 ## What Changes
 - Extract Agent interface from hardcoded Claude Code integration

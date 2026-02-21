@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/re-cinq/claudit/tests/acceptance/testutil"
+	"github.com/re-cinq/shift-log/tests/acceptance/testutil"
 )
 
 var _ = Describe("Worktree isolation", func() {
@@ -25,14 +25,14 @@ var _ = Describe("Worktree isolation", func() {
 		Expect(repo.WriteFile("README.md", "# Test")).To(Succeed())
 		Expect(repo.Commit("Initial commit")).To(Succeed())
 
-		// Init claudit in the main repo
+		// Init shiftlog in the main repo
 		_, _, err = testutil.RunClauditInDir(repo.Path, "init")
 		Expect(err).NotTo(HaveOccurred())
 
 		// Create branch-b and add a worktree for it
 		Expect(repo.Run("git", "branch", "branch-b")).To(Succeed())
 
-		worktreePath, err = os.MkdirTemp("", "claudit-worktree-*")
+		worktreePath, err = os.MkdirTemp("", "shiftlog-worktree-*")
 		Expect(err).NotTo(HaveOccurred())
 		// git worktree add requires the path not to exist
 		Expect(os.RemoveAll(worktreePath)).To(Succeed())
@@ -78,14 +78,14 @@ var _ = Describe("Worktree isolation", func() {
 		Expect(wtRepo.Commit("Commit on branch-b")).To(Succeed())
 		storeConversation(worktreePath, "session-branch-b")
 
-		// -- From worktree A (master): claudit list should only show master's conversation --
+		// -- From worktree A (master): shiftlog list should only show master's conversation --
 		stdoutA, _, err := testutil.RunClauditInDir(repo.Path, "list")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(stdoutA).To(ContainSubstring("Commit on master"))
 		Expect(stdoutA).NotTo(ContainSubstring("Commit on branch-b"),
 			"worktree A (master) should NOT see branch-b's conversation")
 
-		// -- From worktree B (branch-b): claudit list should only show branch-b's conversation --
+		// -- From worktree B (branch-b): shiftlog list should only show branch-b's conversation --
 		stdoutB, _, err := testutil.RunClauditInDir(worktreePath, "list")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(stdoutB).To(ContainSubstring("Commit on branch-b"))
@@ -93,7 +93,7 @@ var _ = Describe("Worktree isolation", func() {
 			"worktree B (branch-b) should NOT see master's conversation")
 	})
 
-	It("claudit show on HEAD only shows the current worktree's conversation", func() {
+	It("shiftlog show on HEAD only shows the current worktree's conversation", func() {
 		// -- Worktree A (master): make a commit and store a conversation --
 		Expect(repo.WriteFile("a.txt", "branch A work")).To(Succeed())
 		Expect(repo.Commit("Commit on master")).To(Succeed())

@@ -85,14 +85,14 @@ func WriteSettings(geminiDir string, settings *Settings) error {
 	return os.WriteFile(path, data, 0644)
 }
 
-// AddClauditHook adds or updates the claudit store hook in Gemini settings.
+// AddClauditHook adds or updates the shiftlog store hook in Gemini settings.
 func AddClauditHook(settings *Settings) {
-	clauditHook := Hook{
+	shiftlogHook := Hook{
 		Matcher: "run_shell_command",
 		Hooks: []HookCmd{
 			{
 				Type:    "command",
-				Command: "claudit store --agent=gemini",
+				Command: "shiftlog store --agent=gemini",
 				Timeout: 30000,
 			},
 		},
@@ -100,14 +100,14 @@ func AddClauditHook(settings *Settings) {
 
 	for i, hook := range settings.Hooks.AfterTool {
 		for _, h := range hook.Hooks {
-			if h.Command == "claudit store --agent=gemini" {
-				settings.Hooks.AfterTool[i] = clauditHook
+			if h.Command == "shiftlog store --agent=gemini" {
+				settings.Hooks.AfterTool[i] = shiftlogHook
 				return
 			}
 		}
 	}
 
-	settings.Hooks.AfterTool = append(settings.Hooks.AfterTool, clauditHook)
+	settings.Hooks.AfterTool = append(settings.Hooks.AfterTool, shiftlogHook)
 }
 
 // AddSessionHooks adds SessionStart and SessionEnd hooks for session tracking.
@@ -116,7 +116,7 @@ func AddSessionHooks(settings *Settings) {
 		Hooks: []HookCmd{
 			{
 				Type:    "command",
-				Command: "claudit session-start --agent=gemini",
+				Command: "shiftlog session-start --agent=gemini",
 				Timeout: 5000,
 			},
 		},
@@ -125,23 +125,23 @@ func AddSessionHooks(settings *Settings) {
 		Hooks: []HookCmd{
 			{
 				Type:    "command",
-				Command: "claudit session-end --agent=gemini",
+				Command: "shiftlog session-end --agent=gemini",
 				Timeout: 5000,
 			},
 		},
 	}
 
-	settings.Hooks.SessionStart = addOrUpdateHook(settings.Hooks.SessionStart, startHook, "claudit session-start")
-	settings.Hooks.SessionEnd = addOrUpdateHook(settings.Hooks.SessionEnd, endHook, "claudit session-end")
+	settings.Hooks.SessionStart = addOrUpdateHook(settings.Hooks.SessionStart, startHook, "shiftlog session-start")
+	settings.Hooks.SessionEnd = addOrUpdateHook(settings.Hooks.SessionEnd, endHook, "shiftlog session-end")
 }
 
-// RemoveClauditHook removes claudit store hook entries from AfterTool.
+// RemoveClauditHook removes shiftlog store hook entries from AfterTool.
 func RemoveClauditHook(settings *Settings) {
 	filtered := settings.Hooks.AfterTool[:0]
 	for _, hook := range settings.Hooks.AfterTool {
 		isClaudit := false
 		for _, h := range hook.Hooks {
-			if h.Command == "claudit store --agent=gemini" {
+			if h.Command == "shiftlog store --agent=gemini" {
 				isClaudit = true
 				break
 			}
@@ -153,10 +153,10 @@ func RemoveClauditHook(settings *Settings) {
 	settings.Hooks.AfterTool = filtered
 }
 
-// RemoveSessionHooks removes claudit session hooks from SessionStart and SessionEnd.
+// RemoveSessionHooks removes shiftlog session hooks from SessionStart and SessionEnd.
 func RemoveSessionHooks(settings *Settings) {
-	settings.Hooks.SessionStart = removeHookByCommand(settings.Hooks.SessionStart, "claudit session-start --agent=gemini")
-	settings.Hooks.SessionEnd = removeHookByCommand(settings.Hooks.SessionEnd, "claudit session-end --agent=gemini")
+	settings.Hooks.SessionStart = removeHookByCommand(settings.Hooks.SessionStart, "shiftlog session-start --agent=gemini")
+	settings.Hooks.SessionEnd = removeHookByCommand(settings.Hooks.SessionEnd, "shiftlog session-end --agent=gemini")
 }
 
 func removeHookByCommand(hooks []Hook, command string) []Hook {

@@ -12,7 +12,7 @@ import (
 
 var _ = Describe("Search", func() {
 	It("should find conversations by text content", func() {
-		clauditPath := getClauditPath()
+		shiftlogPath := getClauditPath()
 		tmpDir := initGitRepo("search-integration")
 		DeferCleanup(os.RemoveAll, tmpDir)
 
@@ -23,21 +23,21 @@ var _ = Describe("Search", func() {
 		Expect(os.WriteFile(transcriptPath, []byte(transcriptData), 0644)).To(Succeed())
 
 		hookInput := `{"session_id":"search-test","transcript_path":"` + transcriptPath + `","tool_name":"Bash","tool_input":{"command":"git commit -m 'test'"}}`
-		storeCmd := exec.Command(clauditPath, "store")
+		storeCmd := exec.Command(shiftlogPath, "store")
 		storeCmd.Dir = tmpDir
 		storeCmd.Stdin = strings.NewReader(hookInput)
-		storeCmd.Env = append(os.Environ(), "PATH="+filepath.Dir(clauditPath)+":"+os.Getenv("PATH"))
+		storeCmd.Env = append(os.Environ(), "PATH="+filepath.Dir(shiftlogPath)+":"+os.Getenv("PATH"))
 		storeOutput, err := storeCmd.CombinedOutput()
-		Expect(err).NotTo(HaveOccurred(), "claudit store failed:\n%s", storeOutput)
+		Expect(err).NotTo(HaveOccurred(), "shiftlog store failed:\n%s", storeOutput)
 
 		By("Conversation stored, now searching...")
 
 		// Search for content that exists
-		searchCmd := exec.Command(clauditPath, "search", "authentication")
+		searchCmd := exec.Command(shiftlogPath, "search", "authentication")
 		searchCmd.Dir = tmpDir
 		searchCmd.Env = append(os.Environ(), "NO_COLOR=1")
 		searchOutput, err := searchCmd.CombinedOutput()
-		Expect(err).NotTo(HaveOccurred(), "claudit search failed:\n%s", searchOutput)
+		Expect(err).NotTo(HaveOccurred(), "shiftlog search failed:\n%s", searchOutput)
 
 		output := string(searchOutput)
 		Expect(output).To(ContainSubstring("Initial commit"))
@@ -47,7 +47,7 @@ var _ = Describe("Search", func() {
 		By("Text search found the conversation")
 
 		// Search for content that doesn't exist
-		searchCmd = exec.Command(clauditPath, "search", "xyznonexistent99")
+		searchCmd = exec.Command(shiftlogPath, "search", "xyznonexistent99")
 		searchCmd.Dir = tmpDir
 		searchCmd.Env = append(os.Environ(), "NO_COLOR=1")
 		searchOutput, err = searchCmd.CombinedOutput()

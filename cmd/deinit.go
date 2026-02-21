@@ -5,27 +5,27 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/re-cinq/claudit/internal/agent"
-	"github.com/re-cinq/claudit/internal/cli"
-	"github.com/re-cinq/claudit/internal/config"
-	"github.com/re-cinq/claudit/internal/git"
+	"github.com/re-cinq/shift-log/internal/agent"
+	"github.com/re-cinq/shift-log/internal/cli"
+	"github.com/re-cinq/shift-log/internal/config"
+	"github.com/re-cinq/shift-log/internal/git"
 	"github.com/spf13/cobra"
 )
 
 var deinitCmd = &cobra.Command{
 	Use:     "deinit",
-	Short:   "Remove claudit hooks and settings from the current repository",
+	Short:   "Remove shiftlog hooks and settings from the current repository",
 	GroupID: "human",
-	Long: `Removes claudit's hooks and git configuration from the current repository.
+	Long: `Removes shiftlog's hooks and git configuration from the current repository.
 
 This command:
 - Removes agent-specific hooks/plugins (Claude, Gemini, Copilot, OpenCode)
-- Removes claudit-managed git hook sections (pre-push, post-merge, post-checkout, post-commit)
+- Removes shiftlog-managed git hook sections (pre-push, post-merge, post-checkout, post-commit)
 - Unsets git config settings for notes visibility
 
 Does NOT remove:
-- The .claudit/ directory (contains session data; remove manually if desired)
-- The .gitignore entry for .claudit/
+- The .shiftlog/ directory (contains session data; remove manually if desired)
+- The .gitignore entry for .shiftlog/
 - Git notes data (notes are committed data and preserved)`,
 	RunE: runDeinit,
 }
@@ -90,7 +90,7 @@ func runDeinit(cmd *cobra.Command, args []string) error {
 }
 
 // removeGitSettings unsets notes.displayRef and notes.rewriteRef if they
-// match the claudit notes ref. Does not touch settings set to other values.
+// match the shiftlog notes ref. Does not touch settings set to other values.
 func removeGitSettings(notesRef string) error {
 	for _, key := range []string{"notes.displayRef", "notes.rewriteRef"} {
 		out, err := exec.Command("git", "config", key).Output()

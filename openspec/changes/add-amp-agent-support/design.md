@@ -41,7 +41,7 @@ Based on research, Amp uses these tool names:
 
 1. **No-op ConfigureHooks**: Amp has no hook/plugin file to install. `ConfigureHooks()` returns nil immediately. Same pattern as Codex.
 
-2. **Post-commit git hook only (Phase 1)**: Like Codex, conversation capture relies on `claudit store --manual` in the post-commit hook. Without a local capture file, `DiscoverSession()` returns nil and `claudit store --manual` stores a commit record without conversation data.
+2. **Post-commit git hook only (Phase 1)**: Like Codex, conversation capture relies on `shiftlog store --manual` in the post-commit hook. Without a local capture file, `DiscoverSession()` returns nil and `shiftlog store --manual` stores a commit record without conversation data.
 
 3. **Stream-JSON transcript parsing**: `ParseTranscript()` handles Amp's NDJSON format:
    - `system` type lines: extract session_id for thread ID, skip otherwise

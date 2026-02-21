@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/re-cinq/claudit/internal/agent"
+	"github.com/re-cinq/shift-log/internal/agent"
 )
 
 func init() {
@@ -23,12 +23,12 @@ type Agent struct{}
 func (a *Agent) Name() agent.Name   { return agent.OpenCode }
 func (a *Agent) DisplayName() string { return "OpenCode CLI" }
 
-// ConfigureHooks installs the claudit plugin for OpenCode.
+// ConfigureHooks installs the shiftlog plugin for OpenCode.
 func (a *Agent) ConfigureHooks(repoRoot string) error {
 	return InstallPlugin(repoRoot)
 }
 
-// RemoveHooks removes the claudit plugin for OpenCode.
+// RemoveHooks removes the shiftlog plugin for OpenCode.
 func (a *Agent) RemoveHooks(repoRoot string) error {
 	return RemovePlugin(repoRoot)
 }
@@ -41,13 +41,13 @@ func (a *Agent) DiagnoseHooks(repoRoot string) []agent.DiagnosticCheck {
 		checks = append(checks, agent.DiagnosticCheck{
 			Name:    "OpenCode plugin",
 			OK:      true,
-			Message: "Found .opencode/plugins/claudit.js",
+			Message: "Found .opencode/plugins/shiftlog.js",
 		})
 	} else {
 		checks = append(checks, agent.DiagnosticCheck{
 			Name:    "OpenCode plugin",
 			OK:      false,
-			Message: "Missing .opencode/plugins/claudit.js. Run 'claudit init --agent=opencode' to install.",
+			Message: "Missing .opencode/plugins/shiftlog.js. Run 'shiftlog init --agent=opencode' to install.",
 		})
 	}
 

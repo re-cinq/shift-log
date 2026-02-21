@@ -44,7 +44,7 @@ jobs:
         run: go test ./internal/...
 
       - name: Build binary for acceptance tests
-        run: CGO_ENABLED=0 go build -o claudit .
+        run: CGO_ENABLED=0 go build -o shiftlog .
 
       - name: Run acceptance tests
         run: go test ./tests/acceptance/... -v
@@ -110,7 +110,7 @@ jobs:
           CGO_ENABLED: 0
         run: |
           VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
-          go build -ldflags "-X github.com/re-cinq/claudit/cmd.version=${VERSION}" -o claudit-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goos == 'windows' && '.exe' || '' }} .
+          go build -ldflags "-X github.com/re-cinq/claudit/cmd.version=${VERSION}" -o shiftlog-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goos == 'windows' && '.exe' || '' }} .
 
   integration:
     name: Integration Tests
@@ -145,7 +145,7 @@ jobs:
         run: printenv OPENAI_API_KEY | codex login --with-api-key
 
       - name: Build binary
-        run: CGO_ENABLED=0 go build -o claudit .
+        run: CGO_ENABLED=0 go build -o shiftlog .
 
       - name: Run integration tests
         env:
@@ -153,7 +153,7 @@ jobs:
           COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          CLAUDIT_BINARY: ${{ github.workspace }}/claudit
+          SHIFTLOG_BINARY: ${{ github.workspace }}/shiftlog
         run: go test ./tests/integration/... -v -timeout 600s
 
   release:

@@ -7,22 +7,22 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/re-cinq/claudit/internal/agent"
-	_ "github.com/re-cinq/claudit/internal/agent/claude"   // register Claude agent
-	_ "github.com/re-cinq/claudit/internal/agent/codex"    // register Codex agent
-	_ "github.com/re-cinq/claudit/internal/agent/copilot"  // register Copilot agent
-	_ "github.com/re-cinq/claudit/internal/agent/gemini"   // register Gemini agent
-	_ "github.com/re-cinq/claudit/internal/agent/opencode" // register OpenCode agent
-	"github.com/re-cinq/claudit/internal/config"
-	"github.com/re-cinq/claudit/internal/git"
+	"github.com/re-cinq/shift-log/internal/agent"
+	_ "github.com/re-cinq/shift-log/internal/agent/claude"   // register Claude agent
+	_ "github.com/re-cinq/shift-log/internal/agent/codex"    // register Codex agent
+	_ "github.com/re-cinq/shift-log/internal/agent/copilot"  // register Copilot agent
+	_ "github.com/re-cinq/shift-log/internal/agent/gemini"   // register Gemini agent
+	_ "github.com/re-cinq/shift-log/internal/agent/opencode" // register OpenCode agent
+	"github.com/re-cinq/shift-log/internal/config"
+	"github.com/re-cinq/shift-log/internal/git"
 	"github.com/spf13/cobra"
 )
 
 var doctorCmd = &cobra.Command{
 	Use:     "doctor",
-	Short:   "Diagnose claudit configuration issues",
+	Short:   "Diagnose shiftlog configuration issues",
 	GroupID: "human",
-	Long: `Checks the claudit configuration and reports any issues that might
+	Long: `Checks the shiftlog configuration and reports any issues that might
 prevent conversations from being stored.
 
 This command checks:
@@ -58,18 +58,18 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Println()
 
-	// Check 2: claudit in PATH
-	fmt.Print("Checking claudit in PATH... ")
-	clauditPath, err := exec.LookPath("claudit")
+	// Check 2: shiftlog in PATH
+	fmt.Print("Checking shiftlog in PATH... ")
+	shiftlogPath, err := exec.LookPath("shiftlog")
 	if err != nil {
 		fmt.Println("FAIL")
-		fmt.Println("  'claudit' is not in your PATH")
-		fmt.Println("  Coding agent hooks will not be able to find claudit")
-		fmt.Println("  Install with: go install github.com/re-cinq/claudit@latest")
+		fmt.Println("  'shiftlog' is not in your PATH")
+		fmt.Println("  Coding agent hooks will not be able to find shiftlog")
+		fmt.Println("  Install with: go install github.com/re-cinq/shift-log@latest")
 		hasErrors = true
 	} else {
 		fmt.Println("OK")
-		fmt.Printf("  Found: %s\n", clauditPath)
+		fmt.Printf("  Found: %s\n", shiftlogPath)
 	}
 	fmt.Println()
 
@@ -131,7 +131,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 			fmt.Println("FAIL")
 			fmt.Printf("  notes.rewriteRef is not set to %s\n", git.NotesRef)
 			fmt.Println("  Notes will not follow commits during rebase")
-			fmt.Println("  Run 'claudit init' to fix")
+			fmt.Println("  Run 'shiftlog init' to fix")
 			hasErrors = true
 		} else {
 			fmt.Println("OK")
@@ -157,14 +157,14 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 				data, err := os.ReadFile(hookPath)
 				if err != nil {
 					missingHooks = append(missingHooks, hook)
-				} else if !strings.Contains(string(data), "claudit") {
-					missingHooks = append(missingHooks, hook+" (no claudit)")
+				} else if !strings.Contains(string(data), "shiftlog") {
+					missingHooks = append(missingHooks, hook+" (no shiftlog)")
 				}
 			}
 			if len(missingHooks) > 0 {
 				fmt.Println("FAIL")
 				fmt.Printf("  Missing or incomplete hooks: %v\n", missingHooks)
-				fmt.Println("  Run 'claudit init' to fix")
+				fmt.Println("  Run 'shiftlog init' to fix")
 				hasErrors = true
 			} else {
 				fmt.Println("OK")
@@ -176,7 +176,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 
 	// Summary
 	if hasErrors {
-		fmt.Println("Issues found. Run 'claudit init' to fix configuration.")
+		fmt.Println("Issues found. Run 'shiftlog init' to fix configuration.")
 		return fmt.Errorf("configuration issues detected")
 	}
 

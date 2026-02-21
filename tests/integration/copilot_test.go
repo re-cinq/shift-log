@@ -17,18 +17,18 @@ var _ = Describe("Copilot CLI Integration", func() {
 		skipIfEnvSet("SKIP_COPILOT_INTEGRATION")
 		githubToken := requireEnvVar("COPILOT_GITHUB_TOKEN")
 		requireBinary("copilot")
-		clauditPath := getClauditPath()
+		shiftlogPath := getClauditPath()
 		tmpDir := initGitRepo("copilot-integration")
 		DeferCleanup(os.RemoveAll, tmpDir)
 
-		// Initialize claudit with Copilot agent
-		cmd := exec.Command(clauditPath, "init", "--agent=copilot")
+		// Initialize shiftlog with Copilot agent
+		cmd := exec.Command(shiftlogPath, "init", "--agent=copilot")
 		cmd.Dir = tmpDir
 		output, err := cmd.CombinedOutput()
-		Expect(err).NotTo(HaveOccurred(), "claudit init --agent=copilot failed:\n%s", output)
+		Expect(err).NotTo(HaveOccurred(), "shiftlog init --agent=copilot failed:\n%s", output)
 
-		// Verify hooks at .github/hooks/claudit.json
-		hooksPath := filepath.Join(tmpDir, ".github", "hooks", "claudit.json")
+		// Verify hooks at .github/hooks/shiftlog.json
+		hooksPath := filepath.Join(tmpDir, ".github", "hooks", "shiftlog.json")
 		hooksData, err := os.ReadFile(hooksPath)
 		Expect(err).NotTo(HaveOccurred(), "Failed to read hooks file")
 
@@ -36,7 +36,7 @@ var _ = Describe("Copilot CLI Integration", func() {
 		Expect(json.Unmarshal(hooksData, &hooksFile)).To(Succeed())
 
 		hooks, ok := hooksFile["hooks"].(map[string]interface{})
-		Expect(ok).To(BeTrue(), "Expected hooks object in claudit.json")
+		Expect(ok).To(BeTrue(), "Expected hooks object in shiftlog.json")
 		postToolUse, ok := hooks["postToolUse"].([]interface{})
 		Expect(ok).To(BeTrue(), "Expected postToolUse array in hooks")
 		Expect(postToolUse).NotTo(BeEmpty())
@@ -44,7 +44,7 @@ var _ = Describe("Copilot CLI Integration", func() {
 		hookEntry, ok := postToolUse[0].(map[string]interface{})
 		Expect(ok).To(BeTrue(), "Expected hook entry to be an object")
 		Expect(hookEntry["type"]).To(Equal("command"))
-		Expect(hookEntry["command"].(string)).To(ContainSubstring("claudit store"))
+		Expect(hookEntry["command"].(string)).To(ContainSubstring("shiftlog store"))
 
 		By("Hook configuration verified successfully")
 
@@ -58,7 +58,7 @@ var _ = Describe("Copilot CLI Integration", func() {
 		)
 		copilotCmd.Dir = tmpDir
 		copilotCmd.Env = append(os.Environ(),
-			"PATH="+filepath.Dir(clauditPath)+":"+os.Getenv("PATH"),
+			"PATH="+filepath.Dir(shiftlogPath)+":"+os.Getenv("PATH"),
 			"COPILOT_GITHUB_TOKEN="+githubToken,
 		)
 
@@ -66,8 +66,8 @@ var _ = Describe("Copilot CLI Integration", func() {
 
 		time.Sleep(2 * time.Second)
 
-		Expect(string(copilotOutput)).NotTo(ContainSubstring("claudit: warning:"),
-			"claudit logged warnings during execution:\n%s", copilotOutput)
+		Expect(string(copilotOutput)).NotTo(ContainSubstring("shiftlog: warning:"),
+			"shiftlog logged warnings during execution:\n%s", copilotOutput)
 
 		// Check if commit was made
 		cmd = exec.Command("git", "log", "--oneline", "-n", "2")

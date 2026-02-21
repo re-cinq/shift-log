@@ -4,7 +4,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/re-cinq/claudit/tests/acceptance/testutil"
+	"github.com/re-cinq/shift-log/tests/acceptance/testutil"
 )
 
 var _ = Describe("Local Rebase Notes Preservation", func() {
@@ -24,10 +24,10 @@ var _ = Describe("Local Rebase Notes Preservation", func() {
 
 	Describe("notes follow rebased commits", func() {
 		It("preserves notes when commits are rebased", func() {
-			// Set binary path so git hooks installed by init can find claudit
+			// Set binary path so git hooks installed by init can find shiftlog
 			repo.SetBinaryPath(testutil.BinaryPath())
 
-			// Initialize claudit (sets notes.rewriteRef)
+			// Initialize shiftlog (sets notes.rewriteRef)
 			_, _, err := testutil.RunClauditInDir(repo.Path, "init")
 			Expect(err).NotTo(HaveOccurred())
 
@@ -98,7 +98,7 @@ var _ = Describe("Local Rebase Notes Preservation", func() {
 		})
 
 		It("reports FAIL when not initialized at all", func() {
-			// Fresh git repo without claudit init — doctor should report FAIL
+			// Fresh git repo without shiftlog init — doctor should report FAIL
 			freshRepo, err := testutil.NewGitRepo()
 			Expect(err).NotTo(HaveOccurred())
 			defer freshRepo.Cleanup()

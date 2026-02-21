@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/re-cinq/claudit/internal/agent"
+	"github.com/re-cinq/shift-log/internal/agent"
 )
 
 func TestAgentName(t *testing.T) {
@@ -249,10 +249,10 @@ func TestConfigureHooks(t *testing.T) {
 		t.Fatalf("ConfigureHooks() error: %v", err)
 	}
 
-	hooksPath := filepath.Join(tmpDir, ".github", "hooks", "claudit.json")
+	hooksPath := filepath.Join(tmpDir, ".github", "hooks", "shiftlog.json")
 	data, err := os.ReadFile(hooksPath)
 	if err != nil {
-		t.Fatalf("Failed to read .github/hooks/claudit.json: %v", err)
+		t.Fatalf("Failed to read .github/hooks/shiftlog.json: %v", err)
 	}
 
 	var raw map[string]interface{}
@@ -279,8 +279,8 @@ func TestConfigureHooks(t *testing.T) {
 	if hookObj["type"] != "command" {
 		t.Errorf("hook type = %q, want command", hookObj["type"])
 	}
-	if hookObj["command"] != "claudit store --agent=copilot" {
-		t.Errorf("hook command = %q, want 'claudit store --agent=copilot'", hookObj["command"])
+	if hookObj["command"] != "shiftlog store --agent=copilot" {
+		t.Errorf("hook command = %q, want 'shiftlog store --agent=copilot'", hookObj["command"])
 	}
 	if timeout, ok := hookObj["timeoutSec"].(float64); !ok || timeout != 30 {
 		t.Errorf("hook timeoutSec = %v, want 30", hookObj["timeoutSec"])
@@ -298,10 +298,10 @@ func TestConfigureHooksIdempotent(t *testing.T) {
 		t.Fatalf("ConfigureHooks() second call error: %v", err)
 	}
 
-	hooksPath := filepath.Join(tmpDir, ".github", "hooks", "claudit.json")
+	hooksPath := filepath.Join(tmpDir, ".github", "hooks", "shiftlog.json")
 	data, err := os.ReadFile(hooksPath)
 	if err != nil {
-		t.Fatalf("Failed to read .github/hooks/claudit.json: %v", err)
+		t.Fatalf("Failed to read .github/hooks/shiftlog.json: %v", err)
 	}
 
 	var raw map[string]interface{}
@@ -326,7 +326,7 @@ func TestConfigureHooksPreservesExisting(t *testing.T) {
 		t.Fatalf("MkdirAll() error: %v", err)
 	}
 	existing := `{"version":1,"hooks":{"postToolUse":[{"type":"command","command":"other-tool","timeoutSec":10}]},"customKey":"customValue"}`
-	if err := os.WriteFile(filepath.Join(hooksDir, "claudit.json"), []byte(existing), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(hooksDir, "shiftlog.json"), []byte(existing), 0644); err != nil {
 		t.Fatalf("WriteFile() error: %v", err)
 	}
 
@@ -334,9 +334,9 @@ func TestConfigureHooksPreservesExisting(t *testing.T) {
 		t.Fatalf("ConfigureHooks() error: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(hooksDir, "claudit.json"))
+	data, err := os.ReadFile(filepath.Join(hooksDir, "shiftlog.json"))
 	if err != nil {
-		t.Fatalf("Failed to read claudit.json: %v", err)
+		t.Fatalf("Failed to read shiftlog.json: %v", err)
 	}
 
 	var raw map[string]interface{}
@@ -349,7 +349,7 @@ func TestConfigureHooksPreservesExisting(t *testing.T) {
 		t.Errorf("customKey = %v, want customValue", raw["customKey"])
 	}
 
-	// Verify existing hook preserved and claudit hook added
+	// Verify existing hook preserved and shiftlog hook added
 	hooks := raw["hooks"].(map[string]interface{})
 	postToolUse := hooks["postToolUse"].([]interface{})
 	if len(postToolUse) != 2 {
@@ -362,10 +362,10 @@ func TestConfigureHooksPreservesExisting(t *testing.T) {
 		t.Errorf("First entry command = %q, want 'other-tool'", first["command"])
 	}
 
-	// Second should be the claudit hook
+	// Second should be the shiftlog hook
 	second := postToolUse[1].(map[string]interface{})
-	if second["command"] != "claudit store --agent=copilot" {
-		t.Errorf("Second entry command = %q, want 'claudit store --agent=copilot'", second["command"])
+	if second["command"] != "shiftlog store --agent=copilot" {
+		t.Errorf("Second entry command = %q, want 'shiftlog store --agent=copilot'", second["command"])
 	}
 }
 

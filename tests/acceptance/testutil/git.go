@@ -15,7 +15,7 @@ type GitRepo struct {
 
 // NewGitRepo creates a new temporary git repository
 func NewGitRepo() (*GitRepo, error) {
-	dir, err := os.MkdirTemp("", "claudit-test-repo-*")
+	dir, err := os.MkdirTemp("", "shiftlog-test-repo-*")
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +50,7 @@ func NewGitRepo() (*GitRepo, error) {
 // NewGitRepoWithRemote creates a git repo with a local bare remote
 func NewGitRepoWithRemote() (*GitRepo, *GitRepo, error) {
 	// Create the "remote" (bare repo)
-	remoteDir, err := os.MkdirTemp("", "claudit-test-remote-*")
+	remoteDir, err := os.MkdirTemp("", "shiftlog-test-remote-*")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -123,7 +123,7 @@ func (r *GitRepo) RunOutput(name string, args ...string) (string, error) {
 	return stdout.String(), err
 }
 
-// SetBinaryPath adds the claudit binary directory to PATH for git hooks
+// SetBinaryPath adds the shiftlog binary directory to PATH for git hooks
 func (r *GitRepo) SetBinaryPath(binPath string) {
 	r.ExtraEnv = append(r.ExtraEnv, "PATH="+filepath.Dir(binPath)+":"+os.Getenv("PATH"))
 }
@@ -188,7 +188,7 @@ func (r *GitRepo) HasNote(ref, commit string) bool {
 
 // NewGitRepoAsBare creates a new bare git repository (for use as a remote)
 func NewGitRepoAsBare() (*GitRepo, error) {
-	dir, err := os.MkdirTemp("", "claudit-test-bare-*")
+	dir, err := os.MkdirTemp("", "shiftlog-test-bare-*")
 	if err != nil {
 		return nil, err
 	}

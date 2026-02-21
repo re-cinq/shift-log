@@ -1,7 +1,7 @@
 # Change: Add OpenAI Codex CLI Agent Support
 
 ## Why
-Claudit supports Claude Code, Gemini CLI, and OpenCode CLI. OpenAI's Codex CLI is a growing competitor in the AI coding assistant space. Adding Codex as a fourth agent extends claudit's multi-agent coverage.
+Claudit supports Claude Code, Gemini CLI, and OpenCode CLI. OpenAI's Codex CLI is a growing competitor in the AI coding assistant space. Adding Codex as a fourth agent extends shiftlog's multi-agent coverage.
 
 ## What Changes
 - Add Codex agent implementation (`internal/agent/codex/`) following the existing Agent interface pattern
@@ -21,7 +21,7 @@ Claudit supports Claude Code, Gemini CLI, and OpenCode CLI. OpenAI's Codex CLI i
 
 ## Key Design Decisions
 
-1. **No Codex-specific hook config**: Codex CLI has no PostToolUse-style hooks or plugin system. `ConfigureHooks()` is a no-op. Conversation capture relies entirely on the existing `post-commit` git hook (`claudit store --manual`).
+1. **No Codex-specific hook config**: Codex CLI has no PostToolUse-style hooks or plugin system. `ConfigureHooks()` is a no-op. Conversation capture relies entirely on the existing `post-commit` git hook (`shiftlog store --manual`).
 
 2. **Fix manual store to be agent-aware**: Currently `runManualStore()` hardcodes Claude session discovery via `session.DiscoverSession()`. Changing it to use the configured agent's `DiscoverSession()` method unlocks post-commit support for all agents, not just Claude.
 
@@ -31,4 +31,4 @@ Claudit supports Claude Code, Gemini CLI, and OpenCode CLI. OpenAI's Codex CLI i
 
 5. **Resume command**: `codex resume <session_id>` using the UUID from the rollout filename/SessionMeta.
 
-6. **IsHookless test config**: New `AgentTestConfig` field `IsHookless bool` for agents that produce no hook/plugin files. Init tests verify git hooks are installed and `.claudit/config` exists, but actively assert no agent-specific config files were created.
+6. **IsHookless test config**: New `AgentTestConfig` field `IsHookless bool` for agents that produce no hook/plugin files. Init tests verify git hooks are installed and `.shiftlog/config` exists, but actively assert no agent-specific config files were created.

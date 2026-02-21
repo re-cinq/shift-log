@@ -54,7 +54,7 @@ var _ = Describe("OpenCode Validation", func() {
 	Describe("deep integration validation", Ordered, func() {
 		var (
 			tmpDir            string
-			clauditPath       string
+			shiftlogPath       string
 			xdgDataHome       string
 			dataDir           string
 			captureFile       string
@@ -76,7 +76,7 @@ var _ = Describe("OpenCode Validation", func() {
 
 			requireBinary("opencode")
 
-			clauditPath = getClauditPath()
+			shiftlogPath = getClauditPath()
 
 			var err error
 			tmpDir, err = os.MkdirTemp("", "opencode-validation-*")
@@ -112,14 +112,14 @@ var _ = Describe("OpenCode Validation", func() {
 			configData, _ := json.MarshalIndent(opencodeConfig, "", "  ")
 			Expect(os.WriteFile(filepath.Join(tmpDir, "opencode.json"), configData, 0644)).To(Succeed())
 
-			// Initialize claudit
-			initCmd := exec.Command(clauditPath, "init", "--agent=opencode")
+			// Initialize shiftlog
+			initCmd := exec.Command(shiftlogPath, "init", "--agent=opencode")
 			initCmd.Dir = tmpDir
 			output, err := initCmd.CombinedOutput()
-			Expect(err).NotTo(HaveOccurred(), "claudit init failed:\n%s", output)
+			Expect(err).NotTo(HaveOccurred(), "shiftlog init failed:\n%s", output)
 
 			// Overwrite plugin with capture version
-			pluginPath := filepath.Join(tmpDir, ".opencode", "plugins", "claudit.js")
+			pluginPath := filepath.Join(tmpDir, ".opencode", "plugins", "shiftlog.js")
 			Expect(os.WriteFile(pluginPath, []byte(capturePluginJS), 0644)).To(Succeed())
 
 			// Create a file for OpenCode to commit
@@ -131,7 +131,7 @@ var _ = Describe("OpenCode Validation", func() {
 			)
 			opencodeCmd.Dir = tmpDir
 			opencodeCmd.Env = append(os.Environ(),
-				"PATH="+filepath.Dir(clauditPath)+":"+os.Getenv("PATH"),
+				"PATH="+filepath.Dir(shiftlogPath)+":"+os.Getenv("PATH"),
 				"GOOGLE_GENERATIVE_AI_API_KEY="+apiKey,
 				"XDG_DATA_HOME="+xdgDataHome,
 				"CLAUDIT_HOOK_CAPTURE_FILE="+captureFile,

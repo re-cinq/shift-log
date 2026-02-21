@@ -1,14 +1,14 @@
 ## ADDED Requirements
 
 ### Requirement: Homebrew Tap Installation
-The project SHALL publish a Homebrew formula to a tap repository so that users can install claudit via `brew install re-cinq/tap/claudit`.
+The project SHALL publish a Homebrew formula to a tap repository so that users can install shiftlog via `brew install re-cinq/tap/shiftlog`.
 
 #### Scenario: Fresh install via Homebrew
-- **WHEN** a user runs `brew install re-cinq/tap/claudit`
-- **THEN** the latest released version of the claudit binary is installed and available on their PATH
+- **WHEN** a user runs `brew install re-cinq/tap/shiftlog`
+- **THEN** the latest released version of the shiftlog binary is installed and available on their PATH
 
 #### Scenario: Upgrade via Homebrew
-- **WHEN** a new release is published and a user runs `brew upgrade claudit`
+- **WHEN** a new release is published and a user runs `brew upgrade shiftlog`
 - **THEN** the binary is updated to the latest version
 
 ### Requirement: Automatic Formula Publishing
@@ -16,7 +16,7 @@ GoReleaser SHALL automatically generate and push an updated Homebrew formula to 
 
 #### Scenario: Release triggers formula update
 - **WHEN** GoReleaser creates a new stable GitHub release
-- **THEN** it pushes an updated `claudit.rb` formula to the `homebrew-tap` repository with correct archive URLs and SHA256 checksums
+- **THEN** it pushes an updated `shiftlog.rb` formula to the `homebrew-tap` repository with correct archive URLs and SHA256 checksums
 
 #### Scenario: Prerelease skips formula update
 - **WHEN** GoReleaser creates a prerelease GitHub release

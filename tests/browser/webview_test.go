@@ -14,9 +14,9 @@ import (
 
 	"github.com/chromedp/chromedp"
 
-	"github.com/re-cinq/claudit/internal/git"
-	"github.com/re-cinq/claudit/internal/storage"
-	"github.com/re-cinq/claudit/internal/web"
+	"github.com/re-cinq/shift-log/internal/git"
+	"github.com/re-cinq/shift-log/internal/storage"
+	"github.com/re-cinq/shift-log/internal/web"
 )
 
 // testRepo is a temporary git repository for browser tests.
@@ -27,7 +27,7 @@ type testRepo struct {
 
 func newTestRepo(t *testing.T) *testRepo {
 	t.Helper()
-	dir, err := os.MkdirTemp("", "claudit-browser-test-*")
+	dir, err := os.MkdirTemp("", "shiftlog-browser-test-*")
 	if err != nil {
 		t.Fatal(err)
 	}

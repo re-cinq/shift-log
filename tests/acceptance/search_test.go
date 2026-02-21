@@ -8,7 +8,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/re-cinq/claudit/tests/acceptance/testutil"
+	"github.com/re-cinq/shift-log/tests/acceptance/testutil"
 )
 
 var _ = Describe("Search Command", func() {
@@ -160,7 +160,7 @@ var _ = Describe("Search Command", func() {
 		})
 
 		It("fails outside git repository", func() {
-			tmpDir, err := os.MkdirTemp("", "claudit-no-git-*")
+			tmpDir, err := os.MkdirTemp("", "shiftlog-no-git-*")
 			Expect(err).NotTo(HaveOccurred())
 			defer os.RemoveAll(tmpDir)
 

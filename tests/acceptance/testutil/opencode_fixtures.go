@@ -112,7 +112,7 @@ func opencodePrepareTranscript(baseDir, sessionID, transcript string) (string, e
 // The store process normalizes JSONL into a JSON array, so this function
 // converts back to JSONL for comparison with the original transcript.
 func opencodeReadRestoredTranscript(homeDir, projectPath, sessionID string) ([]byte, error) {
-	dataDir := filepath.Join(homeDir, ".local", "share", "opencode")
+	dataDir := opencodeDataDir(homeDir)
 	msgDir := filepath.Join(dataDir, "storage", "message", sessionID)
 	data, err := os.ReadFile(filepath.Join(msgDir, "transcript.jsonl"))
 	if err != nil {

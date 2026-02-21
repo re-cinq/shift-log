@@ -3,8 +3,8 @@ package cmd
 import (
 	"time"
 
-	"github.com/re-cinq/claudit/internal/cli"
-	"github.com/re-cinq/claudit/internal/session"
+	"github.com/re-cinq/shift-log/internal/cli"
+	"github.com/re-cinq/shift-log/internal/session"
 	"github.com/spf13/cobra"
 )
 

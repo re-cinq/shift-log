@@ -147,14 +147,14 @@ Each line is a JSON object with a `type` field. Common types:
 ## Project Structure
 
 ```
-claudit/
+shiftlog/
 ├── cmd/
 │   ├── root.go           # Cobra root command
-│   ├── init.go           # claudit init
-│   ├── store.go          # claudit store (hook handler)
-│   ├── resume.go         # claudit resume <commit>
-│   ├── serve.go          # claudit serve
-│   └── sync.go           # claudit sync push/pull
+│   ├── init.go           # shiftlog init
+│   ├── store.go          # shiftlog store (hook handler)
+│   ├── resume.go         # shiftlog resume <commit>
+│   ├── serve.go          # shiftlog serve
+│   └── sync.go           # shiftlog sync push/pull
 ├── internal/
 │   ├── claude/
 │   │   ├── transcript.go # JSONL parsing
@@ -178,7 +178,7 @@ claudit/
 
 ## Phase 1: Store Conversations on Commit
 
-### `claudit init`
+### `shiftlog init`
 
 1. Detect git repository
 2. Add PostToolUse hook to `.claude/settings.local.json`:
@@ -187,14 +187,14 @@ claudit/
      "hooks": {
        "PostToolUse": [{
          "matcher": "Bash",
-         "hooks": [{ "type": "command", "command": "claudit store", "timeout": 30 }]
+         "hooks": [{ "type": "command", "command": "shiftlog store", "timeout": 30 }]
        }]
      }
    }
    ```
 3. Install Git hooks for automatic note syncing (see below)
 
-### `claudit store` (called by hook)
+### `shiftlog store` (called by hook)
 
 1. Read PostToolUse JSON from stdin
 2. Check if `tool_input.command` matches `git commit`
@@ -221,7 +221,7 @@ claudit/
 
 ## Phase 2: Resume from Commit
 
-### `claudit resume <commit>`
+### `shiftlog resume <commit>`
 
 1. Resolve commit reference to SHA
 2. Read Git Note: `git notes --ref=refs/notes/claude-conversations show <commit>`
@@ -233,7 +233,7 @@ claudit/
 
 ## Phase 3: Web Visualization
 
-### `claudit serve [--port 8080]`
+### `shiftlog serve [--port 8080]`
 
 **API Endpoints:**
 - `GET /` - Main visualization page
@@ -254,7 +254,7 @@ claudit/
 
 ## Automatic Git Notes Sync via Git Hooks
 
-### `claudit init` also configures Git hooks:
+### `shiftlog init` also configures Git hooks:
 
 **`.git/hooks/pre-push`** - Auto-push notes with commits:
 ```bash
@@ -278,7 +278,7 @@ git fetch origin refs/notes/claude-conversations:refs/notes/claude-conversations
 git fetch origin refs/notes/claude-conversations:refs/notes/claude-conversations 2>/dev/null || true
 ```
 
-### Manual fallback: `claudit sync push|pull`
+### Manual fallback: `shiftlog sync push|pull`
 
 - `push`: `git push origin refs/notes/claude-conversations`
 - `pull`: `git fetch origin refs/notes/claude-conversations:refs/notes/claude-conversations`
@@ -307,16 +307,16 @@ All other functionality uses Go standard library:
 ## Verification
 
 1. **Phase 1 Test:**
-   - Run `claudit init` in a repo
+   - Run `shiftlog init` in a repo
    - Start Claude Code, make changes, commit
    - Verify: `git notes --ref=refs/notes/claude-conversations show HEAD`
 
 2. **Phase 2 Test:**
-   - Run `claudit resume HEAD~1`
+   - Run `shiftlog resume HEAD~1`
    - Verify Claude starts with conversation history loaded
 
 3. **Phase 3 Test:**
-   - Run `claudit serve`
+   - Run `shiftlog serve`
    - Open http://localhost:8080
    - Verify commit graph displays, click commit shows conversation
    - Click "Resume" and verify Claude launches

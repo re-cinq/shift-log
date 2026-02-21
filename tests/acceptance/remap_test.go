@@ -6,7 +6,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/re-cinq/claudit/tests/acceptance/testutil"
+	"github.com/re-cinq/shift-log/tests/acceptance/testutil"
 )
 
 var _ = Describe("Remote Rebase Notes Remap", func() {
@@ -25,7 +25,7 @@ var _ = Describe("Remote Rebase Notes Remap", func() {
 		}
 	})
 
-	Describe("claudit remap matches rebased commits by patch-id", func() {
+	Describe("shiftlog remap matches rebased commits by patch-id", func() {
 		It("copies notes from orphaned commits to their rebased counterparts", func() {
 			// Create a base commit on master
 			Expect(repo.WriteFile("base.txt", "base content\n")).To(Succeed())
@@ -181,7 +181,7 @@ var _ = Describe("Remote Rebase Notes Remap", func() {
 			Expect(local.Commit("Initial commit")).To(Succeed())
 			Expect(local.Run("git", "push", "-u", "origin", "master")).To(Succeed())
 
-			// Initialize claudit (installs hooks with remap)
+			// Initialize shiftlog (installs hooks with remap)
 			_, _, err = testutil.RunClauditInDir(local.Path, "init")
 			Expect(err).NotTo(HaveOccurred())
 

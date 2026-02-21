@@ -13,7 +13,7 @@ import (
 var version = "dev"
 
 var rootCmd = &cobra.Command{
-	Use:   "claudit",
+	Use:   "shiftlog",
 	Short: "Store and resume AI coding conversations as Git Notes",
 	Long: `Claudit captures AI coding agent conversation history and stores it as Git Notes
 attached to commits. This enables teams to preserve AI-assisted development
@@ -33,7 +33,7 @@ func init() {
 		}
 	}
 	rootCmd.Version = version
-	rootCmd.SetVersionTemplate(fmt.Sprintf("claudit version %s\n", version))
+	rootCmd.SetVersionTemplate(fmt.Sprintf("shiftlog version %s\n", version))
 
 	// Add command groups
 	rootCmd.AddGroup(
