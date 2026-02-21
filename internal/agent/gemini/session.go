@@ -6,6 +6,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/re-cinq/claudit/internal/agent"
 )
 
 // GetGeminiDir returns the path to Gemini's config/data directory.
@@ -186,6 +190,112 @@ func WriteSessionsIndex(projectPath string, index *SessionsIndex) error {
 	}
 
 	return os.WriteFile(indexPath, data, 0600)
+}
+
+// ScanAllProjectDirs scans all subdirectories of ~/.gemini/tmp/ for recent
+// session files belonging to the given project. It first checks whether the
+// directory name matches the project's SHA256 hash (v0.28 behaviour), then
+// reads each candidate file and inspects its "projectHash" field (v0.29+
+// slug-based dirs). This is a fallback used when the slug/hash directory
+// lookup fails — e.g., when ~/.gemini/projects.json is absent or the project
+// path key differs from what GetSlugForProject expects.
+func ScanAllProjectDirs(projectPath string) (*agent.SessionInfo, error) {
+	geminiDir, err := GetGeminiDir()
+	if err != nil {
+		return nil, nil
+	}
+
+	expectedHash := EncodeProjectPath(projectPath)
+	tmpDir := filepath.Join(geminiDir, "tmp")
+
+	dirs, err := os.ReadDir(tmpDir)
+	if err != nil {
+		return nil, nil
+	}
+
+	now := time.Now()
+	var bestPath string
+	var bestSessionID string
+	var bestModTime time.Time
+
+	for _, dir := range dirs {
+		if !dir.IsDir() {
+			continue
+		}
+
+		chatsDir := filepath.Join(tmpDir, dir.Name(), "chats")
+		files, err := os.ReadDir(chatsDir)
+		if err != nil {
+			continue
+		}
+
+		for _, file := range files {
+			if file.IsDir() || !strings.HasSuffix(file.Name(), ".json") || file.Name() == "sessions-index.json" {
+				continue
+			}
+
+			fileInfo, err := file.Info()
+			if err != nil {
+				continue
+			}
+
+			modTime := fileInfo.ModTime()
+			if now.Sub(modTime) > agent.RecentSessionTimeout {
+				continue
+			}
+
+			filePath := filepath.Join(chatsDir, file.Name())
+
+			// Fast path: directory name is the project hash (v0.28 hash-based dirs).
+			// Avoids reading file content for the common case.
+			if dir.Name() == expectedHash {
+				if bestPath == "" || modTime.After(bestModTime) {
+					bestPath = filePath
+					bestSessionID = strings.TrimSuffix(file.Name(), ".json")
+					bestModTime = modTime
+				}
+				continue
+			}
+
+			// Slug-based dir (v0.29+): read the file and check the projectHash field.
+			data, err := os.ReadFile(filePath)
+			if err != nil {
+				continue
+			}
+
+			var header struct {
+				SessionID   string `json:"sessionId"`
+				ProjectHash string `json:"projectHash"`
+			}
+			if err := json.Unmarshal(data, &header); err != nil {
+				continue
+			}
+			if header.ProjectHash != expectedHash {
+				continue
+			}
+
+			if bestPath == "" || modTime.After(bestModTime) {
+				sessionID := header.SessionID
+				if sessionID == "" {
+					sessionID = strings.TrimSuffix(file.Name(), ".json")
+				}
+				bestPath = filePath
+				bestSessionID = sessionID
+				bestModTime = modTime
+			}
+		}
+	}
+
+	if bestPath == "" {
+		return nil, nil
+	}
+
+	return &agent.SessionInfo{
+		SessionID:      bestSessionID,
+		TranscriptPath: bestPath,
+		StartedAt:      bestModTime.Format(time.RFC3339),
+		ProjectPath:    projectPath,
+	}, nil
 }
 
 // AddOrUpdateSessionEntry adds or updates a session entry in the index.

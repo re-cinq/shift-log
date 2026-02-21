@@ -315,8 +315,9 @@ func ParseGeminiTranscript(r io.Reader) (*agent.Transcript, error) {
 
 
 // scanForRecentSession scans Gemini's session directory for recent files.
-// It tries the primary directory (slug-based for v0.29+, hash-based otherwise)
-// and falls back to the legacy hash directory if no session is found.
+// It tries the primary directory (slug-based for v0.29+, hash-based otherwise),
+// falls back to the legacy hash directory, and finally does a broad scan of all
+// ~/.gemini/tmp/ subdirectories (handles v0.29 slug dirs when projects.json lookup fails).
 func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	sessionDir, err := GetSessionDir(projectPath)
 	if err != nil {
@@ -331,10 +332,17 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 
 	// If the primary dir was slug-based, also check the legacy hash dir.
 	legacyDir, err := GetLegacySessionDir(projectPath)
-	if err != nil || legacyDir == sessionDir {
-		return nil, nil
+	if err == nil && legacyDir != sessionDir {
+		info, err = agent.ScanDirForRecentSession(legacyDir, ".json", skipFiles, projectPath)
+		if info != nil || err != nil {
+			return info, err
+		}
 	}
-	return agent.ScanDirForRecentSession(legacyDir, ".json", skipFiles, projectPath)
+
+	// Final fallback: scan all project dirs under ~/.gemini/tmp/.
+	// Handles v0.29 slug-based dirs when the projects.json lookup fails
+	// (e.g., absent file, path key mismatch, or non-interactive -p mode).
+	return ScanAllProjectDirs(projectPath)
 }
 
 

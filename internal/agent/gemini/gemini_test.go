@@ -394,6 +394,99 @@ func TestGetSessionDir_SlugVsHash(t *testing.T) {
 	})
 }
 
+func TestScanAllProjectDirs(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	projectPath := "/tmp/test-project"
+	projectHash := EncodeProjectPath(projectPath)
+
+	t.Run("finds session in slug-based dir via projectHash", func(t *testing.T) {
+		// Create a slug-based dir (v0.29 style) — NOT the hash dir
+		slugDir := filepath.Join(tmpHome, ".gemini", "tmp", "my-project-slug123", "chats")
+		if err := os.MkdirAll(slugDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		sessionContent := fmt.Sprintf(`{"sessionId":"uuid-1234","projectHash":%q,"messages":[]}`, projectHash)
+		sessionFile := filepath.Join(slugDir, "session-2026-01-01T00-00-abc12345.json")
+		if err := os.WriteFile(sessionFile, []byte(sessionContent), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		info, err := ScanAllProjectDirs(projectPath)
+		if err != nil {
+			t.Fatalf("ScanAllProjectDirs() error: %v", err)
+		}
+		if info == nil {
+			t.Fatal("ScanAllProjectDirs() returned nil, expected session")
+		}
+		if info.SessionID != "uuid-1234" {
+			t.Errorf("SessionID = %q, want %q", info.SessionID, "uuid-1234")
+		}
+		if info.TranscriptPath != sessionFile {
+			t.Errorf("TranscriptPath = %q, want %q", info.TranscriptPath, sessionFile)
+		}
+	})
+
+	t.Run("finds session in hash-based dir", func(t *testing.T) {
+		hashDir := filepath.Join(tmpHome, ".gemini", "tmp", projectHash, "chats")
+		if err := os.MkdirAll(hashDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		sessionFile := filepath.Join(hashDir, "session-2026-01-01T00-00-hash5678.json")
+		if err := os.WriteFile(sessionFile, []byte(`{"messages":[]}`), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		info, err := ScanAllProjectDirs(projectPath)
+		if err != nil {
+			t.Fatalf("ScanAllProjectDirs() error: %v", err)
+		}
+		if info == nil {
+			t.Fatal("ScanAllProjectDirs() returned nil, expected session")
+		}
+		if info.TranscriptPath != sessionFile {
+			t.Errorf("TranscriptPath = %q, want %q", info.TranscriptPath, sessionFile)
+		}
+	})
+
+	t.Run("ignores sessions for other projects", func(t *testing.T) {
+		otherTmpHome := t.TempDir()
+		t.Setenv("HOME", otherTmpHome)
+
+		otherHash := EncodeProjectPath("/tmp/other-project")
+		otherDir := filepath.Join(otherTmpHome, ".gemini", "tmp", "other-slug", "chats")
+		if err := os.MkdirAll(otherDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		sessionContent := fmt.Sprintf(`{"sessionId":"other-session","projectHash":%q,"messages":[]}`, otherHash)
+		if err := os.WriteFile(filepath.Join(otherDir, "session-other.json"), []byte(sessionContent), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		info, err := ScanAllProjectDirs(projectPath)
+		if err != nil {
+			t.Fatalf("ScanAllProjectDirs() error: %v", err)
+		}
+		if info != nil {
+			t.Errorf("ScanAllProjectDirs() = %+v, want nil for mismatched project", info)
+		}
+	})
+
+	t.Run("returns nil when no gemini tmp dir", func(t *testing.T) {
+		emptyHome := t.TempDir()
+		t.Setenv("HOME", emptyHome)
+
+		info, err := ScanAllProjectDirs(projectPath)
+		if err != nil {
+			t.Fatalf("ScanAllProjectDirs() error: %v", err)
+		}
+		if info != nil {
+			t.Errorf("ScanAllProjectDirs() = %+v, want nil", info)
+		}
+	})
+}
+
 func TestNormalizeGeminiType(t *testing.T) {
 	tests := []struct {
 		input string
