@@ -5,7 +5,7 @@ Save AI coding conversations as Git Notes. Claude. Audit. See what we did there?
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/re-cinq/claudit/master/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/re-cinq/shift-log/master/scripts/install.sh | bash
 # ...In a Git repo
 shiftlog init --agent=<agent>
 ```

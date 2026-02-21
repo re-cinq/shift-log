@@ -24,7 +24,7 @@ builds:
         goarch: arm64
     ldflags:
       - -s -w
-      - -X github.com/re-cinq/claudit/cmd.version={{.Version}}
+      - -X github.com/re-cinq/shift-log/cmd.version={{.Version}}
 
 archives:
   - id: default

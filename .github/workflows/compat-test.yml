@@ -107,7 +107,7 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: printenv OPENAI_API_KEY | codex login --with-api-key
 
-      - name: Build claudit
+      - name: Build shiftlog
         run: CGO_ENABLED=0 go build -o shiftlog .
 
       - name: Run integration tests
@@ -118,7 +118,7 @@ jobs:
           COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          SHIFTLOG_BINARY: ${{ github.workspace }}/claudit
+          SHIFTLOG_BINARY: ${{ github.workspace }}/shiftlog
         run: |
           go test ./tests/integration/... -v -timeout 600s 2>&1 | tee /tmp/test-output.txt
           exit ${PIPESTATUS[0]}
@@ -167,7 +167,7 @@ jobs:
 
           # Build the diagnosis prompt
           cat > /tmp/fix-prompt.txt << 'PROMPTEOF'
-          You are fixing a Go compatibility issue in claudit, a CLI tool that integrates with AI coding agent CLIs.
+          You are fixing a Go compatibility issue in shiftlog, a CLI tool that integrates with AI coding agent CLIs.
 
           The integration tests are failing. Test output:
           PROMPTEOF
