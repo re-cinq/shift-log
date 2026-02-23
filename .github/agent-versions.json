@@ -13,7 +13,7 @@
     "gemini-cli": {
       "package": "@google/gemini-cli",
       "constraint": "~0.29",
-      "last-known-good": "0.29.5"
+      "last-known-good": "0.29.6"
     },
     "opencode-ai": {
       "package": "opencode-ai",
