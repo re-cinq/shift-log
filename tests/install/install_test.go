@@ -1,11 +1,14 @@
 package install_test
 
 import (
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // findProjectRoot walks up from cwd looking for go.mod.
@@ -24,9 +27,28 @@ func findProjectRoot() string {
 	return "."
 }
 
+// hasGitHubRelease returns true if the repo has at least one published release.
+func hasGitHubRelease() bool {
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get("https://api.github.com/repos/re-cinq/shift-log/releases/latest")
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return false
+	}
+	body, _ := io.ReadAll(resp.Body)
+	return strings.Contains(string(body), `"tag_name"`)
+}
+
 func TestInstallScript(t *testing.T) {
 	if _, err := exec.LookPath("docker"); err != nil {
 		t.Skip("docker not available, skipping install script test")
+	}
+
+	if !hasGitHubRelease() {
+		t.Skip("no published GitHub release found for re-cinq/shift-log, skipping install script test")
 	}
 
 	root := findProjectRoot()
