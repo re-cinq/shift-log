@@ -86,7 +86,7 @@ In order to understand _how_ and _why_ a commit was made, we need to see the con
 
 ## How It Works
 
-Claudit uses [Git Notes](https://git-scm.com/docs/git-notes) to attach conversations to commits, stored under `refs/notes/claude-conversations` to keep `git log` clean. When you run `shiftlog init`, it sets up hooks so:
+Shiftlog uses [Git Notes](https://git-scm.com/docs/git-notes) to attach conversations to commits, stored under `refs/notes/claude-conversations` to keep `git log` clean. When you run `shiftlog init`, it sets up hooks so:
 
 1. When the coding agent makes a commit, the conversation is saved automatically
 2. When you make a commit during an agent session, it's saved too
@@ -132,7 +132,7 @@ In the rare case where two developers annotate the exact same commit SHA, both n
 
 ## Git Worktrees
 
-Claudit is worktree-safe. If you use `git worktree` to work on multiple branches simultaneously, each worktree sees only the conversations for commits on its own branch. Hooks are shared across worktrees (as git requires), but `shiftlog list` and `shiftlog show` are scoped to the current HEAD.
+Shiftlog is worktree-safe. If you use `git worktree` to work on multiple branches simultaneously, each worktree sees only the conversations for commits on its own branch. Hooks are shared across worktrees (as git requires), but `shiftlog list` and `shiftlog show` are scoped to the current HEAD.
 
 ## Local Rebase
 
@@ -150,7 +150,7 @@ You can verify the config is set with `shiftlog doctor`.
 
 When a PR is merged via GitHub's "Rebase and merge" strategy, the commits get new SHAs on the target branch. Since this happens server-side, git's `notes.rewriteRef` does not apply and notes remain keyed to the original (now-orphaned) commit SHAs.
 
-Claudit handles this automatically. After you pull a rebase-merged PR, the post-merge hook runs `shiftlog remap`, which:
+Shiftlog handles this automatically. After you pull a rebase-merged PR, the post-merge hook runs `shiftlog remap`, which:
 
 1. Finds notes on commits that are no longer on any branch (orphaned)
 2. Uses `git patch-id` to match each orphaned commit to its rebased counterpart by diff content

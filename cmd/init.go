@@ -115,7 +115,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Println()
-	fmt.Println("Claudit is now configured! Conversations will be stored")
+	fmt.Println("Shiftlog is now configured! Conversations will be stored")
 	fmt.Printf("as git notes on %s when commits are made via %s.\n", git.NotesRef, ag.DisplayName())
 
 	return nil

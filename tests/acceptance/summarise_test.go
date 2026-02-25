@@ -37,7 +37,7 @@ var _ = Describe("Summarise Command", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		hookInput := testutil.SampleHookInput(sessionID, transcriptPath, "git commit -m 'test'")
-		_, _, err = testutil.RunClauditInDirWithStdin(repo.Path, hookInput, "store")
+		_, _, err = testutil.RunShiftlogInDirWithStdin(repo.Path, hookInput, "store")
 		Expect(err).NotTo(HaveOccurred())
 
 		return head
@@ -45,13 +45,13 @@ var _ = Describe("Summarise Command", func() {
 
 	Describe("without conversation", func() {
 		It("shows error when commit has no conversation", func() {
-			_, stderr, err := testutil.RunClauditInDir(repo.Path, "summarise")
+			_, stderr, err := testutil.RunShiftlogInDir(repo.Path, "summarise")
 			Expect(err).To(HaveOccurred())
 			Expect(stderr).To(ContainSubstring("no conversation found"))
 		})
 
 		It("shows error for invalid reference", func() {
-			_, stderr, err := testutil.RunClauditInDir(repo.Path, "summarise", "invalid-ref-xyz")
+			_, stderr, err := testutil.RunShiftlogInDir(repo.Path, "summarise", "invalid-ref-xyz")
 			Expect(err).To(HaveOccurred())
 			Expect(stderr).To(ContainSubstring("could not resolve reference"))
 		})
@@ -63,7 +63,7 @@ var _ = Describe("Summarise Command", func() {
 			Expect(err).NotTo(HaveOccurred())
 			defer os.RemoveAll(tmpDir)
 
-			_, stderr, err := testutil.RunClauditInDir(tmpDir, "summarise")
+			_, stderr, err := testutil.RunShiftlogInDir(tmpDir, "summarise")
 			Expect(err).To(HaveOccurred())
 			Expect(stderr).To(ContainSubstring("not inside a git repository"))
 		})
@@ -71,7 +71,7 @@ var _ = Describe("Summarise Command", func() {
 
 	Describe("alias", func() {
 		It("tldr alias works the same as summarise", func() {
-			_, stderr, err := testutil.RunClauditInDir(repo.Path, "tldr")
+			_, stderr, err := testutil.RunShiftlogInDir(repo.Path, "tldr")
 			Expect(err).To(HaveOccurred())
 			// Both should produce the same error for no conversation
 			Expect(stderr).To(ContainSubstring("no conversation found"))
@@ -82,7 +82,7 @@ var _ = Describe("Summarise Command", func() {
 		It("shows error for agents that don't support summarisation", func() {
 			storeConversation("session-summarise-unsupported")
 
-			_, stderr, err := testutil.RunClauditInDir(repo.Path, "summarise", "--agent=copilot")
+			_, stderr, err := testutil.RunShiftlogInDir(repo.Path, "summarise", "--agent=copilot")
 			Expect(err).To(HaveOccurred())
 			Expect(stderr).To(ContainSubstring("does not support summarisation"))
 			Expect(stderr).To(ContainSubstring("--agent=claude"))
@@ -110,7 +110,7 @@ SUMMARY
 
 			// Run with mock in PATH
 			env := []string{"PATH=" + mockDir + ":" + os.Getenv("PATH")}
-			stdout, _, err := testutil.RunClauditInDirWithEnv(repo.Path, env, "summarise", "--agent=claude")
+			stdout, _, err := testutil.RunShiftlogInDirWithEnv(repo.Path, env, "summarise", "--agent=claude")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stdout).To(ContainSubstring("User asked for help"))
 			Expect(stdout).To(ContainSubstring("Bash tool"))
@@ -133,7 +133,7 @@ printf '%s' "$arg"
 			Expect(os.WriteFile(mockPath, []byte(mockScript), 0755)).To(Succeed())
 
 			env := []string{"PATH=" + mockDir + ":" + os.Getenv("PATH")}
-			stdout, _, err := testutil.RunClauditInDirWithEnv(repo.Path, env, "summarise", "--agent=claude", "--focus=security changes")
+			stdout, _, err := testutil.RunShiftlogInDirWithEnv(repo.Path, env, "summarise", "--agent=claude", "--focus=security changes")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stdout).To(ContainSubstring("Pay particular attention to: security changes"))
 		})
@@ -154,7 +154,7 @@ printf '%s' "$arg"
 			Expect(os.WriteFile(mockPath, []byte(mockScript), 0755)).To(Succeed())
 
 			env := []string{"PATH=" + mockDir + ":" + os.Getenv("PATH")}
-			stdout, _, err := testutil.RunClauditInDirWithEnv(repo.Path, env, "summarise", "--agent=claude")
+			stdout, _, err := testutil.RunShiftlogInDirWithEnv(repo.Path, env, "summarise", "--agent=claude")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stdout).NotTo(ContainSubstring("Pay particular attention to"))
 		})
@@ -171,7 +171,7 @@ printf '%s' "$arg"
 
 			// HEAD~1 should attempt to summarise the previous commit's conversation
 			// It will fail at the agent binary step, but the ref resolution should work
-			_, stderr, err := testutil.RunClauditInDir(repo.Path, "summarise", "HEAD~1")
+			_, stderr, err := testutil.RunShiftlogInDir(repo.Path, "summarise", "HEAD~1")
 			// Will fail because 'claude' mock just exits 0 with empty output
 			// The important thing is it doesn't fail at ref resolution
 			if err != nil {

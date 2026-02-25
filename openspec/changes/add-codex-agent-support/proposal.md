@@ -1,7 +1,7 @@
 # Change: Add OpenAI Codex CLI Agent Support
 
 ## Why
-Claudit supports Claude Code, Gemini CLI, and OpenCode CLI. OpenAI's Codex CLI is a growing competitor in the AI coding assistant space. Adding Codex as a fourth agent extends shiftlog's multi-agent coverage.
+Shiftlog supports Claude Code, Gemini CLI, and OpenCode CLI. OpenAI's Codex CLI is a growing competitor in the AI coding assistant space. Adding Codex as a fourth agent extends shiftlog's multi-agent coverage.
 
 ## What Changes
 - Add Codex agent implementation (`internal/agent/codex/`) following the existing Agent interface pattern

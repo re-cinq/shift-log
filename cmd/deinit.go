@@ -83,7 +83,7 @@ func runDeinit(cmd *cobra.Command, args []string) error {
 	fmt.Println("Removed git notes settings (displayRef, rewriteRef)")
 
 	fmt.Println()
-	fmt.Println("Claudit has been removed from this repository.")
+	fmt.Println("Shiftlog has been removed from this repository.")
 	fmt.Println("Git notes data has been preserved.")
 
 	return nil

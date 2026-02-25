@@ -1,4 +1,4 @@
-# Claudit: Claude Code Conversation History for Git
+# Shiftlog: Claude Code Conversation History for Git
 
 A Golang CLI that stores Claude Code conversation history as Git Notes and provides visualization.
 

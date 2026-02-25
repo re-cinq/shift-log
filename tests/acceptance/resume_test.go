@@ -32,7 +32,7 @@ var _ = Describe("Resume Command", func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				// Initialize agent hooks so store works correctly
-				_, _, err = testutil.RunClauditInDir(repo.Path, config.InitArgs...)
+				_, _, err = testutil.RunShiftlogInDir(repo.Path, config.InitArgs...)
 				Expect(err).NotTo(HaveOccurred())
 
 				// Create initial commit
@@ -58,7 +58,7 @@ var _ = Describe("Resume Command", func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				hookInput := config.SampleHookInput(sessionID, hookParam, "git commit -m 'test'")
-				_, _, err = testutil.RunClauditInDirWithStdin(repo.Path, hookInput, config.StoreArgs...)
+				_, _, err = testutil.RunShiftlogInDirWithStdin(repo.Path, hookInput, config.StoreArgs...)
 				Expect(err).NotTo(HaveOccurred())
 
 				return head
@@ -68,7 +68,7 @@ var _ = Describe("Resume Command", func() {
 				It("resolves full SHA", func() {
 					commitSHA := storeConversation("session-full-sha")
 
-					stdout, _, _ := testutil.RunClauditInDirWithEnv(
+					stdout, _, _ := testutil.RunShiftlogInDirWithEnv(
 						repo.Path,
 						agentEnv.GetEnvVars(),
 						"resume", commitSHA, "--force",
@@ -81,7 +81,7 @@ var _ = Describe("Resume Command", func() {
 					commitSHA := storeConversation("session-short-sha")
 					shortSHA := commitSHA[:7]
 
-					stdout, _, _ := testutil.RunClauditInDirWithEnv(
+					stdout, _, _ := testutil.RunShiftlogInDirWithEnv(
 						repo.Path,
 						agentEnv.GetEnvVars(),
 						"resume", shortSHA, "--force",
@@ -93,7 +93,7 @@ var _ = Describe("Resume Command", func() {
 				It("resolves HEAD reference", func() {
 					storeConversation("session-head-ref")
 
-					stdout, _, _ := testutil.RunClauditInDirWithEnv(
+					stdout, _, _ := testutil.RunShiftlogInDirWithEnv(
 						repo.Path,
 						agentEnv.GetEnvVars(),
 						"resume", "HEAD", "--force",
@@ -107,7 +107,7 @@ var _ = Describe("Resume Command", func() {
 				It("writes transcript to agent session directory", func() {
 					commitSHA := storeConversation("session-restore-test")
 
-					testutil.RunClauditInDirWithEnv(
+					testutil.RunShiftlogInDirWithEnv(
 						repo.Path,
 						agentEnv.GetEnvVars(),
 						"resume", commitSHA, "--force",
@@ -120,7 +120,7 @@ var _ = Describe("Resume Command", func() {
 					It("creates sessions-index.json", func() {
 						commitSHA := storeConversation("session-index-test")
 
-						testutil.RunClauditInDirWithEnv(
+						testutil.RunShiftlogInDirWithEnv(
 							repo.Path,
 							agentEnv.GetEnvVars(),
 							"resume", commitSHA, "--force",
@@ -139,7 +139,7 @@ var _ = Describe("Resume Command", func() {
 					head, err := repo.GetHead()
 					Expect(err).NotTo(HaveOccurred())
 
-					_, stderr, err := testutil.RunClauditInDirWithEnv(
+					_, stderr, err := testutil.RunShiftlogInDirWithEnv(
 						repo.Path,
 						agentEnv.GetEnvVars(),
 						"resume", head, "--force",
@@ -150,7 +150,7 @@ var _ = Describe("Resume Command", func() {
 				})
 
 				It("fails with invalid commit reference", func() {
-					_, stderr, err := testutil.RunClauditInDirWithEnv(
+					_, stderr, err := testutil.RunShiftlogInDirWithEnv(
 						repo.Path,
 						agentEnv.GetEnvVars(),
 						"resume", "invalid-ref", "--force",
@@ -167,7 +167,7 @@ var _ = Describe("Resume Command", func() {
 
 					Expect(repo.WriteFile("uncommitted.txt", "changes")).To(Succeed())
 
-					_, stderr, _ := testutil.RunClauditInDirWithEnvAndStdin(
+					_, stderr, _ := testutil.RunShiftlogInDirWithEnvAndStdin(
 						repo.Path,
 						agentEnv.GetEnvVars(),
 						"n\n",
@@ -182,7 +182,7 @@ var _ = Describe("Resume Command", func() {
 
 					Expect(repo.WriteFile("uncommitted.txt", "changes")).To(Succeed())
 
-					stdout, _, _ := testutil.RunClauditInDirWithEnv(
+					stdout, _, _ := testutil.RunShiftlogInDirWithEnv(
 						repo.Path,
 						agentEnv.GetEnvVars(),
 						"resume", commitSHA, "--force",
@@ -199,7 +199,7 @@ var _ = Describe("Resume Command", func() {
 
 					repo.AddNote("refs/notes/claude-conversations", head, "not valid json at all")
 
-					_, stderr, err := testutil.RunClauditInDirWithEnv(
+					_, stderr, err := testutil.RunShiftlogInDirWithEnv(
 						repo.Path,
 						agentEnv.GetEnvVars(),
 						"resume", head, "--force",
@@ -223,7 +223,7 @@ var _ = Describe("Resume Command", func() {
 					Expect(err).NotTo(HaveOccurred())
 					repo.AddNote("refs/notes/claude-conversations", head, string(noteData))
 
-					stdout, stderr, _ := testutil.RunClauditInDirWithEnv(
+					stdout, stderr, _ := testutil.RunShiftlogInDirWithEnv(
 						repo.Path,
 						agentEnv.GetEnvVars(),
 						"resume", head, "--force",
@@ -251,7 +251,7 @@ var _ = Describe("Resume Command", func() {
 					Expect(err).NotTo(HaveOccurred())
 					repo.AddNote("refs/notes/claude-conversations", head, string(noteData))
 
-					_, stderr, err := testutil.RunClauditInDirWithEnv(
+					_, stderr, err := testutil.RunShiftlogInDirWithEnv(
 						repo.Path,
 						agentEnv.GetEnvVars(),
 						"resume", head, "--force",
@@ -279,7 +279,7 @@ var _ = Describe("Resume Command", func() {
 					Expect(err).NotTo(HaveOccurred())
 					repo.AddNote("refs/notes/claude-conversations", head, string(noteData))
 
-					_, stderr, err := testutil.RunClauditInDirWithEnv(
+					_, stderr, err := testutil.RunShiftlogInDirWithEnv(
 						repo.Path,
 						agentEnv.GetEnvVars(),
 						"resume", head, "--force",
@@ -300,7 +300,7 @@ var _ = Describe("Resume Command", func() {
 					Expect(repo.WriteFile("second.txt", "content")).To(Succeed())
 					Expect(repo.Commit("Second commit")).To(Succeed())
 
-					stdout, _, _ := testutil.RunClauditInDirWithEnv(
+					stdout, _, _ := testutil.RunShiftlogInDirWithEnv(
 						repo.Path,
 						agentEnv.GetEnvVars(),
 						"resume", "HEAD~1", "--force",
@@ -316,7 +316,7 @@ var _ = Describe("Resume Command", func() {
 					originalTranscript := config.SampleTranscript()
 					commitSHA := storeConversation("session-content-verify")
 
-					testutil.RunClauditInDirWithEnv(
+					testutil.RunShiftlogInDirWithEnv(
 						repo.Path,
 						agentEnv.GetEnvVars(),
 						"resume", commitSHA, "--force",
@@ -331,7 +331,7 @@ var _ = Describe("Resume Command", func() {
 					It("populates sessions-index.json with correct metadata", func() {
 						commitSHA := storeConversation("session-meta-check")
 
-						testutil.RunClauditInDirWithEnv(
+						testutil.RunShiftlogInDirWithEnv(
 							repo.Path,
 							agentEnv.GetEnvVars(),
 							"resume", commitSHA, "--force",
@@ -375,7 +375,7 @@ var _ = Describe("Resume Command", func() {
 		})
 
 		It("fails when no commit argument is provided", func() {
-			_, stderr, err := testutil.RunClauditInDir(
+			_, stderr, err := testutil.RunShiftlogInDir(
 				repo.Path,
 				"resume",
 			)

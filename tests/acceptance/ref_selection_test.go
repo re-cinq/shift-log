@@ -28,7 +28,7 @@ var _ = Describe("Notes Ref", func() {
 
 	Describe("custom ref usage", func() {
 		It("configures notes.displayRef to claude-conversations", func() {
-			_, _, err := testutil.RunClauditInDir(repo.Path, "init")
+			_, _, err := testutil.RunShiftlogInDir(repo.Path, "init")
 			Expect(err).NotTo(HaveOccurred())
 
 			cmd := exec.Command("git", "config", "notes.displayRef")
@@ -39,7 +39,7 @@ var _ = Describe("Notes Ref", func() {
 		})
 
 		It("configures notes.rewriteRef to claude-conversations", func() {
-			_, _, err := testutil.RunClauditInDir(repo.Path, "init")
+			_, _, err := testutil.RunShiftlogInDir(repo.Path, "init")
 			Expect(err).NotTo(HaveOccurred())
 
 			cmd := exec.Command("git", "config", "notes.rewriteRef")
@@ -52,7 +52,7 @@ var _ = Describe("Notes Ref", func() {
 
 	Describe("note storage isolation", func() {
 		It("stores notes on custom ref, not default", func() {
-			_, _, err := testutil.RunClauditInDir(repo.Path, "init")
+			_, _, err := testutil.RunShiftlogInDir(repo.Path, "init")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Create a commit
@@ -67,7 +67,7 @@ var _ = Describe("Notes Ref", func() {
 			Expect(os.WriteFile(transcriptPath, []byte(testutil.SampleTranscript()), 0644)).To(Succeed())
 
 			hookInput := testutil.SampleHookInput("test-session", transcriptPath, "git commit -m 'test'")
-			_, _, err = testutil.RunClauditInDirWithStdin(repo.Path, hookInput, "store")
+			_, _, err = testutil.RunShiftlogInDirWithStdin(repo.Path, hookInput, "store")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Verify note was created on custom ref
@@ -77,7 +77,7 @@ var _ = Describe("Notes Ref", func() {
 		})
 
 		It("does not pollute git log by default", func() {
-			_, _, err := testutil.RunClauditInDir(repo.Path, "init")
+			_, _, err := testutil.RunShiftlogInDir(repo.Path, "init")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Create a commit and store a conversation
@@ -88,7 +88,7 @@ var _ = Describe("Notes Ref", func() {
 			Expect(os.WriteFile(transcriptPath, []byte(testutil.SampleTranscript()), 0644)).To(Succeed())
 
 			hookInput := testutil.SampleHookInput("test-session", transcriptPath, "git commit -m 'test'")
-			_, _, err = testutil.RunClauditInDirWithStdin(repo.Path, hookInput, "store")
+			_, _, err = testutil.RunShiftlogInDirWithStdin(repo.Path, hookInput, "store")
 			Expect(err).NotTo(HaveOccurred())
 
 			// git log without --notes flag should NOT show the note content

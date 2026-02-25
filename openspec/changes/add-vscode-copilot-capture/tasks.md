@@ -3,7 +3,7 @@
 - [ ] 1.2 Add `VSCodeHooksFile` struct with `Version` and `Hooks` map
 - [ ] 1.3 Implement `ReadVSCodeHooksFile()` to parse `.github/hooks/hooks.json`
 - [ ] 1.4 Implement `WriteVSCodeHooksFile()` to write `.github/hooks/hooks.json`
-- [ ] 1.5 Implement `AddClauditVSCodeHooks()` to merge shiftlog hooks into existing file
+- [ ] 1.5 Implement `AddShiftlogVSCodeHooks()` to merge shiftlog hooks into existing file
 
 ## 2. Init Command Integration
 - [ ] 2.1 Add `--vscode` flag to `shiftlog init` when `--agent=copilot`

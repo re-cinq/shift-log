@@ -27,7 +27,7 @@ var _ = Describe("OpenCode CLI Integration", func() {
 		}
 
 		requireBinary("opencode")
-		shiftlogPath := getClauditPath()
+		shiftlogPath := getShiftlogPath()
 		tmpDir := initGitRepo("opencode-integration")
 		DeferCleanup(os.RemoveAll, tmpDir)
 

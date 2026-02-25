@@ -12,7 +12,7 @@ import (
 
 var _ = Describe("Search", func() {
 	It("should find conversations by text content", func() {
-		shiftlogPath := getClauditPath()
+		shiftlogPath := getShiftlogPath()
 		tmpDir := initGitRepo("search-integration")
 		DeferCleanup(os.RemoveAll, tmpDir)
 

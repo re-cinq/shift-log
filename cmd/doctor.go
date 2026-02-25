@@ -39,7 +39,7 @@ func init() {
 }
 
 func runDoctor(cmd *cobra.Command, args []string) error {
-	fmt.Println("Claudit Doctor")
+	fmt.Println("Shiftlog Doctor")
 	fmt.Println("==============")
 	fmt.Println()
 
@@ -180,6 +180,6 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("configuration issues detected")
 	}
 
-	fmt.Println("All checks passed! Claudit is properly configured.")
+	fmt.Println("All checks passed! Shiftlog is properly configured.")
 	return nil
 }

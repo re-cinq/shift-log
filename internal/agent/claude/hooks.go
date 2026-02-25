@@ -86,8 +86,8 @@ func WriteSettings(claudeDir string, settings *Settings) error {
 	return os.WriteFile(path, data, 0644)
 }
 
-// AddClauditHook adds or updates the shiftlog store hook in settings.
-func AddClauditHook(settings *Settings) {
+// AddShiftlogHook adds or updates the shiftlog store hook in settings.
+func AddShiftlogHook(settings *Settings) {
 	shiftlogHook := Hook{
 		Matcher: "Bash",
 		Hooks: []HookCmd{
@@ -141,18 +141,18 @@ func AddSessionHooks(settings *Settings) {
 	settings.Hooks.SessionEnd = addOrUpdateHook(settings.Hooks.SessionEnd, sessionEndHook, "shiftlog session-end")
 }
 
-// RemoveClauditHook removes shiftlog store hook entries from PostToolUse.
-func RemoveClauditHook(settings *Settings) {
+// RemoveShiftlogHook removes shiftlog store hook entries from PostToolUse.
+func RemoveShiftlogHook(settings *Settings) {
 	filtered := settings.Hooks.PostToolUse[:0]
 	for _, hook := range settings.Hooks.PostToolUse {
-		isClaudit := false
+		isShiftlog := false
 		for _, h := range hook.Hooks {
 			if h.Command == "shiftlog store" {
-				isClaudit = true
+				isShiftlog = true
 				break
 			}
 		}
-		if !isClaudit {
+		if !isShiftlog {
 			filtered = append(filtered, hook)
 		}
 	}
@@ -168,14 +168,14 @@ func RemoveSessionHooks(settings *Settings) {
 func removeHookByCommand(hooks []Hook, command string) []Hook {
 	filtered := hooks[:0]
 	for _, hook := range hooks {
-		isClaudit := false
+		isShiftlog := false
 		for _, h := range hook.Hooks {
 			if h.Command == command {
-				isClaudit = true
+				isShiftlog = true
 				break
 			}
 		}
-		if !isClaudit {
+		if !isShiftlog {
 			filtered = append(filtered, hook)
 		}
 	}

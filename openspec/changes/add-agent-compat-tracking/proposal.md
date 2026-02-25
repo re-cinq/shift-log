@@ -1,7 +1,7 @@
 # Change: Add Agent Compatibility Tracking (Concourse-style)
 
 ## Why
-Claudit integrates with 5 agent CLIs (claude-code, copilot, gemini-cli, opencode-ai, codex). Currently the CI workflow pins fixed versions at commit time with no mechanism to detect upstream releases. When a new version breaks compatibility (e.g., claude-code 2.1.49 changed stdin behaviour), it is only discovered reactively after the fact. We need a proactive system: track external resources (npm packages), trigger tests when they change, and auto-fix failures via Claude.
+Shiftlog integrates with 5 agent CLIs (claude-code, copilot, gemini-cli, opencode-ai, codex). Currently the CI workflow pins fixed versions at commit time with no mechanism to detect upstream releases. When a new version breaks compatibility (e.g., claude-code 2.1.49 changed stdin behaviour), it is only discovered reactively after the fact. We need a proactive system: track external resources (npm packages), trigger tests when they change, and auto-fix failures via Claude.
 
 ## What Changes
 - Add `.github/agent-versions.json` — committed JSON state file tracking last-known-good version per agent

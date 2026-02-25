@@ -30,7 +30,7 @@ func (a *Agent) ConfigureHooks(repoRoot string) error {
 		return fmt.Errorf("failed to read Copilot hooks: %w", err)
 	}
 
-	AddClauditHooks(hf)
+	AddShiftlogHooks(hf)
 
 	if err := WriteHooksFile(repoRoot, hf); err != nil {
 		return fmt.Errorf("failed to write Copilot hooks: %w", err)
@@ -45,7 +45,7 @@ func (a *Agent) RemoveHooks(repoRoot string) error {
 		return nil // no hooks file means nothing to remove
 	}
 
-	RemoveClauditHooks(hf)
+	RemoveShiftlogHooks(hf)
 
 	// If no hooks remain, delete the file (it's shiftlog-owned)
 	if len(hf.Hooks) == 0 && len(hf.Other) == 0 {

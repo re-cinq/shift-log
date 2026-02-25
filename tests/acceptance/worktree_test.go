@@ -26,7 +26,7 @@ var _ = Describe("Worktree isolation", func() {
 		Expect(repo.Commit("Initial commit")).To(Succeed())
 
 		// Init shiftlog in the main repo
-		_, _, err = testutil.RunClauditInDir(repo.Path, "init")
+		_, _, err = testutil.RunShiftlogInDir(repo.Path, "init")
 		Expect(err).NotTo(HaveOccurred())
 
 		// Create branch-b and add a worktree for it
@@ -59,7 +59,7 @@ var _ = Describe("Worktree isolation", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		hookInput := testutil.SampleHookInput(sessionID, transcriptPath, "git commit -m 'test'")
-		_, _, err = testutil.RunClauditInDirWithStdin(dir, hookInput, "store")
+		_, _, err = testutil.RunShiftlogInDirWithStdin(dir, hookInput, "store")
 		Expect(err).NotTo(HaveOccurred())
 
 		return head
@@ -79,14 +79,14 @@ var _ = Describe("Worktree isolation", func() {
 		storeConversation(worktreePath, "session-branch-b")
 
 		// -- From worktree A (master): shiftlog list should only show master's conversation --
-		stdoutA, _, err := testutil.RunClauditInDir(repo.Path, "list")
+		stdoutA, _, err := testutil.RunShiftlogInDir(repo.Path, "list")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(stdoutA).To(ContainSubstring("Commit on master"))
 		Expect(stdoutA).NotTo(ContainSubstring("Commit on branch-b"),
 			"worktree A (master) should NOT see branch-b's conversation")
 
 		// -- From worktree B (branch-b): shiftlog list should only show branch-b's conversation --
-		stdoutB, _, err := testutil.RunClauditInDir(worktreePath, "list")
+		stdoutB, _, err := testutil.RunShiftlogInDir(worktreePath, "list")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(stdoutB).To(ContainSubstring("Commit on branch-b"))
 		Expect(stdoutB).NotTo(ContainSubstring("Commit on master"),
@@ -107,12 +107,12 @@ var _ = Describe("Worktree isolation", func() {
 		shaB := storeConversation(worktreePath, "session-show-b")
 
 		// show from worktree A should show A's HEAD conversation
-		stdoutA, _, err := testutil.RunClauditInDir(repo.Path, "show")
+		stdoutA, _, err := testutil.RunShiftlogInDir(repo.Path, "show")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(stdoutA).To(ContainSubstring(shaA[:7]))
 
 		// show from worktree B should show B's HEAD conversation
-		stdoutB, _, err := testutil.RunClauditInDir(worktreePath, "show")
+		stdoutB, _, err := testutil.RunShiftlogInDir(worktreePath, "show")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(stdoutB).To(ContainSubstring(shaB[:7]))
 	})

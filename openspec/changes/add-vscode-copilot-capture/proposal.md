@@ -1,7 +1,7 @@
 # Change: Add VS Code Copilot Conversation Capture
 
 ## Why
-VS Code's GitHub Copilot coding agent (agent mode) supports repository-level hooks via `.github/hooks/hooks.json`. Claudit can capture these conversations using the same storage pipeline as CLI agents. This extends shiftlog's value to teams using VS Code as their primary Copilot interface.
+VS Code's GitHub Copilot coding agent (agent mode) supports repository-level hooks via `.github/hooks/hooks.json`. Shiftlog can capture these conversations using the same storage pipeline as CLI agents. This extends shiftlog's value to teams using VS Code as their primary Copilot interface.
 
 ## What Changes
 - Add VS Code hook file format support (`.github/hooks/hooks.json`) with `bash`/`powershell` fields

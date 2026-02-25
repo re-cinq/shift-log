@@ -1,7 +1,7 @@
 # Design: GitHub Release Pipeline
 
 ## Context
-Claudit is a Go CLI tool distributed via `go install`. Adding GitHub releases enables binary distribution for users who don't have Go installed. The project needs automated testing to catch regressions and automated releases to reduce manual effort.
+Shiftlog is a Go CLI tool distributed via `go install`. Adding GitHub releases enables binary distribution for users who don't have Go installed. The project needs automated testing to catch regressions and automated releases to reduce manual effort.
 
 ## Goals / Non-Goals
 

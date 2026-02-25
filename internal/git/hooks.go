@@ -49,7 +49,7 @@ func InstallHook(gitDir string, hookType HookType, command string) error {
 		newContent = "#!/bin/sh\n" + shiftlogSection
 	} else if strings.Contains(existingContent, shiftlogMarker) {
 		// Update existing shiftlog section
-		newContent = replaceClauditSection(existingContent, shiftlogSection)
+		newContent = replaceShiftlogSection(existingContent, shiftlogSection)
 	} else {
 		// Append to existing hook
 		newContent = existingContent + "\n" + shiftlogSection
@@ -58,8 +58,8 @@ func InstallHook(gitDir string, hookType HookType, command string) error {
 	return os.WriteFile(hookPath, []byte(newContent), 0755)
 }
 
-// replaceClauditSection replaces the shiftlog-managed section in hook content
-func replaceClauditSection(content, newSection string) string {
+// replaceShiftlogSection replaces the shiftlog-managed section in hook content
+func replaceShiftlogSection(content, newSection string) string {
 	startMarker := shiftlogMarker + " start"
 	endMarker := shiftlogMarker + " end"
 
@@ -108,7 +108,7 @@ func RemoveHook(gitDir string, hookType HookType) error {
 	}
 
 	// Replace the shiftlog section with nothing
-	newContent := replaceClauditSection(content, "")
+	newContent := replaceShiftlogSection(content, "")
 
 	// If only a shebang line remains (with optional whitespace), delete the file
 	trimmed := strings.TrimSpace(newContent)
@@ -134,7 +134,7 @@ func RemoveAllHooks(gitDir string) error {
 // It resolves the absolute path to the running shiftlog binary so hooks work
 // even when the shell environment strips PATH (e.g. Codex CLI sandbox).
 func InstallAllHooks(gitDir string) error {
-	bin, err := resolveClauditBinary()
+	bin, err := resolveShiftlogBinary()
 	if err != nil {
 		return fmt.Errorf("failed to resolve shiftlog binary path: %w", err)
 	}
@@ -155,8 +155,8 @@ func InstallAllHooks(gitDir string) error {
 	return nil
 }
 
-// resolveClauditBinary returns the absolute path to the running shiftlog binary.
-func resolveClauditBinary() (string, error) {
+// resolveShiftlogBinary returns the absolute path to the running shiftlog binary.
+func resolveShiftlogBinary() (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return "", err

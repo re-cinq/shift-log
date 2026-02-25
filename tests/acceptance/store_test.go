@@ -26,7 +26,7 @@ var _ = Describe("Store Command", func() {
 				}
 
 				// Initialize agent hooks
-				_, _, err = testutil.RunClauditInDir(repo.Path, config.InitArgs...)
+				_, _, err = testutil.RunShiftlogInDir(repo.Path, config.InitArgs...)
 				Expect(err).NotTo(HaveOccurred())
 
 				// Create initial commit
@@ -49,7 +49,7 @@ var _ = Describe("Store Command", func() {
 
 				hookInput := config.SampleHookInput("session-123", hookParam, "git commit -m 'test'")
 
-				_, stderr, err := testutil.RunClauditInDirWithStdin(repo.Path, hookInput, config.StoreArgs...)
+				_, stderr, err := testutil.RunShiftlogInDirWithStdin(repo.Path, hookInput, config.StoreArgs...)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(stderr).To(ContainSubstring("stored conversation"))
 
@@ -64,7 +64,7 @@ var _ = Describe("Store Command", func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				hookInput := config.SampleHookInput("session-456", hookParam, "git commit -m 'test'")
-				_, _, err = testutil.RunClauditInDirWithStdin(repo.Path, hookInput, config.StoreArgs...)
+				_, _, err = testutil.RunShiftlogInDirWithStdin(repo.Path, hookInput, config.StoreArgs...)
 				Expect(err).NotTo(HaveOccurred())
 
 				noteContent, err := repo.GetNote("refs/notes/claude-conversations", head)
@@ -88,7 +88,7 @@ var _ = Describe("Store Command", func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				hookInput := config.SampleHookInput("session-789", hookParam, "git commit -m 'test'")
-				_, _, err = testutil.RunClauditInDirWithStdin(repo.Path, hookInput, config.StoreArgs...)
+				_, _, err = testutil.RunShiftlogInDirWithStdin(repo.Path, hookInput, config.StoreArgs...)
 				Expect(err).NotTo(HaveOccurred())
 
 				noteContent, err := repo.GetNote("refs/notes/claude-conversations", head)
@@ -110,7 +110,7 @@ var _ = Describe("Store Command", func() {
 
 				hookInput := config.SampleHookInput("session-123", hookParam, "ls -la")
 
-				_, stderr, err := testutil.RunClauditInDirWithStdin(repo.Path, hookInput, config.StoreArgs...)
+				_, stderr, err := testutil.RunShiftlogInDirWithStdin(repo.Path, hookInput, config.StoreArgs...)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(stderr).To(BeEmpty())
 
@@ -123,7 +123,7 @@ var _ = Describe("Store Command", func() {
 
 				hookInput := config.SampleNonToolInput("session-123")
 
-				_, stderr, err := testutil.RunClauditInDirWithStdin(repo.Path, hookInput, config.StoreArgs...)
+				_, stderr, err := testutil.RunShiftlogInDirWithStdin(repo.Path, hookInput, config.StoreArgs...)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(stderr).To(BeEmpty())
 
@@ -131,7 +131,7 @@ var _ = Describe("Store Command", func() {
 			})
 
 			It("exits with warning for malformed JSON", func() {
-				_, stderr, err := testutil.RunClauditInDirWithStdin(repo.Path, "not valid json", config.StoreArgs...)
+				_, stderr, err := testutil.RunShiftlogInDirWithStdin(repo.Path, "not valid json", config.StoreArgs...)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(stderr).To(ContainSubstring("warning"))
 			})
@@ -144,7 +144,7 @@ var _ = Describe("Store Command", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			hookInput := config.SampleHookInput("session-effort", hookParam, "git commit -m 'test'")
-			_, _, err = testutil.RunClauditInDirWithStdin(repo.Path, hookInput, config.StoreArgs...)
+			_, _, err = testutil.RunShiftlogInDirWithStdin(repo.Path, hookInput, config.StoreArgs...)
 			Expect(err).NotTo(HaveOccurred())
 
 			noteContent, err := repo.GetNote("refs/notes/claude-conversations", head)
@@ -187,7 +187,7 @@ var _ = Describe("Store Command", func() {
 		It("exits with error for missing transcript", func() {
 				hookInput := config.SampleHookInput("session-123", "/nonexistent/path", "git commit -m 'test'")
 
-				_, stderr, err := testutil.RunClauditInDirWithStdin(repo.Path, hookInput, config.StoreArgs...)
+				_, stderr, err := testutil.RunShiftlogInDirWithStdin(repo.Path, hookInput, config.StoreArgs...)
 				Expect(err).To(HaveOccurred())
 				Expect(stderr).To(ContainSubstring("failed to read transcript"))
 			})

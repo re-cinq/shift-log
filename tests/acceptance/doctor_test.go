@@ -26,21 +26,21 @@ var _ = Describe("Doctor Command", func() {
 
 	Describe("shiftlog doctor", func() {
 		It("reports issues when not initialized", func() {
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "doctor")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "doctor")
 			// Should fail because not initialized
 			Expect(err).To(HaveOccurred())
-			Expect(stdout).To(ContainSubstring("Claudit Doctor"))
+			Expect(stdout).To(ContainSubstring("Shiftlog Doctor"))
 			Expect(stdout).To(ContainSubstring("FAIL"))
 		})
 
 		It("passes all checks after init", func() {
 			// Initialize first
-			_, _, err := testutil.RunClauditInDir(repo.Path, "init")
+			_, _, err := testutil.RunShiftlogInDir(repo.Path, "init")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Doctor should pass (except PATH check which we can't control in test)
-			stdout, _, _ := testutil.RunClauditInDir(repo.Path, "doctor")
-			Expect(stdout).To(ContainSubstring("Claudit Doctor"))
+			stdout, _, _ := testutil.RunShiftlogInDir(repo.Path, "doctor")
+			Expect(stdout).To(ContainSubstring("Shiftlog Doctor"))
 			Expect(stdout).To(ContainSubstring("Checking git repository... OK"))
 			Expect(stdout).To(ContainSubstring("Found PostToolUse hook configuration"))
 			Expect(stdout).To(ContainSubstring("All git hooks installed"))
@@ -51,7 +51,7 @@ var _ = Describe("Doctor Command", func() {
 			Expect(err).NotTo(HaveOccurred())
 			defer os.RemoveAll(tmpDir)
 
-			stdout, _, err := testutil.RunClauditInDir(tmpDir, "doctor")
+			stdout, _, err := testutil.RunShiftlogInDir(tmpDir, "doctor")
 			Expect(err).To(HaveOccurred())
 			Expect(stdout).To(ContainSubstring("Not inside a git repository"))
 		})

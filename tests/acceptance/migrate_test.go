@@ -31,7 +31,7 @@ var _ = Describe("Migrate Command", func() {
 			Expect(os.MkdirAll(clauditDir, 0755)).To(Succeed())
 			Expect(os.WriteFile(filepath.Join(clauditDir, "config"), []byte(`{"agent":"claude"}`), 0644)).To(Succeed())
 
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "migrate")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "migrate")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stdout).To(ContainSubstring(".claudit/ → .shiftlog/"))
 
@@ -42,7 +42,7 @@ var _ = Describe("Migrate Command", func() {
 		It("skips rename when .shiftlog/ already exists", func() {
 			Expect(os.MkdirAll(filepath.Join(repo.Path, ".shiftlog"), 0755)).To(Succeed())
 
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "migrate")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "migrate")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stdout).To(ContainSubstring("already exists"))
 		})
@@ -51,13 +51,13 @@ var _ = Describe("Migrate Command", func() {
 			Expect(os.MkdirAll(filepath.Join(repo.Path, ".claudit"), 0755)).To(Succeed())
 			Expect(os.MkdirAll(filepath.Join(repo.Path, ".shiftlog"), 0755)).To(Succeed())
 
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "migrate")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "migrate")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stdout).To(ContainSubstring("Both .claudit/ and .shiftlog/ exist"))
 		})
 
 		It("reports nothing to migrate when no claudit artifacts exist", func() {
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "migrate")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "migrate")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stdout).To(ContainSubstring("Nothing to migrate"))
 		})
@@ -68,7 +68,7 @@ var _ = Describe("Migrate Command", func() {
 			gitignorePath := filepath.Join(repo.Path, ".gitignore")
 			Expect(os.WriteFile(gitignorePath, []byte(".claudit/\n*.log\n"), 0644)).To(Succeed())
 
-			_, _, err := testutil.RunClauditInDir(repo.Path, "migrate")
+			_, _, err := testutil.RunShiftlogInDir(repo.Path, "migrate")
 			Expect(err).NotTo(HaveOccurred())
 
 			content, err := os.ReadFile(gitignorePath)
@@ -83,7 +83,7 @@ var _ = Describe("Migrate Command", func() {
 			original := "*.log\n.env\n"
 			Expect(os.WriteFile(gitignorePath, []byte(original), 0644)).To(Succeed())
 
-			_, _, err := testutil.RunClauditInDir(repo.Path, "migrate")
+			_, _, err := testutil.RunShiftlogInDir(repo.Path, "migrate")
 			Expect(err).NotTo(HaveOccurred())
 
 			content, err := os.ReadFile(gitignorePath)
@@ -101,7 +101,7 @@ var _ = Describe("Migrate Command", func() {
 			hookPath := filepath.Join(hooksDir, "pre-push")
 			Expect(os.WriteFile(hookPath, []byte(oldHook), 0755)).To(Succeed())
 
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "migrate")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "migrate")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stdout).To(ContainSubstring("pre-push"))
 
@@ -121,7 +121,7 @@ var _ = Describe("Migrate Command", func() {
 			hookPath := filepath.Join(hooksDir, "pre-push")
 			Expect(os.WriteFile(hookPath, []byte(oldHook), 0755)).To(Succeed())
 
-			_, _, migrateErr := testutil.RunClauditInDir(repo.Path, "migrate")
+			_, _, migrateErr := testutil.RunShiftlogInDir(repo.Path, "migrate")
 			Expect(migrateErr).NotTo(HaveOccurred())
 
 			content, err := os.ReadFile(hookPath)
@@ -137,7 +137,7 @@ var _ = Describe("Migrate Command", func() {
 			Expect(os.MkdirAll(hooksDir, 0755)).To(Succeed())
 			Expect(os.WriteFile(filepath.Join(hooksDir, "claudit.json"), []byte(`{}`), 0644)).To(Succeed())
 
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "migrate")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "migrate")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stdout).To(ContainSubstring("claudit.json → shiftlog.json"))
 
@@ -153,7 +153,7 @@ var _ = Describe("Migrate Command", func() {
 			gitignorePath := filepath.Join(repo.Path, ".gitignore")
 			Expect(os.WriteFile(gitignorePath, []byte(".claudit/\n"), 0644)).To(Succeed())
 
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "migrate", "--dry-run")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "migrate", "--dry-run")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stdout).To(ContainSubstring("Dry run"))
 			Expect(stdout).To(ContainSubstring("would be applied"))
@@ -170,12 +170,12 @@ var _ = Describe("Migrate Command", func() {
 		It("is safe to run twice", func() {
 			Expect(os.MkdirAll(filepath.Join(repo.Path, ".claudit"), 0755)).To(Succeed())
 
-			_, _, err := testutil.RunClauditInDir(repo.Path, "migrate")
+			_, _, err := testutil.RunShiftlogInDir(repo.Path, "migrate")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(repo.FileExists(".shiftlog")).To(BeTrue())
 
 			// Run again — should not error
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "migrate")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "migrate")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stdout).To(ContainSubstring("already exists"))
 		})
@@ -187,7 +187,7 @@ var _ = Describe("Migrate Command", func() {
 			Expect(err).NotTo(HaveOccurred())
 			defer func() { _ = os.RemoveAll(tmpDir) }()
 
-			_, stderr, err := testutil.RunClauditInDir(tmpDir, "migrate")
+			_, stderr, err := testutil.RunShiftlogInDir(tmpDir, "migrate")
 			Expect(err).To(HaveOccurred())
 			Expect(strings.ToLower(stderr)).To(ContainSubstring("git"))
 		})

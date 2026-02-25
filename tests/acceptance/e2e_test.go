@@ -34,9 +34,9 @@ var _ = Describe("End-to-End Store Flow", func() {
 
 	It("full flow: init repo, simulate Claude hook, verify note stored, push/pull", func() {
 		// Step 1: Initialize shiftlog
-		stdout, _, err := testutil.RunClauditInDir(local.Path, "init")
+		stdout, _, err := testutil.RunShiftlogInDir(local.Path, "init")
 		Expect(err).NotTo(HaveOccurred())
-		Expect(stdout).To(ContainSubstring("Claudit is now configured"))
+		Expect(stdout).To(ContainSubstring("Shiftlog is now configured"))
 
 		// Verify Claude settings were created
 		Expect(local.FileExists(".claude/settings.local.json")).To(BeTrue())
@@ -56,7 +56,7 @@ var _ = Describe("End-to-End Store Flow", func() {
 		Expect(os.WriteFile(transcriptPath, []byte(testutil.SampleTranscript()), 0644)).To(Succeed())
 
 		hookInput := testutil.SampleHookInput("e2e-session", transcriptPath, "git commit -m 'Add feature'")
-		_, stderr, err := testutil.RunClauditInDirWithStdin(local.Path, hookInput, "store")
+		_, stderr, err := testutil.RunShiftlogInDirWithStdin(local.Path, hookInput, "store")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(stderr).To(ContainSubstring("stored conversation"))
 
@@ -71,7 +71,7 @@ var _ = Describe("End-to-End Store Flow", func() {
 		Expect(stored["session_id"]).To(Equal("e2e-session"))
 
 		// Step 5: Push notes
-		stdout, _, err = testutil.RunClauditInDir(local.Path, "sync", "push")
+		stdout, _, err = testutil.RunShiftlogInDir(local.Path, "sync", "push")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(stdout).To(ContainSubstring("Pushed"))
 
@@ -88,7 +88,7 @@ var _ = Describe("End-to-End Store Flow", func() {
 		Expect(clone.HasNote("refs/notes/claude-conversations", head)).To(BeFalse())
 
 		// Pull notes
-		stdout, _, err = testutil.RunClauditInDir(clone.Path, "sync", "pull")
+		stdout, _, err = testutil.RunShiftlogInDir(clone.Path, "sync", "pull")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(stdout).To(ContainSubstring("Fetched"))
 

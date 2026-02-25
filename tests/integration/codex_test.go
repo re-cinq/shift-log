@@ -18,7 +18,7 @@ var _ = Describe("Codex CLI Integration", func() {
 		skipIfEnvSet("SKIP_CODEX_INTEGRATION")
 		apiKey := requireEnvVar("OPENAI_API_KEY")
 		requireBinary("codex")
-		shiftlogPath := getClauditPath()
+		shiftlogPath := getShiftlogPath()
 		tmpDir := initGitRepo("codex-integration")
 		DeferCleanup(os.RemoveAll, tmpDir)
 

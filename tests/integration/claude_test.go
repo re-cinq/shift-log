@@ -31,7 +31,7 @@ var _ = Describe("Claude Code Integration", func() {
 			}
 
 			requireBinary("claude")
-			shiftlogPath := getClauditPath()
+			shiftlogPath := getShiftlogPath()
 			tmpDir := initGitRepo("claude-integration")
 			DeferCleanup(os.RemoveAll, tmpDir)
 
@@ -263,7 +263,7 @@ var _ = Describe("Claude Code Integration", func() {
 
 		BeforeEach(func() {
 			skipIfEnvSet("SKIP_CLAUDE_INTEGRATION")
-			shiftlogPath = getClauditPath()
+			shiftlogPath = getShiftlogPath()
 
 			var err error
 			tmpDir, err = os.MkdirTemp("", "shiftlog-store-test-*")

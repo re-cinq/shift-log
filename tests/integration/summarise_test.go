@@ -23,7 +23,7 @@ var _ = Describe("Summarise", func() {
 			}
 
 			requireBinary("claude")
-			shiftlogPath := getClauditPath()
+			shiftlogPath := getShiftlogPath()
 			tmpDir := initGitRepo("summarise-integration")
 			DeferCleanup(os.RemoveAll, tmpDir)
 
@@ -116,7 +116,7 @@ var _ = Describe("Summarise", func() {
 
 	Describe("tldr alias", func() {
 		It("should resolve to the summarise command", func() {
-			shiftlogPath := getClauditPath()
+			shiftlogPath := getShiftlogPath()
 			tmpDir := initGitRepo("tldr-alias")
 			DeferCleanup(os.RemoveAll, tmpDir)
 
@@ -141,7 +141,7 @@ var _ = Describe("Summarise", func() {
 
 	Describe("unsupported agent", func() {
 		It("should produce a helpful error", func() {
-			shiftlogPath := getClauditPath()
+			shiftlogPath := getShiftlogPath()
 			tmpDir := initGitRepo("summarise-unsupported")
 			DeferCleanup(os.RemoveAll, tmpDir)
 

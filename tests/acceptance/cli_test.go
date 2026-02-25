@@ -10,7 +10,7 @@ import (
 var _ = Describe("CLI Foundation", func() {
 	Describe("shiftlog with no arguments", func() {
 		It("displays help text", func() {
-			stdout, _, err := testutil.RunClaudit()
+			stdout, _, err := testutil.RunShiftlog()
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stdout).To(ContainSubstring("Usage:"))
 			Expect(stdout).To(ContainSubstring("Commands for humans:"))
@@ -19,7 +19,7 @@ var _ = Describe("CLI Foundation", func() {
 
 	Describe("shiftlog --version", func() {
 		It("displays the version number", func() {
-			stdout, _, err := testutil.RunClaudit("--version")
+			stdout, _, err := testutil.RunShiftlog("--version")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stdout).To(ContainSubstring("shiftlog version"))
 		})
@@ -27,7 +27,7 @@ var _ = Describe("CLI Foundation", func() {
 
 	Describe("shiftlog --help", func() {
 		It("displays help text", func() {
-			stdout, _, err := testutil.RunClaudit("--help")
+			stdout, _, err := testutil.RunShiftlog("--help")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stdout).To(ContainSubstring("Usage:"))
 			Expect(stdout).To(ContainSubstring("init"))

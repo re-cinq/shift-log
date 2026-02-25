@@ -248,8 +248,8 @@ func TestPageTitle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}
-	if title != "Claudit - Conversation History" {
-		t.Errorf("title: want %q, got %q", "Claudit - Conversation History", title)
+	if title != "Shiftlog - Conversation History" {
+		t.Errorf("title: want %q, got %q", "Shiftlog - Conversation History", title)
 	}
 }
 

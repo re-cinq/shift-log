@@ -17,7 +17,7 @@ var _ = Describe("Copilot CLI Integration", func() {
 		skipIfEnvSet("SKIP_COPILOT_INTEGRATION")
 		githubToken := requireEnvVar("COPILOT_GITHUB_TOKEN")
 		requireBinary("copilot")
-		shiftlogPath := getClauditPath()
+		shiftlogPath := getShiftlogPath()
 		tmpDir := initGitRepo("copilot-integration")
 		DeferCleanup(os.RemoveAll, tmpDir)
 

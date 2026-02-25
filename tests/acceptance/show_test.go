@@ -38,7 +38,7 @@ var _ = Describe("Show Command", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		hookInput := testutil.SampleHookInput(sessionID, transcriptPath, "git commit -m 'test'")
-		_, _, err = testutil.RunClauditInDirWithStdin(repo.Path, hookInput, "store")
+		_, _, err = testutil.RunShiftlogInDirWithStdin(repo.Path, hookInput, "store")
 		Expect(err).NotTo(HaveOccurred())
 
 		return head
@@ -48,7 +48,7 @@ var _ = Describe("Show Command", func() {
 		It("shows conversation for commit SHA", func() {
 			commitSHA := storeConversation("session-show-1")
 
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "show", commitSHA)
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "show", commitSHA)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Should contain conversation header
@@ -59,7 +59,7 @@ var _ = Describe("Show Command", func() {
 		It("shows conversation for HEAD when no ref provided", func() {
 			storeConversation("session-show-2")
 
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "show")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "show")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Should show conversation
@@ -69,7 +69,7 @@ var _ = Describe("Show Command", func() {
 		It("displays User: prefix for user messages", func() {
 			storeConversation("session-show-3")
 
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "show")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "show")
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(stdout).To(ContainSubstring("User:"))
@@ -78,7 +78,7 @@ var _ = Describe("Show Command", func() {
 		It("displays Assistant: prefix for assistant messages", func() {
 			storeConversation("session-show-4")
 
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "show")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "show")
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(stdout).To(ContainSubstring("Assistant:"))
@@ -87,7 +87,7 @@ var _ = Describe("Show Command", func() {
 		It("displays message content", func() {
 			storeConversation("session-show-5")
 
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "show")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "show")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Should contain the sample transcript content
@@ -101,13 +101,13 @@ var _ = Describe("Show Command", func() {
 			head, err := repo.GetHead()
 			Expect(err).NotTo(HaveOccurred())
 
-			_, stderr, err := testutil.RunClauditInDir(repo.Path, "show", head)
+			_, stderr, err := testutil.RunShiftlogInDir(repo.Path, "show", head)
 			Expect(err).To(HaveOccurred())
 			Expect(stderr).To(ContainSubstring("no conversation found"))
 		})
 
 		It("shows error when HEAD has no conversation", func() {
-			_, stderr, err := testutil.RunClauditInDir(repo.Path, "show")
+			_, stderr, err := testutil.RunShiftlogInDir(repo.Path, "show")
 			Expect(err).To(HaveOccurred())
 			Expect(stderr).To(ContainSubstring("no conversation found"))
 		})
@@ -115,7 +115,7 @@ var _ = Describe("Show Command", func() {
 
 	Describe("with invalid reference", func() {
 		It("shows error for invalid commit reference", func() {
-			_, stderr, err := testutil.RunClauditInDir(repo.Path, "show", "invalid-ref-xyz")
+			_, stderr, err := testutil.RunShiftlogInDir(repo.Path, "show", "invalid-ref-xyz")
 			Expect(err).To(HaveOccurred())
 			Expect(stderr).To(ContainSubstring("could not resolve reference"))
 		})
@@ -131,7 +131,7 @@ var _ = Describe("Show Command", func() {
 			Expect(repo.Commit("Second commit")).To(Succeed())
 
 			// HEAD~1 should show the previous commit's conversation
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "show", "HEAD~1")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "show", "HEAD~1")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stdout).To(ContainSubstring("User:"))
 		})
@@ -143,7 +143,7 @@ var _ = Describe("Show Command", func() {
 			Expect(err).NotTo(HaveOccurred())
 			defer os.RemoveAll(tmpDir)
 
-			_, stderr, err := testutil.RunClauditInDir(tmpDir, "show")
+			_, stderr, err := testutil.RunShiftlogInDir(tmpDir, "show")
 			Expect(err).To(HaveOccurred())
 			Expect(stderr).To(ContainSubstring("not inside a git repository"))
 		})
@@ -166,7 +166,7 @@ var _ = Describe("Show Command", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			hookInput := testutil.SampleHookInput(sessionID, transcriptPath, "git commit -m 'test'")
-			_, _, err = testutil.RunClauditInDirWithStdin(repo.Path, hookInput, "store")
+			_, _, err = testutil.RunShiftlogInDirWithStdin(repo.Path, hookInput, "store")
 			Expect(err).NotTo(HaveOccurred())
 
 			return head
@@ -188,7 +188,7 @@ var _ = Describe("Show Command", func() {
 			storeConversationWithUUIDs(secondUUIDs, secondMessages)
 
 			// Show should only display entries after uuid-4 (the last entry from first commit)
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "show")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "show")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Should contain the new messages
@@ -219,7 +219,7 @@ var _ = Describe("Show Command", func() {
 			storeConversationWithUUIDs(secondUUIDs, secondMessages)
 
 			// Show with --full should display all entries
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "show", "--full")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "show", "--full")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Should contain all messages
@@ -234,7 +234,7 @@ var _ = Describe("Show Command", func() {
 			messages := []string{"First user message", "First assistant response"}
 			storeConversationWithUUIDs(uuids, messages)
 
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "show")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "show")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Should show full session since no parent conversation exists
@@ -254,7 +254,7 @@ var _ = Describe("Show Command", func() {
 			messages := []string{"First user message", "First assistant response"}
 			storeConversationWithUUIDs(uuids, messages)
 
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "show")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "show")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Should show full session since parent has no conversation
@@ -272,7 +272,7 @@ var _ = Describe("Show Command", func() {
 			Expect(os.WriteFile(transcriptPath, []byte(transcript), 0644)).To(Succeed())
 
 			hookInput := testutil.SampleHookInput("session-A", transcriptPath, "git commit -m 'test'")
-			_, _, err := testutil.RunClauditInDirWithStdin(repo.Path, hookInput, "store")
+			_, _, err := testutil.RunShiftlogInDirWithStdin(repo.Path, hookInput, "store")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Second commit with different session ID
@@ -285,10 +285,10 @@ var _ = Describe("Show Command", func() {
 			Expect(os.WriteFile(transcriptPath, []byte(transcript), 0644)).To(Succeed())
 
 			hookInput = testutil.SampleHookInput("session-B", transcriptPath, "git commit -m 'test'")
-			_, _, err = testutil.RunClauditInDirWithStdin(repo.Path, hookInput, "store")
+			_, _, err = testutil.RunShiftlogInDirWithStdin(repo.Path, hookInput, "store")
 			Expect(err).NotTo(HaveOccurred())
 
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "show")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "show")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Should show full session since session IDs differ

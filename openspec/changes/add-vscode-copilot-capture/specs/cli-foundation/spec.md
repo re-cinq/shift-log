@@ -37,5 +37,5 @@ The `shiftlog doctor` command MUST check the shiftlog setup and report issues.
 
 #### Scenario: All checks pass
 - **WHEN** `shiftlog doctor` finds no issues
-- **THEN** it prints "All checks passed! Claudit is properly configured."
+- **THEN** it prints "All checks passed! Shiftlog is properly configured."
 - **AND** exits with zero status

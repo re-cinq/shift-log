@@ -21,7 +21,7 @@ var _ = Describe("Manual Store Command", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		// Initialize shiftlog
-		_, _, err = testutil.RunClauditInDir(repo.Path, "init")
+		_, _, err = testutil.RunShiftlogInDir(repo.Path, "init")
 		Expect(err).NotTo(HaveOccurred())
 	})
 
@@ -37,7 +37,7 @@ var _ = Describe("Manual Store Command", func() {
 			repo.Run("git", "commit", "-m", "test commit")
 
 			// Run manual store without active session
-			stdout, stderr, err := testutil.RunClauditInDir(repo.Path, "store", "--manual")
+			stdout, stderr, err := testutil.RunShiftlogInDir(repo.Path, "store", "--manual")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stdout).To(BeEmpty())
 			// Should not produce warning since this is expected behavior
@@ -74,7 +74,7 @@ var _ = Describe("Manual Store Command", func() {
 			repo.Run("git", "commit", "-m", "test commit")
 
 			// Run manual store again - should report "already stored" since hook ran
-			_, stderr, err := testutil.RunClauditInDir(repo.Path, "store", "--manual")
+			_, stderr, err := testutil.RunShiftlogInDir(repo.Path, "store", "--manual")
 			Expect(err).NotTo(HaveOccurred())
 			// Accept either "stored conversation" (first time) or "already stored" (hook already ran)
 			Expect(stderr).To(Or(ContainSubstring("stored conversation"), ContainSubstring("already stored")))
@@ -110,13 +110,13 @@ var _ = Describe("Manual Store Command", func() {
 			repo.Run("git", "commit", "-m", "test commit")
 
 			// First explicit store - may be "stored" or "already stored" depending on hook execution
-			_, stderr1, err := testutil.RunClauditInDir(repo.Path, "store", "--manual")
+			_, stderr1, err := testutil.RunShiftlogInDir(repo.Path, "store", "--manual")
 			Expect(err).NotTo(HaveOccurred())
 			// Accept either message since hook may have already stored it
 			Expect(stderr1).To(Or(ContainSubstring("stored conversation"), ContainSubstring("already stored")))
 
 			// Second store with same session should definitely be idempotent
-			_, stderr2, err := testutil.RunClauditInDir(repo.Path, "store", "--manual")
+			_, stderr2, err := testutil.RunShiftlogInDir(repo.Path, "store", "--manual")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stderr2).To(ContainSubstring("already stored"))
 		})
@@ -153,7 +153,7 @@ var _ = Describe("Manual Store Command", func() {
 			repo.Run("git", "commit", "-m", "test commit")
 
 			// First store
-			_, _, err := testutil.RunClauditInDir(repo.Path, "store", "--manual")
+			_, _, err := testutil.RunShiftlogInDir(repo.Path, "store", "--manual")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Verify first session stored
@@ -171,7 +171,7 @@ var _ = Describe("Manual Store Command", func() {
 			os.WriteFile(filepath.Join(shiftlogDir, "active-session.json"), sessionData2, 0644)
 
 			// Second store should overwrite
-			_, stderr2, err := testutil.RunClauditInDir(repo.Path, "store", "--manual")
+			_, stderr2, err := testutil.RunShiftlogInDir(repo.Path, "store", "--manual")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stderr2).To(ContainSubstring("stored conversation"))
 
@@ -206,7 +206,7 @@ var _ = Describe("Manual Store Command", func() {
 			repo.Run("git", "commit", "-m", "test commit")
 
 			// Run manual store - should skip silently
-			stdout, stderr, err := testutil.RunClauditInDir(repo.Path, "store", "--manual")
+			stdout, stderr, err := testutil.RunShiftlogInDir(repo.Path, "store", "--manual")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stdout).To(BeEmpty())
 			Expect(stderr).NotTo(ContainSubstring("stored"))
@@ -228,7 +228,7 @@ var _ = Describe("Manual Store Command", func() {
 			inputData, _ := json.Marshal(input)
 
 			// Run session-start with stdin
-			_, stderr, err := testutil.RunClauditInDirWithStdin(repo.Path, string(inputData), "session-start")
+			_, stderr, err := testutil.RunShiftlogInDirWithStdin(repo.Path, string(inputData), "session-start")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stderr).To(ContainSubstring("session started"))
 
@@ -262,7 +262,7 @@ var _ = Describe("Manual Store Command", func() {
 			inputData, _ := json.Marshal(input)
 
 			// Run session-end
-			_, stderr, err := testutil.RunClauditInDirWithStdin(repo.Path, string(inputData), "session-end")
+			_, stderr, err := testutil.RunShiftlogInDirWithStdin(repo.Path, string(inputData), "session-end")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stderr).To(ContainSubstring("session ended"))
 

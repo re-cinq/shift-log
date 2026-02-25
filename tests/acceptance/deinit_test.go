@@ -36,7 +36,7 @@ var _ = Describe("Deinit Command", func() {
 
 			It("removes agent hooks after init", func() {
 				// Init first
-				_, _, err := testutil.RunClauditInDir(repo.Path, config.InitArgs...)
+				_, _, err := testutil.RunShiftlogInDir(repo.Path, config.InitArgs...)
 				Expect(err).NotTo(HaveOccurred())
 
 				// Verify settings file exists (for agents that have one)
@@ -45,7 +45,7 @@ var _ = Describe("Deinit Command", func() {
 				}
 
 				// Deinit
-				_, _, err = testutil.RunClauditInDir(repo.Path, "deinit")
+				_, _, err = testutil.RunShiftlogInDir(repo.Path, "deinit")
 				Expect(err).NotTo(HaveOccurred())
 
 				// Verify shiftlog hooks are gone
@@ -71,9 +71,9 @@ var _ = Describe("Deinit Command", func() {
 					Expect(repo.WriteFile(config.SettingsFile, `{"existingKey": "existingValue"}`)).To(Succeed())
 
 					// Init then deinit
-					_, _, err := testutil.RunClauditInDir(repo.Path, config.InitArgs...)
+					_, _, err := testutil.RunShiftlogInDir(repo.Path, config.InitArgs...)
 					Expect(err).NotTo(HaveOccurred())
-					_, _, err = testutil.RunClauditInDir(repo.Path, "deinit")
+					_, _, err = testutil.RunShiftlogInDir(repo.Path, "deinit")
 					Expect(err).NotTo(HaveOccurred())
 
 					// Settings file should still exist with existing content
@@ -92,9 +92,9 @@ var _ = Describe("Deinit Command", func() {
 					Expect(os.MkdirAll(filepath.Join(repo.Path, ".github", "hooks"), 0755)).To(Succeed())
 					Expect(repo.WriteFile(config.SettingsFile, `{"version":1,"hooks":{"postToolUse":[{"type":"command","command":"other-tool","timeoutSec":10}]},"existingKey":"existingValue"}`)).To(Succeed())
 
-					_, _, err := testutil.RunClauditInDir(repo.Path, config.InitArgs...)
+					_, _, err := testutil.RunShiftlogInDir(repo.Path, config.InitArgs...)
 					Expect(err).NotTo(HaveOccurred())
-					_, _, err = testutil.RunClauditInDir(repo.Path, "deinit")
+					_, _, err = testutil.RunShiftlogInDir(repo.Path, "deinit")
 					Expect(err).NotTo(HaveOccurred())
 
 					Expect(repo.FileExists(config.SettingsFile)).To(BeTrue())
@@ -108,11 +108,11 @@ var _ = Describe("Deinit Command", func() {
 
 			It("is idempotent", func() {
 				// Init then deinit twice — second deinit should not error
-				_, _, err := testutil.RunClauditInDir(repo.Path, config.InitArgs...)
+				_, _, err := testutil.RunShiftlogInDir(repo.Path, config.InitArgs...)
 				Expect(err).NotTo(HaveOccurred())
-				_, _, err = testutil.RunClauditInDir(repo.Path, "deinit")
+				_, _, err = testutil.RunShiftlogInDir(repo.Path, "deinit")
 				Expect(err).NotTo(HaveOccurred())
-				_, _, err = testutil.RunClauditInDir(repo.Path, "deinit")
+				_, _, err = testutil.RunShiftlogInDir(repo.Path, "deinit")
 				Expect(err).NotTo(HaveOccurred())
 			})
 		})
@@ -135,7 +135,7 @@ var _ = Describe("Deinit Command", func() {
 		})
 
 		It("removes git hooks", func() {
-			_, _, err := testutil.RunClauditInDir(repo.Path, "init")
+			_, _, err := testutil.RunShiftlogInDir(repo.Path, "init")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Verify hooks exist
@@ -143,7 +143,7 @@ var _ = Describe("Deinit Command", func() {
 				Expect(repo.FileExists(".git/hooks/" + hook)).To(BeTrue())
 			}
 
-			_, _, err = testutil.RunClauditInDir(repo.Path, "deinit")
+			_, _, err = testutil.RunShiftlogInDir(repo.Path, "deinit")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Verify hook files are deleted (they only had shiftlog content)
@@ -163,7 +163,7 @@ var _ = Describe("Deinit Command", func() {
 			)).To(Succeed())
 
 			// Init adds shiftlog section
-			_, _, err := testutil.RunClauditInDir(repo.Path, "init")
+			_, _, err := testutil.RunShiftlogInDir(repo.Path, "init")
 			Expect(err).NotTo(HaveOccurred())
 
 			content, err := repo.ReadFile(".git/hooks/pre-push")
@@ -172,7 +172,7 @@ var _ = Describe("Deinit Command", func() {
 			Expect(content).To(ContainSubstring("shiftlog-managed"))
 
 			// Deinit removes only shiftlog section
-			_, _, err = testutil.RunClauditInDir(repo.Path, "deinit")
+			_, _, err = testutil.RunShiftlogInDir(repo.Path, "deinit")
 			Expect(err).NotTo(HaveOccurred())
 
 			// File should still exist with custom content
@@ -184,7 +184,7 @@ var _ = Describe("Deinit Command", func() {
 		})
 
 		It("removes git config settings", func() {
-			_, _, err := testutil.RunClauditInDir(repo.Path, "init")
+			_, _, err := testutil.RunShiftlogInDir(repo.Path, "init")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Verify settings are set
@@ -193,7 +193,7 @@ var _ = Describe("Deinit Command", func() {
 			Expect(out).To(ContainSubstring("refs/notes/claude-conversations"))
 
 			// Deinit
-			_, _, err = testutil.RunClauditInDir(repo.Path, "deinit")
+			_, _, err = testutil.RunShiftlogInDir(repo.Path, "deinit")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Verify settings are unset
@@ -202,7 +202,7 @@ var _ = Describe("Deinit Command", func() {
 		})
 
 		It("works without prior init", func() {
-			_, _, err := testutil.RunClauditInDir(repo.Path, "deinit")
+			_, _, err := testutil.RunShiftlogInDir(repo.Path, "deinit")
 			Expect(err).NotTo(HaveOccurred())
 		})
 
@@ -211,14 +211,14 @@ var _ = Describe("Deinit Command", func() {
 			Expect(err).NotTo(HaveOccurred())
 			defer os.RemoveAll(tmpDir)
 
-			_, stderr, err := testutil.RunClauditInDir(tmpDir, "deinit")
+			_, stderr, err := testutil.RunShiftlogInDir(tmpDir, "deinit")
 			Expect(err).To(HaveOccurred())
 			Expect(stderr).To(ContainSubstring("not inside a git repository"))
 		})
 
 		It("reads agent from config", func() {
 			// Init with gemini
-			_, _, err := testutil.RunClauditInDir(repo.Path, "init", "--agent=gemini")
+			_, _, err := testutil.RunShiftlogInDir(repo.Path, "init", "--agent=gemini")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Verify config has agent=gemini
@@ -232,7 +232,7 @@ var _ = Describe("Deinit Command", func() {
 			Expect(repo.FileExists(".gemini/settings.json")).To(BeTrue())
 
 			// Deinit (no --agent flag needed)
-			_, _, err = testutil.RunClauditInDir(repo.Path, "deinit")
+			_, _, err = testutil.RunShiftlogInDir(repo.Path, "deinit")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Gemini settings should be removed
@@ -240,10 +240,10 @@ var _ = Describe("Deinit Command", func() {
 		})
 
 		It("prints informative output", func() {
-			_, _, err := testutil.RunClauditInDir(repo.Path, "init")
+			_, _, err := testutil.RunShiftlogInDir(repo.Path, "init")
 			Expect(err).NotTo(HaveOccurred())
 
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "deinit")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "deinit")
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(stdout).To(ContainSubstring("Removed"))

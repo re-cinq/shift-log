@@ -25,7 +25,7 @@ var _ = Describe("Git Hooks Auto-Sync", func() {
 		Expect(local.Run("git", "push", "-u", "origin", "master")).To(Succeed())
 
 		// Initialize shiftlog (installs hooks)
-		_, _, err = testutil.RunClauditInDir(local.Path, "init")
+		_, _, err = testutil.RunShiftlogInDir(local.Path, "init")
 		Expect(err).NotTo(HaveOccurred())
 
 		// Make sure hooks can find shiftlog binary
@@ -48,7 +48,7 @@ var _ = Describe("Git Hooks Auto-Sync", func() {
 			Expect(os.WriteFile(transcriptPath, []byte(testutil.SampleTranscript()), 0644)).To(Succeed())
 
 			hookInput := testutil.SampleHookInput("session-hook-test", transcriptPath, "git commit -m 'test'")
-			_, _, err := testutil.RunClauditInDirWithStdin(local.Path, hookInput, "store")
+			_, _, err := testutil.RunShiftlogInDirWithStdin(local.Path, hookInput, "store")
 			Expect(err).NotTo(HaveOccurred())
 
 			head, err := local.GetHead()
@@ -77,14 +77,14 @@ var _ = Describe("Git Hooks Auto-Sync", func() {
 			Expect(os.WriteFile(transcriptPath, []byte(testutil.SampleTranscript()), 0644)).To(Succeed())
 
 			hookInput := testutil.SampleHookInput("session-post-merge", transcriptPath, "git commit -m 'test'")
-			_, _, err := testutil.RunClauditInDirWithStdin(local.Path, hookInput, "store")
+			_, _, err := testutil.RunShiftlogInDirWithStdin(local.Path, hookInput, "store")
 			Expect(err).NotTo(HaveOccurred())
 
 			head, err := local.GetHead()
 			Expect(err).NotTo(HaveOccurred())
 
 			// Push notes manually
-			_, _, err = testutil.RunClauditInDir(local.Path, "sync", "push")
+			_, _, err = testutil.RunShiftlogInDir(local.Path, "sync", "push")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Commit .claude to track it in git (so clones can merge cleanly)
@@ -102,7 +102,7 @@ var _ = Describe("Git Hooks Auto-Sync", func() {
 
 			// Initialize shiftlog on clone (installs hooks) - this won't conflict
 			// because we already have .claude committed
-			_, _, err = testutil.RunClauditInDir(clone.Path, "init")
+			_, _, err = testutil.RunShiftlogInDir(clone.Path, "init")
 			Expect(err).NotTo(HaveOccurred())
 			clone.SetBinaryPath(testutil.BinaryPath())
 
@@ -176,11 +176,11 @@ var _ = Describe("Sync Command", func() {
 			Expect(os.WriteFile(transcriptPath, []byte(testutil.SampleTranscript()), 0644)).To(Succeed())
 
 			hookInput := testutil.SampleHookInput("session-upstream", transcriptPath, "git commit -m 'test'")
-			_, _, err = testutil.RunClauditInDirWithStdin(local.Path, hookInput, "store")
+			_, _, err = testutil.RunShiftlogInDirWithStdin(local.Path, hookInput, "store")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Push notes to upstream (not origin)
-			stdout, _, err := testutil.RunClauditInDir(local.Path, "sync", "push", "--remote=upstream")
+			stdout, _, err := testutil.RunShiftlogInDir(local.Path, "sync", "push", "--remote=upstream")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stdout).To(ContainSubstring("Pushed"))
 
@@ -200,9 +200,9 @@ var _ = Describe("Sync Command", func() {
 			Expect(os.WriteFile(transcriptPath, []byte(testutil.SampleTranscript()), 0644)).To(Succeed())
 
 			hookInput := testutil.SampleHookInput("session-upstream-pull", transcriptPath, "git commit -m 'test'")
-			_, _, err = testutil.RunClauditInDirWithStdin(local.Path, hookInput, "store")
+			_, _, err = testutil.RunShiftlogInDirWithStdin(local.Path, hookInput, "store")
 			Expect(err).NotTo(HaveOccurred())
-			_, _, err = testutil.RunClauditInDir(local.Path, "sync", "push", "--remote=upstream")
+			_, _, err = testutil.RunShiftlogInDir(local.Path, "sync", "push", "--remote=upstream")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Create a new clone that only has upstream as remote
@@ -218,7 +218,7 @@ var _ = Describe("Sync Command", func() {
 			Expect(clone.HasNote("refs/notes/claude-conversations", head)).To(BeFalse())
 
 			// Pull notes from upstream
-			stdout, _, err := testutil.RunClauditInDir(clone.Path, "sync", "pull", "--remote=upstream")
+			stdout, _, err := testutil.RunShiftlogInDir(clone.Path, "sync", "pull", "--remote=upstream")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stdout).To(ContainSubstring("Fetched"))
 
@@ -238,11 +238,11 @@ var _ = Describe("Sync Command", func() {
 			Expect(os.WriteFile(transcriptPath, []byte(testutil.SampleTranscript()), 0644)).To(Succeed())
 
 			hookInput := testutil.SampleHookInput("session-123", transcriptPath, "git commit -m 'test'")
-			_, _, err = testutil.RunClauditInDirWithStdin(local.Path, hookInput, "store")
+			_, _, err = testutil.RunShiftlogInDirWithStdin(local.Path, hookInput, "store")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Push notes
-			stdout, _, err := testutil.RunClauditInDir(local.Path, "sync", "push")
+			stdout, _, err := testutil.RunShiftlogInDir(local.Path, "sync", "push")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stdout).To(ContainSubstring("Pushed"))
 
@@ -263,9 +263,9 @@ var _ = Describe("Sync Command", func() {
 			Expect(os.WriteFile(transcriptPath, []byte(testutil.SampleTranscript()), 0644)).To(Succeed())
 
 			hookInput := testutil.SampleHookInput("session-123", transcriptPath, "git commit -m 'test'")
-			_, _, err = testutil.RunClauditInDirWithStdin(local.Path, hookInput, "store")
+			_, _, err = testutil.RunShiftlogInDirWithStdin(local.Path, hookInput, "store")
 			Expect(err).NotTo(HaveOccurred())
-			_, _, err = testutil.RunClauditInDir(local.Path, "sync", "push")
+			_, _, err = testutil.RunShiftlogInDir(local.Path, "sync", "push")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Create a clone without notes
@@ -281,7 +281,7 @@ var _ = Describe("Sync Command", func() {
 			Expect(clone.HasNote("refs/notes/claude-conversations", head)).To(BeFalse())
 
 			// Pull notes
-			stdout, _, err := testutil.RunClauditInDir(clone.Path, "sync", "pull")
+			stdout, _, err := testutil.RunShiftlogInDir(clone.Path, "sync", "pull")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stdout).To(ContainSubstring("Fetched"))
 
@@ -297,7 +297,7 @@ var _ = Describe("Sync Command", func() {
 
 			// Dev1 (local) adds a note on initial commit and pushes
 			local.AddNote("refs/notes/claude-conversations", head, "dev1-note-on-initial")
-			_, _, err = testutil.RunClauditInDir(local.Path, "sync", "push")
+			_, _, err = testutil.RunShiftlogInDir(local.Path, "sync", "push")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Dev1 makes a second commit with a note
@@ -306,7 +306,7 @@ var _ = Describe("Sync Command", func() {
 			secondHead, err := local.GetHead()
 			Expect(err).NotTo(HaveOccurred())
 			local.AddNote("refs/notes/claude-conversations", secondHead, "dev1-note-on-second")
-			_, _, err = testutil.RunClauditInDir(local.Path, "sync", "push")
+			_, _, err = testutil.RunShiftlogInDir(local.Path, "sync", "push")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Dev2 (clone) clones the repo and adds its own note on a third commit
@@ -325,7 +325,7 @@ var _ = Describe("Sync Command", func() {
 			clone.AddNote("refs/notes/claude-conversations", thirdHead, "dev2-note-on-third")
 
 			// Dev2 pulls — should merge dev1's notes in
-			stdout, _, err := testutil.RunClauditInDir(clone.Path, "sync", "pull")
+			stdout, _, err := testutil.RunShiftlogInDir(clone.Path, "sync", "pull")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stdout).To(ContainSubstring("merged"))
 
@@ -341,7 +341,7 @@ var _ = Describe("Sync Command", func() {
 
 			// Dev1 adds a note and pushes
 			local.AddNote("refs/notes/claude-conversations", head, "dev1-note")
-			_, _, err = testutil.RunClauditInDir(local.Path, "sync", "push")
+			_, _, err = testutil.RunShiftlogInDir(local.Path, "sync", "push")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Dev2 clones and adds a different note on the SAME commit
@@ -356,7 +356,7 @@ var _ = Describe("Sync Command", func() {
 			clone.AddNote("refs/notes/claude-conversations", head, "dev2-note")
 
 			// Dev2 pulls — should merge via cat_sort_uniq
-			_, _, err = testutil.RunClauditInDir(clone.Path, "sync", "pull")
+			_, _, err = testutil.RunShiftlogInDir(clone.Path, "sync", "pull")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Both notes should be present (concatenated)
@@ -374,7 +374,7 @@ var _ = Describe("Sync Command", func() {
 
 			// Dev1 adds a note and pushes
 			local.AddNote("refs/notes/claude-conversations", head, "dev1-note")
-			_, _, err = testutil.RunClauditInDir(local.Path, "sync", "push")
+			_, _, err = testutil.RunShiftlogInDir(local.Path, "sync", "push")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Dev2 clones and adds a conflicting note
@@ -389,16 +389,16 @@ var _ = Describe("Sync Command", func() {
 			clone.AddNote("refs/notes/claude-conversations", head, "dev2-note")
 
 			// Dev2 tries to push — should fail
-			stdout, _, err := testutil.RunClauditInDir(clone.Path, "sync", "push")
+			stdout, _, err := testutil.RunShiftlogInDir(clone.Path, "sync", "push")
 			Expect(err).To(HaveOccurred())
 			Expect(stdout).To(ContainSubstring("Push rejected"))
 			Expect(stdout).To(ContainSubstring("shiftlog sync pull"))
 
 			// Dev2 pulls first, then push succeeds
-			_, _, err = testutil.RunClauditInDir(clone.Path, "sync", "pull")
+			_, _, err = testutil.RunShiftlogInDir(clone.Path, "sync", "pull")
 			Expect(err).NotTo(HaveOccurred())
 
-			_, _, err = testutil.RunClauditInDir(clone.Path, "sync", "push")
+			_, _, err = testutil.RunShiftlogInDir(clone.Path, "sync", "push")
 			Expect(err).NotTo(HaveOccurred())
 		})
 	})
@@ -410,7 +410,7 @@ var _ = Describe("Sync Command", func() {
 			Expect(os.WriteFile(transcriptPath, []byte(testutil.SampleTranscript()), 0644)).To(Succeed())
 
 			hookInput := testutil.SampleHookInput("session-roundtrip", transcriptPath, "git commit -m 'test'")
-			_, _, err := testutil.RunClauditInDirWithStdin(local.Path, hookInput, "store")
+			_, _, err := testutil.RunShiftlogInDirWithStdin(local.Path, hookInput, "store")
 			Expect(err).NotTo(HaveOccurred())
 
 			head, err := local.GetHead()
@@ -421,7 +421,7 @@ var _ = Describe("Sync Command", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Push to remote
-			_, _, err = testutil.RunClauditInDir(local.Path, "sync", "push")
+			_, _, err = testutil.RunShiftlogInDir(local.Path, "sync", "push")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Create clone and pull
@@ -433,7 +433,7 @@ var _ = Describe("Sync Command", func() {
 			Expect(clone.Run("git", "fetch", "origin")).To(Succeed())
 			Expect(clone.Run("git", "checkout", "-b", "master", "origin/master")).To(Succeed())
 
-			_, _, err = testutil.RunClauditInDir(clone.Path, "sync", "pull")
+			_, _, err = testutil.RunShiftlogInDir(clone.Path, "sync", "pull")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Compare notes

@@ -39,7 +39,7 @@ var _ = Describe("Search Command", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		hookInput := testutil.SampleHookInput(sessionID, transcriptPath, "git commit -m 'test'")
-		_, _, err = testutil.RunClauditInDirWithStdin(repo.Path, hookInput, "store")
+		_, _, err = testutil.RunShiftlogInDirWithStdin(repo.Path, hookInput, "store")
 		Expect(err).NotTo(HaveOccurred())
 
 		return head
@@ -49,7 +49,7 @@ var _ = Describe("Search Command", func() {
 		It("finds content in user messages", func() {
 			storeConversation("session-search-1")
 
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "search", "help me with a task")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "search", "help me with a task")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stdout).To(ContainSubstring("help me with a task"))
 		})
@@ -57,7 +57,7 @@ var _ = Describe("Search Command", func() {
 		It("finds content in assistant messages", func() {
 			storeConversation("session-search-2")
 
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "search", "What would you like help with")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "search", "What would you like help with")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stdout).To(ContainSubstring("[assistant]"))
 		})
@@ -65,7 +65,7 @@ var _ = Describe("Search Command", func() {
 		It("is case-insensitive by default", func() {
 			storeConversation("session-search-case")
 
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "search", "HELLO")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "search", "HELLO")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stdout).To(ContainSubstring("Hello"))
 		})
@@ -73,7 +73,7 @@ var _ = Describe("Search Command", func() {
 		It("shows commit metadata in results", func() {
 			storeConversation("session-search-meta")
 
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "search", "help")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "search", "help")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Should contain short SHA, date, commit message
@@ -88,12 +88,12 @@ var _ = Describe("Search Command", func() {
 			storeConversation("session-search-agent")
 
 			// claude agent (default) should match
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "search", "--agent", "claude")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "search", "--agent", "claude")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stdout).To(ContainSubstring("Initial commit"))
 
 			// copilot agent should not match
-			stdout, _, err = testutil.RunClauditInDir(repo.Path, "search", "--agent", "copilot")
+			stdout, _, err = testutil.RunShiftlogInDir(repo.Path, "search", "--agent", "copilot")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stdout).To(ContainSubstring("no matching conversations found"))
 		})
@@ -102,12 +102,12 @@ var _ = Describe("Search Command", func() {
 			storeConversation("session-search-branch")
 
 			// master branch should match (test repos use master)
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "search", "--branch", "master")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "search", "--branch", "master")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stdout).To(ContainSubstring("Initial commit"))
 
 			// other branch should not match
-			stdout, _, err = testutil.RunClauditInDir(repo.Path, "search", "--branch", "develop")
+			stdout, _, err = testutil.RunShiftlogInDir(repo.Path, "search", "--branch", "develop")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stdout).To(ContainSubstring("no matching conversations found"))
 		})
@@ -123,7 +123,7 @@ var _ = Describe("Search Command", func() {
 			storeConversation("session-limit-2")
 
 			// Limit to 1 result
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "search", "--agent", "claude", "--limit", "1")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "search", "--agent", "claude", "--limit", "1")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Count result headers (lines with SHA pattern followed by date)
@@ -143,7 +143,7 @@ var _ = Describe("Search Command", func() {
 			storeConversation("session-metaonly")
 
 			// With --metadata-only and a filter, should get results without match snippets
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "search", "--agent", "claude", "--metadata-only")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "search", "--agent", "claude", "--metadata-only")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stdout).To(ContainSubstring("Initial commit"))
 			// Should not contain match labels like [user] or [assistant]
@@ -154,7 +154,7 @@ var _ = Describe("Search Command", func() {
 
 	Describe("error cases", func() {
 		It("shows error when no query and no filters", func() {
-			_, stderr, err := testutil.RunClauditInDir(repo.Path, "search")
+			_, stderr, err := testutil.RunShiftlogInDir(repo.Path, "search")
 			Expect(err).To(HaveOccurred())
 			Expect(stderr).To(ContainSubstring("provide a search query or at least one filter flag"))
 		})
@@ -164,7 +164,7 @@ var _ = Describe("Search Command", func() {
 			Expect(err).NotTo(HaveOccurred())
 			defer os.RemoveAll(tmpDir)
 
-			_, stderr, err := testutil.RunClauditInDir(tmpDir, "search", "test")
+			_, stderr, err := testutil.RunShiftlogInDir(tmpDir, "search", "test")
 			Expect(err).To(HaveOccurred())
 			Expect(stderr).To(ContainSubstring("not inside a git repository"))
 		})
@@ -172,7 +172,7 @@ var _ = Describe("Search Command", func() {
 		It("shows clean message when no matches", func() {
 			storeConversation("session-nomatch")
 
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "search", "xyznonexistent12345")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "search", "xyznonexistent12345")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stdout).To(ContainSubstring("no matching conversations found"))
 		})

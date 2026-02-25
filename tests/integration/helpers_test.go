@@ -30,8 +30,8 @@ func getWorkspaceRoot() string {
 	return "."
 }
 
-// getClauditPath returns the path to the shiftlog binary, failing the spec if not found.
-func getClauditPath() string {
+// getShiftlogPath returns the path to the shiftlog binary, failing the spec if not found.
+func getShiftlogPath() string {
 	GinkgoHelper()
 	shiftlogPath := os.Getenv("SHIFTLOG_BINARY")
 	if shiftlogPath == "" {
@@ -163,7 +163,7 @@ func verifyNoteOnHead(tmpDir, expectedAgent string) {
 func setupManualCommitRepo(agentName string) (tmpDir, shiftlogPath string) {
 	GinkgoHelper()
 
-	shiftlogPath = getClauditPath()
+	shiftlogPath = getShiftlogPath()
 	tmpDir = initGitRepo(agentName + "-manual-commit")
 
 	initArgs := []string{"init"}
@@ -293,7 +293,7 @@ func readCaptureEvents(captureFilePath string) captureEvents {
 // It reads the capture file path from CLAUDIT_HOOK_CAPTURE_FILE env var.
 const capturePluginJS = `// Capture plugin for shiftlog integration testing
 // Logs raw hook data to validate OpenCode's plugin API
-export const ClauditPlugin = async ({ directory, client }) => {
+export const ShiftlogPlugin = async ({ directory, client }) => {
   const fs = await import("fs");
   const captureFile = process.env.CLAUDIT_HOOK_CAPTURE_FILE;
   const pendingCommits = new Map();

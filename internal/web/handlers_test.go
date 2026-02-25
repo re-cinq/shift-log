@@ -765,8 +765,8 @@ func TestStaticFileServing(t *testing.T) {
 		srv.mux.ServeHTTP(w, req)
 
 		body := w.Body.String()
-		if !strings.Contains(body, "Claudit - Conversation History") {
-			t.Error("page should contain title 'Claudit - Conversation History'")
+		if !strings.Contains(body, "Shiftlog - Conversation History") {
+			t.Error("page should contain title 'Shiftlog - Conversation History'")
 		}
 	})
 

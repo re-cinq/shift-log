@@ -36,7 +36,7 @@ var _ = Describe("Init Command", func() {
 
 			if config.IsHookless {
 				It("creates no agent-specific config files", func() {
-					_, _, err := testutil.RunClauditInDir(repo.Path, config.InitArgs...)
+					_, _, err := testutil.RunShiftlogInDir(repo.Path, config.InitArgs...)
 					Expect(err).NotTo(HaveOccurred())
 
 					// Verify .shiftlog/config exists with correct agent
@@ -52,7 +52,7 @@ var _ = Describe("Init Command", func() {
 
 			if config.IsRepoRootHooks {
 				It("creates .github/hooks/shiftlog.json with correct structure", func() {
-					_, _, err := testutil.RunClauditInDir(repo.Path, config.InitArgs...)
+					_, _, err := testutil.RunShiftlogInDir(repo.Path, config.InitArgs...)
 					Expect(err).NotTo(HaveOccurred())
 
 					Expect(repo.FileExists(".github/hooks/shiftlog.json")).To(BeTrue())
@@ -79,9 +79,9 @@ var _ = Describe("Init Command", func() {
 				})
 
 				It("is idempotent - no duplicate hooks on re-init", func() {
-					_, _, err := testutil.RunClauditInDir(repo.Path, config.InitArgs...)
+					_, _, err := testutil.RunShiftlogInDir(repo.Path, config.InitArgs...)
 					Expect(err).NotTo(HaveOccurred())
-					_, _, err = testutil.RunClauditInDir(repo.Path, config.InitArgs...)
+					_, _, err = testutil.RunShiftlogInDir(repo.Path, config.InitArgs...)
 					Expect(err).NotTo(HaveOccurred())
 
 					content, err := repo.ReadFile(".github/hooks/shiftlog.json")
@@ -99,7 +99,7 @@ var _ = Describe("Init Command", func() {
 					Expect(os.MkdirAll(filepath.Join(repo.Path, ".github", "hooks"), 0755)).To(Succeed())
 					Expect(repo.WriteFile(".github/hooks/shiftlog.json", `{"version":1,"hooks":{"postToolUse":[{"type":"command","command":"other-tool","timeoutSec":10}]},"existingKey":"existingValue"}`)).To(Succeed())
 
-					_, _, err := testutil.RunClauditInDir(repo.Path, config.InitArgs...)
+					_, _, err := testutil.RunShiftlogInDir(repo.Path, config.InitArgs...)
 					Expect(err).NotTo(HaveOccurred())
 
 					content, err := repo.ReadFile(".github/hooks/shiftlog.json")
@@ -112,7 +112,7 @@ var _ = Describe("Init Command", func() {
 
 			if !config.IsHookless {
 				It("creates settings file at correct path", func() {
-					_, _, err := testutil.RunClauditInDir(repo.Path, config.InitArgs...)
+					_, _, err := testutil.RunShiftlogInDir(repo.Path, config.InitArgs...)
 					Expect(err).NotTo(HaveOccurred())
 
 					Expect(repo.FileExists(config.SettingsFile)).To(BeTrue())
@@ -121,7 +121,7 @@ var _ = Describe("Init Command", func() {
 
 			if config.IsPluginBased {
 				It("creates plugin with correct store command and commit detection", func() {
-					_, _, err := testutil.RunClauditInDir(repo.Path, config.InitArgs...)
+					_, _, err := testutil.RunShiftlogInDir(repo.Path, config.InitArgs...)
 					Expect(err).NotTo(HaveOccurred())
 
 					content, err := repo.ReadFile(config.SettingsFile)
@@ -132,13 +132,13 @@ var _ = Describe("Init Command", func() {
 				})
 
 				It("is idempotent - same content on re-init", func() {
-					_, _, err := testutil.RunClauditInDir(repo.Path, config.InitArgs...)
+					_, _, err := testutil.RunShiftlogInDir(repo.Path, config.InitArgs...)
 					Expect(err).NotTo(HaveOccurred())
 
 					content1, err := repo.ReadFile(config.SettingsFile)
 					Expect(err).NotTo(HaveOccurred())
 
-					_, _, err = testutil.RunClauditInDir(repo.Path, config.InitArgs...)
+					_, _, err = testutil.RunShiftlogInDir(repo.Path, config.InitArgs...)
 					Expect(err).NotTo(HaveOccurred())
 
 					content2, err := repo.ReadFile(config.SettingsFile)
@@ -153,7 +153,7 @@ var _ = Describe("Init Command", func() {
 					otherPlugin := filepath.Join(pluginDir, "other-plugin.js")
 					Expect(os.WriteFile(otherPlugin, []byte("// other plugin"), 0644)).To(Succeed())
 
-					_, _, err := testutil.RunClauditInDir(repo.Path, config.InitArgs...)
+					_, _, err := testutil.RunShiftlogInDir(repo.Path, config.InitArgs...)
 					Expect(err).NotTo(HaveOccurred())
 
 					content, err := os.ReadFile(otherPlugin)
@@ -162,7 +162,7 @@ var _ = Describe("Init Command", func() {
 				})
 			} else if !config.IsHookless && !config.IsRepoRootHooks {
 				It("configures correct hook with right matcher/timeout/command", func() {
-					_, _, err := testutil.RunClauditInDir(repo.Path, config.InitArgs...)
+					_, _, err := testutil.RunShiftlogInDir(repo.Path, config.InitArgs...)
 					Expect(err).NotTo(HaveOccurred())
 
 					content, err := repo.ReadFile(config.SettingsFile)
@@ -189,9 +189,9 @@ var _ = Describe("Init Command", func() {
 				})
 
 				It("is idempotent - no duplicate hooks on re-init", func() {
-					_, _, err := testutil.RunClauditInDir(repo.Path, config.InitArgs...)
+					_, _, err := testutil.RunShiftlogInDir(repo.Path, config.InitArgs...)
 					Expect(err).NotTo(HaveOccurred())
-					_, _, err = testutil.RunClauditInDir(repo.Path, config.InitArgs...)
+					_, _, err = testutil.RunShiftlogInDir(repo.Path, config.InitArgs...)
 					Expect(err).NotTo(HaveOccurred())
 
 					content, err := repo.ReadFile(config.SettingsFile)
@@ -211,7 +211,7 @@ var _ = Describe("Init Command", func() {
 					Expect(os.MkdirAll(settingsDir, 0755)).To(Succeed())
 					Expect(repo.WriteFile(config.SettingsFile, `{"existingKey": "existingValue"}`)).To(Succeed())
 
-					_, _, err := testutil.RunClauditInDir(repo.Path, config.InitArgs...)
+					_, _, err := testutil.RunShiftlogInDir(repo.Path, config.InitArgs...)
 					Expect(err).NotTo(HaveOccurred())
 
 					content, err := repo.ReadFile(config.SettingsFile)
@@ -224,7 +224,7 @@ var _ = Describe("Init Command", func() {
 
 			if config.HasSessionHooks {
 				It("creates session hooks with correct timeouts", func() {
-					_, _, err := testutil.RunClauditInDir(repo.Path, config.InitArgs...)
+					_, _, err := testutil.RunShiftlogInDir(repo.Path, config.InitArgs...)
 					Expect(err).NotTo(HaveOccurred())
 
 					content, err := repo.ReadFile(config.SettingsFile)
@@ -266,7 +266,7 @@ var _ = Describe("Init Command", func() {
 		})
 
 		It("installs git hooks", func() {
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "init")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "init")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stdout).To(ContainSubstring("Installed git hooks"))
 
@@ -283,7 +283,7 @@ var _ = Describe("Init Command", func() {
 			Expect(err).NotTo(HaveOccurred())
 			defer os.RemoveAll(tmpDir)
 
-			_, stderr, err := testutil.RunClauditInDir(tmpDir, "init")
+			_, stderr, err := testutil.RunShiftlogInDir(tmpDir, "init")
 			Expect(err).To(HaveOccurred())
 			Expect(stderr).To(ContainSubstring("not inside a git repository"))
 		})

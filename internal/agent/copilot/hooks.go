@@ -94,8 +94,8 @@ func WriteHooksFile(repoRoot string, hf *HooksFile) error {
 	return os.WriteFile(path, data, 0644)
 }
 
-// AddClauditHooks adds the shiftlog store postToolUse hook entry.
-func AddClauditHooks(hf *HooksFile) {
+// AddShiftlogHooks adds the shiftlog store postToolUse hook entry.
+func AddShiftlogHooks(hf *HooksFile) {
 	entry := HookEntry{
 		Type:       "command",
 		Command:    "shiftlog store --agent=copilot",
@@ -107,8 +107,8 @@ func AddClauditHooks(hf *HooksFile) {
 	)
 }
 
-// RemoveClauditHooks removes shiftlog hook entries from the hooks file.
-func RemoveClauditHooks(hf *HooksFile) {
+// RemoveShiftlogHooks removes shiftlog hook entries from the hooks file.
+func RemoveShiftlogHooks(hf *HooksFile) {
 	for key, entries := range hf.Hooks {
 		filtered := entries[:0]
 		for _, e := range entries {

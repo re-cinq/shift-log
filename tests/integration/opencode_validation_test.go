@@ -76,7 +76,7 @@ var _ = Describe("OpenCode Validation", func() {
 
 			requireBinary("opencode")
 
-			shiftlogPath = getClauditPath()
+			shiftlogPath = getShiftlogPath()
 
 			var err error
 			tmpDir, err = os.MkdirTemp("", "opencode-validation-*")

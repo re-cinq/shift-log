@@ -1,7 +1,7 @@
 # Project Context
 
 ## Purpose
-Claudit is a Golang CLI that stores Claude Code conversation history as Git Notes and provides visualization. It enables teams to:
+Shiftlog is a Golang CLI that stores Claude Code conversation history as Git Notes and provides visualization. It enables teams to:
 - Auto-capture AI conversations when commits are made
 - Resume Claude Code sessions from historical commits
 - Visualize commit history with embedded conversations

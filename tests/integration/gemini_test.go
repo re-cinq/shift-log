@@ -23,7 +23,7 @@ var _ = Describe("Gemini CLI Integration", func() {
 		}
 
 		requireBinary("gemini")
-		shiftlogPath := getClauditPath()
+		shiftlogPath := getShiftlogPath()
 		tmpDir := initGitRepo("gemini-integration")
 		DeferCleanup(os.RemoveAll, tmpDir)
 

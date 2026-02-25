@@ -77,7 +77,7 @@ var _ = Describe("Remote Rebase Notes Remap", func() {
 			Expect(repo.HasNote("refs/notes/claude-conversations", new2SHA)).To(BeFalse())
 
 			// Run remap
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "remap")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "remap")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stdout).To(ContainSubstring("Remapped 2 note(s)"))
 
@@ -112,7 +112,7 @@ var _ = Describe("Remote Rebase Notes Remap", func() {
 			Expect(repo.Run("git", "branch", "-D", "feature")).To(Succeed())
 
 			// Remap
-			_, _, err = testutil.RunClauditInDir(repo.Path, "remap")
+			_, _, err = testutil.RunShiftlogInDir(repo.Path, "remap")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Verify content
@@ -142,7 +142,7 @@ var _ = Describe("Remote Rebase Notes Remap", func() {
 			Expect(repo.Run("git", "branch", "-D", "feature")).To(Succeed())
 
 			// Remap should report unmatched
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "remap")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "remap")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stdout).To(ContainSubstring("orphaned note(s) could not be matched"))
 
@@ -160,7 +160,7 @@ var _ = Describe("Remote Rebase Notes Remap", func() {
 
 			Expect(repo.AddNote("refs/notes/claude-conversations", head, `{"session_id":"reachable"}`)).To(Succeed())
 
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "remap")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "remap")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stdout).To(ContainSubstring("No orphaned notes found"))
 		})
@@ -182,7 +182,7 @@ var _ = Describe("Remote Rebase Notes Remap", func() {
 			Expect(local.Run("git", "push", "-u", "origin", "master")).To(Succeed())
 
 			// Initialize shiftlog (installs hooks with remap)
-			_, _, err = testutil.RunClauditInDir(local.Path, "init")
+			_, _, err = testutil.RunShiftlogInDir(local.Path, "init")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Create feature branch with a note
@@ -196,7 +196,7 @@ var _ = Describe("Remote Rebase Notes Remap", func() {
 
 			// Push feature branch and notes
 			Expect(local.Run("git", "push", "origin", "feature")).To(Succeed())
-			_, _, err = testutil.RunClauditInDir(local.Path, "sync", "push")
+			_, _, err = testutil.RunShiftlogInDir(local.Path, "sync", "push")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Simulate a second developer who does the rebase-merge

@@ -35,7 +35,7 @@ var _ = Describe("Serve Command", func() {
 			Expect(err).NotTo(HaveOccurred())
 			defer os.RemoveAll(tmpDir)
 
-			_, stderr, err := testutil.RunClauditInDir(tmpDir, "serve", "--port", "0")
+			_, stderr, err := testutil.RunShiftlogInDir(tmpDir, "serve", "--port", "0")
 			Expect(err).To(HaveOccurred())
 			Expect(stderr).To(ContainSubstring("not inside a git repository"))
 		})
@@ -43,13 +43,13 @@ var _ = Describe("Serve Command", func() {
 		It("accepts --port flag", func() {
 			// This test just verifies the flag is accepted
 			// We use port 0 to avoid actually binding
-			stdout, _, _ := testutil.RunClaudit("serve", "--help")
+			stdout, _, _ := testutil.RunShiftlog("serve", "--help")
 			Expect(stdout).To(ContainSubstring("--port"))
 			Expect(stdout).To(ContainSubstring("--no-browser"))
 		})
 
 		It("accepts --no-browser flag", func() {
-			stdout, _, _ := testutil.RunClaudit("serve", "--help")
+			stdout, _, _ := testutil.RunShiftlog("serve", "--help")
 			Expect(stdout).To(ContainSubstring("--no-browser"))
 		})
 	})

@@ -25,7 +25,7 @@ browser: build
 # Requires: ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN environment variable
 # Requires: Claude Code CLI in PATH
 integration: build
-	CLAUDIT_BINARY=$(PWD)/$(BINARY) $(GO) test ./tests/integration/... -v -timeout 120s
+	SHIFTLOG_BINARY=$(PWD)/$(BINARY) $(GO) test ./tests/integration/... -v -timeout 120s
 
 install-test:
 	$(GO) test ./tests/install/... -v -timeout 120s

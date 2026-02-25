@@ -51,13 +51,13 @@ func CleanupBinary() {
 	}
 }
 
-// RunClaudit runs the shiftlog binary with the given arguments
-func RunClaudit(args ...string) (string, string, error) {
-	return RunClauditWithStdin("", args...)
+// RunShiftlog runs the shiftlog binary with the given arguments
+func RunShiftlog(args ...string) (string, string, error) {
+	return RunShiftlogWithStdin("", args...)
 }
 
-// RunClauditWithStdin runs shiftlog with stdin input
-func RunClauditWithStdin(stdin string, args ...string) (string, string, error) {
+// RunShiftlogWithStdin runs shiftlog with stdin input
+func RunShiftlogWithStdin(stdin string, args ...string) (string, string, error) {
 	cmd := exec.Command(binaryPath, args...)
 
 	var stdout, stderr bytes.Buffer
@@ -72,13 +72,13 @@ func RunClauditWithStdin(stdin string, args ...string) (string, string, error) {
 	return stdout.String(), stderr.String(), err
 }
 
-// RunClauditInDir runs shiftlog in a specific directory
-func RunClauditInDir(dir string, args ...string) (string, string, error) {
-	return RunClauditInDirWithStdin(dir, "", args...)
+// RunShiftlogInDir runs shiftlog in a specific directory
+func RunShiftlogInDir(dir string, args ...string) (string, string, error) {
+	return RunShiftlogInDirWithStdin(dir, "", args...)
 }
 
-// RunClauditInDirWithStdin runs shiftlog in a specific directory with stdin
-func RunClauditInDirWithStdin(dir, stdin string, args ...string) (string, string, error) {
+// RunShiftlogInDirWithStdin runs shiftlog in a specific directory with stdin
+func RunShiftlogInDirWithStdin(dir, stdin string, args ...string) (string, string, error) {
 	cmd := exec.Command(binaryPath, args...)
 	cmd.Dir = dir
 	// Add binary directory to PATH so hooks can find shiftlog
@@ -96,13 +96,13 @@ func RunClauditInDirWithStdin(dir, stdin string, args ...string) (string, string
 	return stdout.String(), stderr.String(), err
 }
 
-// RunClauditInDirWithEnv runs shiftlog in a specific directory with custom env vars
-func RunClauditInDirWithEnv(dir string, extraEnv []string, args ...string) (string, string, error) {
-	return RunClauditInDirWithEnvAndStdin(dir, extraEnv, "", args...)
+// RunShiftlogInDirWithEnv runs shiftlog in a specific directory with custom env vars
+func RunShiftlogInDirWithEnv(dir string, extraEnv []string, args ...string) (string, string, error) {
+	return RunShiftlogInDirWithEnvAndStdin(dir, extraEnv, "", args...)
 }
 
-// RunClauditInDirWithEnvAndStdin runs shiftlog with custom env vars and stdin
-func RunClauditInDirWithEnvAndStdin(dir string, extraEnv []string, stdin string, args ...string) (string, string, error) {
+// RunShiftlogInDirWithEnvAndStdin runs shiftlog with custom env vars and stdin
+func RunShiftlogInDirWithEnvAndStdin(dir string, extraEnv []string, stdin string, args ...string) (string, string, error) {
 	cmd := exec.Command(binaryPath, args...)
 	cmd.Dir = dir
 

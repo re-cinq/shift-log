@@ -1,6 +1,6 @@
 ## Context
 
-Claudit integrates with 5 npm-distributed agent CLIs. New agent versions are published continuously (sometimes daily for active projects like opencode-ai). The existing CI workflow uses pinned versions in shell commands with no automated tracking. When an upstream breaking change occurs, it is discovered only when a user files a bug.
+Shiftlog integrates with 5 npm-distributed agent CLIs. New agent versions are published continuously (sometimes daily for active projects like opencode-ai). The existing CI workflow uses pinned versions in shell commands with no automated tracking. When an upstream breaking change occurs, it is discovered only when a user files a bug.
 
 The Concourse CI analogy maps cleanly to GitHub Actions:
 - **Resource** → `.github/agent-versions.json` (committed version state)

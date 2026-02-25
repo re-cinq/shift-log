@@ -1,7 +1,7 @@
 # Change: Add Amp (Sourcegraph) Agent Support
 
 ## Why
-Claudit supports Claude Code, Copilot, Gemini CLI, Codex, and OpenCode CLI. Amp is Sourcegraph's AI coding agent that supports multiple frontier models (Claude Opus 4.6, GPT-5.2, Gemini 3, etc.). Adding Amp extends shiftlog's multi-agent coverage to another significant player in the AI coding space.
+Shiftlog supports Claude Code, Copilot, Gemini CLI, Codex, and OpenCode CLI. Amp is Sourcegraph's AI coding agent that supports multiple frontier models (Claude Opus 4.6, GPT-5.2, Gemini 3, etc.). Adding Amp extends shiftlog's multi-agent coverage to another significant player in the AI coding space.
 
 ## What Changes
 - Add Amp agent implementation (`internal/agent/amp/`) following the existing Agent interface pattern

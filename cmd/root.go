@@ -15,7 +15,7 @@ var version = "dev"
 var rootCmd = &cobra.Command{
 	Use:   "shiftlog",
 	Short: "Store and resume AI coding conversations as Git Notes",
-	Long: `Claudit captures AI coding agent conversation history and stores it as Git Notes
+	Long: `Shiftlog captures AI coding agent conversation history and stores it as Git Notes
 attached to commits. This enables teams to preserve AI-assisted development
 context alongside their code and resume interrupted sessions.
 

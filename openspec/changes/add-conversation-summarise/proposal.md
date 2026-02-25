@@ -1,7 +1,7 @@
 # Change: Add Conversation Summarise Command
 
 ## Why
-Users want quick summaries of stored coding conversations without reading full transcripts. Claudit stores conversations in git notes but has no LLM access itself. By delegating to the user's coding agent in non-interactive mode, we can provide on-demand summaries with no new dependencies.
+Users want quick summaries of stored coding conversations without reading full transcripts. Shiftlog stores conversations in git notes but has no LLM access itself. By delegating to the user's coding agent in non-interactive mode, we can provide on-demand summaries with no new dependencies.
 
 ## What Changes
 - Add `shiftlog summarise [ref]` command (alias `tldr`) that pipes a transcript to a coding agent and returns a summary

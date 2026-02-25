@@ -85,8 +85,8 @@ func WriteSettings(geminiDir string, settings *Settings) error {
 	return os.WriteFile(path, data, 0644)
 }
 
-// AddClauditHook adds or updates the shiftlog store hook in Gemini settings.
-func AddClauditHook(settings *Settings) {
+// AddShiftlogHook adds or updates the shiftlog store hook in Gemini settings.
+func AddShiftlogHook(settings *Settings) {
 	shiftlogHook := Hook{
 		Matcher: "run_shell_command",
 		Hooks: []HookCmd{
@@ -135,18 +135,18 @@ func AddSessionHooks(settings *Settings) {
 	settings.Hooks.SessionEnd = addOrUpdateHook(settings.Hooks.SessionEnd, endHook, "shiftlog session-end")
 }
 
-// RemoveClauditHook removes shiftlog store hook entries from AfterTool.
-func RemoveClauditHook(settings *Settings) {
+// RemoveShiftlogHook removes shiftlog store hook entries from AfterTool.
+func RemoveShiftlogHook(settings *Settings) {
 	filtered := settings.Hooks.AfterTool[:0]
 	for _, hook := range settings.Hooks.AfterTool {
-		isClaudit := false
+		isShiftlog := false
 		for _, h := range hook.Hooks {
 			if h.Command == "shiftlog store --agent=gemini" {
-				isClaudit = true
+				isShiftlog = true
 				break
 			}
 		}
-		if !isClaudit {
+		if !isShiftlog {
 			filtered = append(filtered, hook)
 		}
 	}
@@ -162,14 +162,14 @@ func RemoveSessionHooks(settings *Settings) {
 func removeHookByCommand(hooks []Hook, command string) []Hook {
 	filtered := hooks[:0]
 	for _, hook := range hooks {
-		isClaudit := false
+		isShiftlog := false
 		for _, h := range hook.Hooks {
 			if h.Command == command {
-				isClaudit = true
+				isShiftlog = true
 				break
 			}
 		}
-		if !isClaudit {
+		if !isShiftlog {
 			filtered = append(filtered, hook)
 		}
 	}

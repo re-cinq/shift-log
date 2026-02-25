@@ -29,7 +29,7 @@ func (a *Agent) ConfigureHooks(repoRoot string) error {
 		return fmt.Errorf("failed to read Gemini settings: %w", err)
 	}
 
-	AddClauditHook(settings)
+	AddShiftlogHook(settings)
 	AddSessionHooks(settings)
 
 	if err := WriteSettings(geminiDir, settings); err != nil {
@@ -46,7 +46,7 @@ func (a *Agent) RemoveHooks(repoRoot string) error {
 		return nil // no settings file means nothing to remove
 	}
 
-	RemoveClauditHook(settings)
+	RemoveShiftlogHook(settings)
 	RemoveSessionHooks(settings)
 
 	// If only shiftlog content was present, remove the file

@@ -1,7 +1,7 @@
 # cli-foundation Specification
 
 ## Purpose
-Core CLI structure, repository initialization, sync commands, configuration management, and diagnostic tooling for Claudit.
+Core CLI structure, repository initialization, sync commands, configuration management, and diagnostic tooling for Shiftlog.
 ## Requirements
 ### Requirement: CLI entry point with Cobra
 The CLI MUST provide a root command with version information and subcommands.
@@ -120,7 +120,7 @@ The `shiftlog doctor` command MUST check the shiftlog setup and report issues.
 
 #### Scenario: All checks pass
 - **WHEN** `shiftlog doctor` finds no issues
-- **THEN** it prints "All checks passed! Claudit is properly configured."
+- **THEN** it prints "All checks passed! Shiftlog is properly configured."
 - **AND** exits with zero status
 
 ### Requirement: Debug logging command
@@ -154,7 +154,7 @@ The `shiftlog debug` command MUST allow users to toggle debug logging on or off.
 - **THEN** the command exits with an error suggesting `shiftlog init`
 
 ### Requirement: Configuration system
-Claudit MUST store per-repository configuration in `.shiftlog/config`.
+Shiftlog MUST store per-repository configuration in `.shiftlog/config`.
 
 #### Scenario: Config file format
 - **WHEN** examining `.shiftlog/config`
@@ -169,7 +169,7 @@ Claudit MUST store per-repository configuration in `.shiftlog/config`.
 - **THEN** diagnostic messages are written to stderr with "shiftlog: debug:" prefix
 
 ### Requirement: Debug logging output
-Claudit MUST support optional debug logging to stderr for troubleshooting.
+Shiftlog MUST support optional debug logging to stderr for troubleshooting.
 
 #### Scenario: Debug messages on stderr
 - **WHEN** debug is enabled in `.shiftlog/config`

@@ -1,5 +1,5 @@
 # Binary
-claudit
+shiftlog
 
 # Claude Code local settings (user-specific permissions)
 .claude/settings.local.json
@@ -11,4 +11,4 @@ claudit
 
 # OS
 .DS_Store
-.claudit/
+.shiftlog/

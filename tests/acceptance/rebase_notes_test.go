@@ -28,7 +28,7 @@ var _ = Describe("Local Rebase Notes Preservation", func() {
 			repo.SetBinaryPath(testutil.BinaryPath())
 
 			// Initialize shiftlog (sets notes.rewriteRef)
-			_, _, err := testutil.RunClauditInDir(repo.Path, "init")
+			_, _, err := testutil.RunShiftlogInDir(repo.Path, "init")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Create base commit on master
@@ -75,23 +75,23 @@ var _ = Describe("Local Rebase Notes Preservation", func() {
 	Describe("doctor validates notes.rewriteRef", func() {
 		It("reports OK when notes.rewriteRef is configured", func() {
 			// Initialize (sets notes.rewriteRef)
-			_, _, err := testutil.RunClauditInDir(repo.Path, "init")
+			_, _, err := testutil.RunShiftlogInDir(repo.Path, "init")
 			Expect(err).NotTo(HaveOccurred())
 
-			stdout, _, _ := testutil.RunClauditInDir(repo.Path, "doctor")
+			stdout, _, _ := testutil.RunShiftlogInDir(repo.Path, "doctor")
 			Expect(stdout).To(ContainSubstring("Checking notes.rewriteRef config... OK"))
 			Expect(stdout).To(ContainSubstring("Notes will follow commits during rebase"))
 		})
 
 		It("reports FAIL when notes.rewriteRef is missing", func() {
 			// Initialize, then remove the config
-			_, _, err := testutil.RunClauditInDir(repo.Path, "init")
+			_, _, err := testutil.RunShiftlogInDir(repo.Path, "init")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Unset notes.rewriteRef
 			Expect(repo.Run("git", "config", "--unset", "notes.rewriteRef")).To(Succeed())
 
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "doctor")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "doctor")
 			Expect(err).To(HaveOccurred())
 			Expect(stdout).To(ContainSubstring("Checking notes.rewriteRef config... FAIL"))
 			Expect(stdout).To(ContainSubstring("Notes will not follow commits during rebase"))
@@ -103,7 +103,7 @@ var _ = Describe("Local Rebase Notes Preservation", func() {
 			Expect(err).NotTo(HaveOccurred())
 			defer freshRepo.Cleanup()
 
-			stdout, _, _ := testutil.RunClauditInDir(freshRepo.Path, "doctor")
+			stdout, _, _ := testutil.RunShiftlogInDir(freshRepo.Path, "doctor")
 			Expect(stdout).To(ContainSubstring("Checking notes.rewriteRef config... FAIL"))
 		})
 	})

@@ -1,5 +1,5 @@
 ## Context
-The Model Context Protocol (MCP) is a standard for AI tools to access external data. VS Code Copilot, Claude Code, and other agents support MCP servers. Claudit already has rich data retrieval logic in `internal/web/handlers.go` — the MCP server wraps this in JSON-RPC over stdio.
+The Model Context Protocol (MCP) is a standard for AI tools to access external data. VS Code Copilot, Claude Code, and other agents support MCP servers. Shiftlog already has rich data retrieval logic in `internal/web/handlers.go` — the MCP server wraps this in JSON-RPC over stdio.
 
 ## Goals / Non-Goals
 - Goals: Let MCP-aware AI tools query shiftlog conversation history; reuse existing data retrieval; simple setup via `shiftlog init --mcp`

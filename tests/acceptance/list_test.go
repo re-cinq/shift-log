@@ -39,7 +39,7 @@ var _ = Describe("List Command", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		hookInput := testutil.SampleHookInput(sessionID, transcriptPath, "git commit -m 'test'")
-		_, _, err = testutil.RunClauditInDirWithStdin(repo.Path, hookInput, "store")
+		_, _, err = testutil.RunShiftlogInDirWithStdin(repo.Path, hookInput, "store")
 		Expect(err).NotTo(HaveOccurred())
 
 		return head
@@ -49,7 +49,7 @@ var _ = Describe("List Command", func() {
 		It("lists commits with conversations", func() {
 			commitSHA := storeConversation("session-list-1")
 
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "list")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "list")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Should contain SHA
@@ -59,7 +59,7 @@ var _ = Describe("List Command", func() {
 		It("shows message count", func() {
 			storeConversation("session-list-2")
 
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "list")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "list")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Should show message count
@@ -75,7 +75,7 @@ var _ = Describe("List Command", func() {
 			Expect(repo.Commit("Second commit")).To(Succeed())
 			storeConversation("session-multi-2")
 
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "list")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "list")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Should show both commits
@@ -97,7 +97,7 @@ var _ = Describe("List Command", func() {
 			Expect(repo.Commit("Third commit")).To(Succeed())
 			thirdSHA := storeConversation("session-order-3")
 
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "list")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "list")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Should show newest first (third, second, first) - matching git log order
@@ -113,7 +113,7 @@ var _ = Describe("List Command", func() {
 
 	Describe("without conversations", func() {
 		It("shows 'no conversations found' message", func() {
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "list")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "list")
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(stdout).To(ContainSubstring("no conversations found"))
@@ -124,7 +124,7 @@ var _ = Describe("List Command", func() {
 		It("includes commit date", func() {
 			storeConversation("session-date-test")
 
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "list")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "list")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Date format: YYYY-MM-DD
@@ -134,7 +134,7 @@ var _ = Describe("List Command", func() {
 		It("includes commit message", func() {
 			storeConversation("session-msg-test")
 
-			stdout, _, err := testutil.RunClauditInDir(repo.Path, "list")
+			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "list")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Should contain "Initial commit" from our test setup
@@ -149,7 +149,7 @@ var _ = Describe("List Command", func() {
 			Expect(err).NotTo(HaveOccurred())
 			defer os.RemoveAll(tmpDir)
 
-			_, stderr, err := testutil.RunClauditInDir(tmpDir, "list")
+			_, stderr, err := testutil.RunShiftlogInDir(tmpDir, "list")
 			Expect(err).To(HaveOccurred())
 			Expect(stderr).To(ContainSubstring("not inside a git repository"))
 		})
