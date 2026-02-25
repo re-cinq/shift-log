@@ -51,7 +51,7 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 	}
 
 	if migrateDryRun {
-		fmt.Println("Dry run — no changes will be made.\n")
+		fmt.Println("Dry run — no changes will be made.")
 	}
 
 	changed := 0
