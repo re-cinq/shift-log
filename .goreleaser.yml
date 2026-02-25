@@ -58,7 +58,7 @@ changelog:
 release:
   github:
     owner: re-cinq
-    name: shiftlog
+    name: shift-log
   draft: false
   prerelease: auto
   name_template: "{{.Tag}}"
