@@ -27,7 +27,8 @@ func findProjectRoot() string {
 	return "."
 }
 
-// hasGitHubRelease returns true if the repo has at least one published release.
+// hasGitHubRelease returns true if the repo has a published release with a
+// shiftlog-named asset (i.e. published after the claudit → shiftlog rename).
 func hasGitHubRelease() bool {
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Get("https://api.github.com/repos/re-cinq/shift-log/releases/latest")
@@ -39,7 +40,7 @@ func hasGitHubRelease() bool {
 		return false
 	}
 	body, _ := io.ReadAll(resp.Body)
-	return strings.Contains(string(body), `"tag_name"`)
+	return strings.Contains(string(body), `"shiftlog_`)
 }
 
 func TestInstallScript(t *testing.T) {
