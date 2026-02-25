@@ -81,13 +81,13 @@ var _ = Describe("Codex CLI Integration", func() {
 		By("Commit was created successfully")
 
 		// Verify note
-		cmd = exec.Command("git", "notes", "--ref=refs/notes/claude-conversations", "list")
+		cmd = exec.Command("git", "notes", "--ref=refs/notes/shiftlog", "list")
 		cmd.Dir = tmpDir
 		notesOutput, err := cmd.CombinedOutput()
 		Expect(err).NotTo(HaveOccurred(), "Commit was made but no git notes exist!\nOutput: %s", notesOutput)
 		Expect(strings.TrimSpace(string(notesOutput))).NotTo(BeEmpty())
 
-		cmd = exec.Command("git", "notes", "--ref=refs/notes/claude-conversations", "show", "HEAD")
+		cmd = exec.Command("git", "notes", "--ref=refs/notes/shiftlog", "show", "HEAD")
 		cmd.Dir = tmpDir
 		noteContent, err := cmd.CombinedOutput()
 		Expect(err).NotTo(HaveOccurred())

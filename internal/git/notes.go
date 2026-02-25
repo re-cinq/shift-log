@@ -8,10 +8,14 @@ import (
 
 // NotesRef is the git notes ref used to store conversation notes.
 // A custom ref keeps git log clean and avoids collisions with other notes.
-const NotesRef = "refs/notes/claude-conversations"
+const NotesRef = "refs/notes/shiftlog"
 
 // NotesTrackingRef is the ref used to hold fetched remote notes before merging.
-const NotesTrackingRef = "refs/notes/claude-conversations-remote"
+const NotesTrackingRef = "refs/notes/shiftlog-remote"
+
+// LegacyNotesRef is the old ref name used before multi-agent support.
+// Used by the migrate command to upgrade existing repos.
+const LegacyNotesRef = "refs/notes/claude-conversations"
 
 // ErrNonFastForward is returned when a push fails because the remote has diverged.
 var ErrNonFastForward = errors.New("non-fast-forward update: remote notes have diverged, run 'shiftlog sync pull' first")

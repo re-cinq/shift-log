@@ -197,7 +197,7 @@ var _ = Describe("Resume Command", func() {
 					head, err := repo.GetHead()
 					Expect(err).NotTo(HaveOccurred())
 
-					repo.AddNote("refs/notes/claude-conversations", head, "not valid json at all")
+					repo.AddNote("refs/notes/shiftlog", head, "not valid json at all")
 
 					_, stderr, err := testutil.RunShiftlogInDirWithEnv(
 						repo.Path,
@@ -221,7 +221,7 @@ var _ = Describe("Resume Command", func() {
 
 					noteData, err := sc.Marshal()
 					Expect(err).NotTo(HaveOccurred())
-					repo.AddNote("refs/notes/claude-conversations", head, string(noteData))
+					repo.AddNote("refs/notes/shiftlog", head, string(noteData))
 
 					stdout, stderr, _ := testutil.RunShiftlogInDirWithEnv(
 						repo.Path,
@@ -249,7 +249,7 @@ var _ = Describe("Resume Command", func() {
 					}
 					noteData, err := json.Marshal(note)
 					Expect(err).NotTo(HaveOccurred())
-					repo.AddNote("refs/notes/claude-conversations", head, string(noteData))
+					repo.AddNote("refs/notes/shiftlog", head, string(noteData))
 
 					_, stderr, err := testutil.RunShiftlogInDirWithEnv(
 						repo.Path,
@@ -277,7 +277,7 @@ var _ = Describe("Resume Command", func() {
 					}
 					noteData, err := json.Marshal(note)
 					Expect(err).NotTo(HaveOccurred())
-					repo.AddNote("refs/notes/claude-conversations", head, string(noteData))
+					repo.AddNote("refs/notes/shiftlog", head, string(noteData))
 
 					_, stderr, err := testutil.RunShiftlogInDirWithEnv(
 						repo.Path,

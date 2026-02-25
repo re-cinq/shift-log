@@ -29,7 +29,7 @@ var initCmd = &cobra.Command{
 	Long: `Configures the current git repository for conversation capture.
 
 This command:
-- Uses refs/notes/claude-conversations for note storage
+- Uses refs/notes/shiftlog for note storage
 - Configures hooks for the specified coding agent (default: claude)
 - Installs git hooks for automatic note syncing
 - Configures git settings for notes visibility`,

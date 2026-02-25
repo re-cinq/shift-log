@@ -61,9 +61,9 @@ var _ = Describe("End-to-End Store Flow", func() {
 		Expect(stderr).To(ContainSubstring("stored conversation"))
 
 		// Step 4: Verify note was created
-		Expect(local.HasNote("refs/notes/claude-conversations", head)).To(BeTrue())
+		Expect(local.HasNote("refs/notes/shiftlog", head)).To(BeTrue())
 
-		noteContent, err := local.GetNote("refs/notes/claude-conversations", head)
+		noteContent, err := local.GetNote("refs/notes/shiftlog", head)
 		Expect(err).NotTo(HaveOccurred())
 
 		var stored map[string]interface{}
@@ -85,7 +85,7 @@ var _ = Describe("End-to-End Store Flow", func() {
 		Expect(clone.Run("git", "checkout", "-b", "master", "origin/master")).To(Succeed())
 
 		// Clone should not have notes yet
-		Expect(clone.HasNote("refs/notes/claude-conversations", head)).To(BeFalse())
+		Expect(clone.HasNote("refs/notes/shiftlog", head)).To(BeFalse())
 
 		// Pull notes
 		stdout, _, err = testutil.RunShiftlogInDir(clone.Path, "sync", "pull")
@@ -93,9 +93,9 @@ var _ = Describe("End-to-End Store Flow", func() {
 		Expect(stdout).To(ContainSubstring("Fetched"))
 
 		// Verify note is now available
-		Expect(clone.HasNote("refs/notes/claude-conversations", head)).To(BeTrue())
+		Expect(clone.HasNote("refs/notes/shiftlog", head)).To(BeTrue())
 
-		clonedNote, err := clone.GetNote("refs/notes/claude-conversations", head)
+		clonedNote, err := clone.GetNote("refs/notes/shiftlog", head)
 		Expect(err).NotTo(HaveOccurred())
 
 		var clonedStored map[string]interface{}

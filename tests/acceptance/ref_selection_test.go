@@ -27,7 +27,7 @@ var _ = Describe("Notes Ref", func() {
 	})
 
 	Describe("custom ref usage", func() {
-		It("configures notes.displayRef to claude-conversations", func() {
+		It("configures notes.displayRef to shiftlog", func() {
 			_, _, err := testutil.RunShiftlogInDir(repo.Path, "init")
 			Expect(err).NotTo(HaveOccurred())
 
@@ -35,10 +35,10 @@ var _ = Describe("Notes Ref", func() {
 			cmd.Dir = repo.Path
 			output, err := cmd.Output()
 			Expect(err).NotTo(HaveOccurred())
-			Expect(string(output)).To(ContainSubstring("refs/notes/claude-conversations"))
+			Expect(string(output)).To(ContainSubstring("refs/notes/shiftlog"))
 		})
 
-		It("configures notes.rewriteRef to claude-conversations", func() {
+		It("configures notes.rewriteRef to shiftlog", func() {
 			_, _, err := testutil.RunShiftlogInDir(repo.Path, "init")
 			Expect(err).NotTo(HaveOccurred())
 
@@ -46,7 +46,7 @@ var _ = Describe("Notes Ref", func() {
 			cmd.Dir = repo.Path
 			output, err := cmd.Output()
 			Expect(err).NotTo(HaveOccurred())
-			Expect(string(output)).To(ContainSubstring("refs/notes/claude-conversations"))
+			Expect(string(output)).To(ContainSubstring("refs/notes/shiftlog"))
 		})
 	})
 
@@ -71,7 +71,7 @@ var _ = Describe("Notes Ref", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Verify note was created on custom ref
-			Expect(repo.HasNote("refs/notes/claude-conversations", head)).To(BeTrue())
+			Expect(repo.HasNote("refs/notes/shiftlog", head)).To(BeTrue())
 			// Should NOT be on default ref
 			Expect(repo.HasNote("refs/notes/commits", head)).To(BeFalse())
 		})

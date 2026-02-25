@@ -89,7 +89,7 @@ In order to understand _how_ and _why_ a commit was made, we need to see the con
 
 ## How It Works
 
-Shiftlog uses [Git Notes](https://git-scm.com/docs/git-notes) to attach conversations to commits, stored under `refs/notes/claude-conversations` to keep `git log` clean. When you run `shiftlog init`, it sets up hooks so:
+Shiftlog uses [Git Notes](https://git-scm.com/docs/git-notes) to attach conversations to commits, stored under `refs/notes/shiftlog` to keep `git log` clean. When you run `shiftlog init`, it sets up hooks so:
 
 1. When the coding agent makes a commit, the conversation is saved automatically
 2. When you make a commit during an agent session, it's saved too
@@ -97,7 +97,7 @@ Shiftlog uses [Git Notes](https://git-scm.com/docs/git-notes) to attach conversa
 
 No extra steps needed during your normal workflow.
 
-To view notes directly with git: `git log --notes=claude-conversations`
+To view notes directly with git: `git log --notes=shiftlog`
 
 ## Commands
 
@@ -139,12 +139,12 @@ Shiftlog is worktree-safe. If you use `git worktree` to work on multiple branche
 
 ## Local Rebase
 
-Conversation notes automatically follow commits when you rebase. During `shiftlog init`, the `notes.rewriteRef` git config is set to `refs/notes/claude-conversations`, which tells git to remap notes to the new commit SHAs during rebase. No manual steps are needed.
+Conversation notes automatically follow commits when you rebase. During `shiftlog init`, the `notes.rewriteRef` git config is set to `refs/notes/shiftlog`, which tells git to remap notes to the new commit SHAs during rebase. No manual steps are needed.
 
 If you initialized before this config was added, run `shiftlog init` again or set it manually:
 
 ```bash
-git config notes.rewriteRef refs/notes/claude-conversations
+git config notes.rewriteRef refs/notes/shiftlog
 ```
 
 You can verify the config is set with `shiftlog doctor`.

@@ -55,10 +55,10 @@ var _ = Describe("Git Hooks Auto-Sync", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Verify local has the note
-			Expect(local.HasNote("refs/notes/claude-conversations", head)).To(BeTrue())
+			Expect(local.HasNote("refs/notes/shiftlog", head)).To(BeTrue())
 
 			// Remote should NOT have the note yet
-			Expect(remote.HasNote("refs/notes/claude-conversations", head)).To(BeFalse())
+			Expect(remote.HasNote("refs/notes/shiftlog", head)).To(BeFalse())
 
 			// Make a change and push (triggers pre-push hook)
 			Expect(local.WriteFile("new-file.txt", "content")).To(Succeed())
@@ -66,7 +66,7 @@ var _ = Describe("Git Hooks Auto-Sync", func() {
 			Expect(local.Run("git", "push", "origin", "master")).To(Succeed())
 
 			// Now remote SHOULD have the note (hook pushed it)
-			Expect(remote.HasNote("refs/notes/claude-conversations", head)).To(BeTrue())
+			Expect(remote.HasNote("refs/notes/shiftlog", head)).To(BeTrue())
 		})
 	})
 
@@ -107,7 +107,7 @@ var _ = Describe("Git Hooks Auto-Sync", func() {
 			clone.SetBinaryPath(testutil.BinaryPath())
 
 			// Clone should not have notes yet
-			Expect(clone.HasNote("refs/notes/claude-conversations", head)).To(BeFalse())
+			Expect(clone.HasNote("refs/notes/shiftlog", head)).To(BeFalse())
 
 			// Push a new commit from local so clone has something to pull
 			Expect(local.WriteFile("another.txt", "content")).To(Succeed())
@@ -118,7 +118,7 @@ var _ = Describe("Git Hooks Auto-Sync", func() {
 			Expect(clone.Run("git", "pull", "origin", "master")).To(Succeed())
 
 			// Now clone should have the note (hook fetched it)
-			Expect(clone.HasNote("refs/notes/claude-conversations", head)).To(BeTrue())
+			Expect(clone.HasNote("refs/notes/shiftlog", head)).To(BeTrue())
 		})
 	})
 })
@@ -185,10 +185,10 @@ var _ = Describe("Sync Command", func() {
 			Expect(stdout).To(ContainSubstring("Pushed"))
 
 			// Verify upstream has the notes ref
-			Expect(upstream.HasNote("refs/notes/claude-conversations", head)).To(BeTrue())
+			Expect(upstream.HasNote("refs/notes/shiftlog", head)).To(BeTrue())
 
 			// Verify origin does NOT have the notes ref (we didn't push there)
-			Expect(remote.HasNote("refs/notes/claude-conversations", head)).To(BeFalse())
+			Expect(remote.HasNote("refs/notes/shiftlog", head)).To(BeFalse())
 		})
 
 		It("pulls notes from non-origin remote with --remote flag", func() {
@@ -215,7 +215,7 @@ var _ = Describe("Sync Command", func() {
 			Expect(clone.Run("git", "checkout", "-b", "master", "upstream/master")).To(Succeed())
 
 			// Clone should not have notes yet
-			Expect(clone.HasNote("refs/notes/claude-conversations", head)).To(BeFalse())
+			Expect(clone.HasNote("refs/notes/shiftlog", head)).To(BeFalse())
 
 			// Pull notes from upstream
 			stdout, _, err := testutil.RunShiftlogInDir(clone.Path, "sync", "pull", "--remote=upstream")
@@ -223,7 +223,7 @@ var _ = Describe("Sync Command", func() {
 			Expect(stdout).To(ContainSubstring("Fetched"))
 
 			// Now clone should have the note
-			Expect(clone.HasNote("refs/notes/claude-conversations", head)).To(BeTrue())
+			Expect(clone.HasNote("refs/notes/shiftlog", head)).To(BeTrue())
 		})
 	})
 
@@ -247,7 +247,7 @@ var _ = Describe("Sync Command", func() {
 			Expect(stdout).To(ContainSubstring("Pushed"))
 
 			// Verify remote has the notes ref
-			output, err := remote.RunOutput("git", "notes", "--ref", "refs/notes/claude-conversations", "list")
+			output, err := remote.RunOutput("git", "notes", "--ref", "refs/notes/shiftlog", "list")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(output).To(ContainSubstring(head))
 		})
@@ -278,7 +278,7 @@ var _ = Describe("Sync Command", func() {
 			Expect(clone.Run("git", "checkout", "-b", "master", "origin/master")).To(Succeed())
 
 			// Clone should not have notes yet
-			Expect(clone.HasNote("refs/notes/claude-conversations", head)).To(BeFalse())
+			Expect(clone.HasNote("refs/notes/shiftlog", head)).To(BeFalse())
 
 			// Pull notes
 			stdout, _, err := testutil.RunShiftlogInDir(clone.Path, "sync", "pull")
@@ -286,7 +286,7 @@ var _ = Describe("Sync Command", func() {
 			Expect(stdout).To(ContainSubstring("Fetched"))
 
 			// Now clone should have the note
-			Expect(clone.HasNote("refs/notes/claude-conversations", head)).To(BeTrue())
+			Expect(clone.HasNote("refs/notes/shiftlog", head)).To(BeTrue())
 		})
 	})
 
@@ -296,7 +296,7 @@ var _ = Describe("Sync Command", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Dev1 (local) adds a note on initial commit and pushes
-			local.AddNote("refs/notes/claude-conversations", head, "dev1-note-on-initial")
+			local.AddNote("refs/notes/shiftlog", head, "dev1-note-on-initial")
 			_, _, err = testutil.RunShiftlogInDir(local.Path, "sync", "push")
 			Expect(err).NotTo(HaveOccurred())
 
@@ -305,7 +305,7 @@ var _ = Describe("Sync Command", func() {
 			Expect(local.Commit("second commit")).To(Succeed())
 			secondHead, err := local.GetHead()
 			Expect(err).NotTo(HaveOccurred())
-			local.AddNote("refs/notes/claude-conversations", secondHead, "dev1-note-on-second")
+			local.AddNote("refs/notes/shiftlog", secondHead, "dev1-note-on-second")
 			_, _, err = testutil.RunShiftlogInDir(local.Path, "sync", "push")
 			Expect(err).NotTo(HaveOccurred())
 
@@ -322,7 +322,7 @@ var _ = Describe("Sync Command", func() {
 			Expect(clone.Commit("third commit")).To(Succeed())
 			thirdHead, err := clone.GetHead()
 			Expect(err).NotTo(HaveOccurred())
-			clone.AddNote("refs/notes/claude-conversations", thirdHead, "dev2-note-on-third")
+			clone.AddNote("refs/notes/shiftlog", thirdHead, "dev2-note-on-third")
 
 			// Dev2 pulls — should merge dev1's notes in
 			stdout, _, err := testutil.RunShiftlogInDir(clone.Path, "sync", "pull")
@@ -330,9 +330,9 @@ var _ = Describe("Sync Command", func() {
 			Expect(stdout).To(ContainSubstring("merged"))
 
 			// All three notes should be present
-			Expect(clone.HasNote("refs/notes/claude-conversations", head)).To(BeTrue())
-			Expect(clone.HasNote("refs/notes/claude-conversations", secondHead)).To(BeTrue())
-			Expect(clone.HasNote("refs/notes/claude-conversations", thirdHead)).To(BeTrue())
+			Expect(clone.HasNote("refs/notes/shiftlog", head)).To(BeTrue())
+			Expect(clone.HasNote("refs/notes/shiftlog", secondHead)).To(BeTrue())
+			Expect(clone.HasNote("refs/notes/shiftlog", thirdHead)).To(BeTrue())
 		})
 
 		It("concatenates conflicting notes on the same commit SHA", func() {
@@ -340,7 +340,7 @@ var _ = Describe("Sync Command", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Dev1 adds a note and pushes
-			local.AddNote("refs/notes/claude-conversations", head, "dev1-note")
+			local.AddNote("refs/notes/shiftlog", head, "dev1-note")
 			_, _, err = testutil.RunShiftlogInDir(local.Path, "sync", "push")
 			Expect(err).NotTo(HaveOccurred())
 
@@ -353,14 +353,14 @@ var _ = Describe("Sync Command", func() {
 			Expect(clone.Run("git", "fetch", "origin")).To(Succeed())
 			Expect(clone.Run("git", "checkout", "-b", "master", "origin/master")).To(Succeed())
 
-			clone.AddNote("refs/notes/claude-conversations", head, "dev2-note")
+			clone.AddNote("refs/notes/shiftlog", head, "dev2-note")
 
 			// Dev2 pulls — should merge via cat_sort_uniq
 			_, _, err = testutil.RunShiftlogInDir(clone.Path, "sync", "pull")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Both notes should be present (concatenated)
-			note, err := clone.GetNote("refs/notes/claude-conversations", head)
+			note, err := clone.GetNote("refs/notes/shiftlog", head)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(note).To(ContainSubstring("dev1-note"))
 			Expect(note).To(ContainSubstring("dev2-note"))
@@ -373,7 +373,7 @@ var _ = Describe("Sync Command", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Dev1 adds a note and pushes
-			local.AddNote("refs/notes/claude-conversations", head, "dev1-note")
+			local.AddNote("refs/notes/shiftlog", head, "dev1-note")
 			_, _, err = testutil.RunShiftlogInDir(local.Path, "sync", "push")
 			Expect(err).NotTo(HaveOccurred())
 
@@ -386,7 +386,7 @@ var _ = Describe("Sync Command", func() {
 			Expect(clone.Run("git", "fetch", "origin")).To(Succeed())
 			Expect(clone.Run("git", "checkout", "-b", "master", "origin/master")).To(Succeed())
 
-			clone.AddNote("refs/notes/claude-conversations", head, "dev2-note")
+			clone.AddNote("refs/notes/shiftlog", head, "dev2-note")
 
 			// Dev2 tries to push — should fail
 			stdout, _, err := testutil.RunShiftlogInDir(clone.Path, "sync", "push")
@@ -417,7 +417,7 @@ var _ = Describe("Sync Command", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Get original note content
-			originalNote, err := local.GetNote("refs/notes/claude-conversations", head)
+			originalNote, err := local.GetNote("refs/notes/shiftlog", head)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Push to remote
@@ -437,7 +437,7 @@ var _ = Describe("Sync Command", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Compare notes
-			clonedNote, err := clone.GetNote("refs/notes/claude-conversations", head)
+			clonedNote, err := clone.GetNote("refs/notes/shiftlog", head)
 			Expect(err).NotTo(HaveOccurred())
 
 			var original, cloned map[string]interface{}

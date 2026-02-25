@@ -80,7 +80,7 @@ var _ = Describe("Manual Store Command", func() {
 			Expect(stderr).To(Or(ContainSubstring("stored conversation"), ContainSubstring("already stored")))
 
 			// Verify note was created (this is the key assertion)
-			noteOutput, _ := repo.RunOutput("git", "notes", "--ref=refs/notes/claude-conversations", "show", "HEAD")
+			noteOutput, _ := repo.RunOutput("git", "notes", "--ref=refs/notes/shiftlog", "show", "HEAD")
 			Expect(noteOutput).To(ContainSubstring("test-session-123"))
 		})
 
@@ -157,7 +157,7 @@ var _ = Describe("Manual Store Command", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Verify first session stored
-			noteOutput1, _ := repo.RunOutput("git", "notes", "--ref=refs/notes/claude-conversations", "show", "HEAD")
+			noteOutput1, _ := repo.RunOutput("git", "notes", "--ref=refs/notes/shiftlog", "show", "HEAD")
 			Expect(noteOutput1).To(ContainSubstring("first-session"))
 
 			// Change to second session
@@ -176,7 +176,7 @@ var _ = Describe("Manual Store Command", func() {
 			Expect(stderr2).To(ContainSubstring("stored conversation"))
 
 			// Verify second session stored
-			noteOutput2, _ := repo.RunOutput("git", "notes", "--ref=refs/notes/claude-conversations", "show", "HEAD")
+			noteOutput2, _ := repo.RunOutput("git", "notes", "--ref=refs/notes/shiftlog", "show", "HEAD")
 			Expect(noteOutput2).To(ContainSubstring("second-session"))
 			Expect(noteOutput2).NotTo(ContainSubstring("first-session"))
 		})
@@ -212,7 +212,7 @@ var _ = Describe("Manual Store Command", func() {
 			Expect(stderr).NotTo(ContainSubstring("stored"))
 
 			// Verify no note was created
-			_, err = repo.RunOutput("git", "notes", "--ref=refs/notes/claude-conversations", "show", "HEAD")
+			_, err = repo.RunOutput("git", "notes", "--ref=refs/notes/shiftlog", "show", "HEAD")
 			Expect(err).To(HaveOccurred()) // Should fail because no note exists
 		})
 	})

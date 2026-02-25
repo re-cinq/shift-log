@@ -45,8 +45,8 @@ var _ = Describe("Remote Rebase Notes Remap", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Add notes to both feature commits
-			Expect(repo.AddNote("refs/notes/claude-conversations", feat1SHA, `{"session_id":"remap-test-1"}`)).To(Succeed())
-			Expect(repo.AddNote("refs/notes/claude-conversations", feat2SHA, `{"session_id":"remap-test-2"}`)).To(Succeed())
+			Expect(repo.AddNote("refs/notes/shiftlog", feat1SHA, `{"session_id":"remap-test-1"}`)).To(Succeed())
+			Expect(repo.AddNote("refs/notes/shiftlog", feat2SHA, `{"session_id":"remap-test-2"}`)).To(Succeed())
 
 			// Go back to master and diverge (so cherry-pick produces new SHAs)
 			Expect(repo.Run("git", "checkout", "master")).To(Succeed())
@@ -70,11 +70,11 @@ var _ = Describe("Remote Rebase Notes Remap", func() {
 			Expect(repo.Run("git", "branch", "-D", "feature")).To(Succeed())
 
 			// Notes should still be on the old SHAs
-			Expect(repo.HasNote("refs/notes/claude-conversations", feat1SHA)).To(BeTrue())
-			Expect(repo.HasNote("refs/notes/claude-conversations", feat2SHA)).To(BeTrue())
+			Expect(repo.HasNote("refs/notes/shiftlog", feat1SHA)).To(BeTrue())
+			Expect(repo.HasNote("refs/notes/shiftlog", feat2SHA)).To(BeTrue())
 			// But NOT on the new SHAs yet
-			Expect(repo.HasNote("refs/notes/claude-conversations", new1SHA)).To(BeFalse())
-			Expect(repo.HasNote("refs/notes/claude-conversations", new2SHA)).To(BeFalse())
+			Expect(repo.HasNote("refs/notes/shiftlog", new1SHA)).To(BeFalse())
+			Expect(repo.HasNote("refs/notes/shiftlog", new2SHA)).To(BeFalse())
 
 			// Run remap
 			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "remap")
@@ -82,8 +82,8 @@ var _ = Describe("Remote Rebase Notes Remap", func() {
 			Expect(stdout).To(ContainSubstring("Remapped 2 note(s)"))
 
 			// Notes should now be on the new SHAs
-			Expect(repo.HasNote("refs/notes/claude-conversations", new1SHA)).To(BeTrue())
-			Expect(repo.HasNote("refs/notes/claude-conversations", new2SHA)).To(BeTrue())
+			Expect(repo.HasNote("refs/notes/shiftlog", new1SHA)).To(BeTrue())
+			Expect(repo.HasNote("refs/notes/shiftlog", new2SHA)).To(BeTrue())
 		})
 	})
 
@@ -99,7 +99,7 @@ var _ = Describe("Remote Rebase Notes Remap", func() {
 			featSHA, err := repo.GetHead()
 			Expect(err).NotTo(HaveOccurred())
 
-			Expect(repo.AddNote("refs/notes/claude-conversations", featSHA, `{"session_id":"content-check","version":1}`)).To(Succeed())
+			Expect(repo.AddNote("refs/notes/shiftlog", featSHA, `{"session_id":"content-check","version":1}`)).To(Succeed())
 
 			// Diverge master and cherry-pick
 			Expect(repo.Run("git", "checkout", "master")).To(Succeed())
@@ -116,7 +116,7 @@ var _ = Describe("Remote Rebase Notes Remap", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Verify content
-			note, err := repo.GetNote("refs/notes/claude-conversations", newSHA)
+			note, err := repo.GetNote("refs/notes/shiftlog", newSHA)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(note).To(ContainSubstring("content-check"))
 			Expect(note).To(ContainSubstring(`"version":1`))
@@ -135,7 +135,7 @@ var _ = Describe("Remote Rebase Notes Remap", func() {
 			featSHA, err := repo.GetHead()
 			Expect(err).NotTo(HaveOccurred())
 
-			Expect(repo.AddNote("refs/notes/claude-conversations", featSHA, `{"session_id":"unmatched"}`)).To(Succeed())
+			Expect(repo.AddNote("refs/notes/shiftlog", featSHA, `{"session_id":"unmatched"}`)).To(Succeed())
 
 			// Go back to master — do NOT cherry-pick the feature commit
 			Expect(repo.Run("git", "checkout", "master")).To(Succeed())
@@ -147,7 +147,7 @@ var _ = Describe("Remote Rebase Notes Remap", func() {
 			Expect(stdout).To(ContainSubstring("orphaned note(s) could not be matched"))
 
 			// The original note should still exist
-			Expect(repo.HasNote("refs/notes/claude-conversations", featSHA)).To(BeTrue())
+			Expect(repo.HasNote("refs/notes/shiftlog", featSHA)).To(BeTrue())
 		})
 	})
 
@@ -158,7 +158,7 @@ var _ = Describe("Remote Rebase Notes Remap", func() {
 			head, err := repo.GetHead()
 			Expect(err).NotTo(HaveOccurred())
 
-			Expect(repo.AddNote("refs/notes/claude-conversations", head, `{"session_id":"reachable"}`)).To(Succeed())
+			Expect(repo.AddNote("refs/notes/shiftlog", head, `{"session_id":"reachable"}`)).To(Succeed())
 
 			stdout, _, err := testutil.RunShiftlogInDir(repo.Path, "remap")
 			Expect(err).NotTo(HaveOccurred())
@@ -192,7 +192,7 @@ var _ = Describe("Remote Rebase Notes Remap", func() {
 			featSHA, err := local.GetHead()
 			Expect(err).NotTo(HaveOccurred())
 
-			Expect(local.AddNote("refs/notes/claude-conversations", featSHA, `{"session_id":"hook-remap"}`)).To(Succeed())
+			Expect(local.AddNote("refs/notes/shiftlog", featSHA, `{"session_id":"hook-remap"}`)).To(Succeed())
 
 			// Push feature branch and notes
 			Expect(local.Run("git", "push", "origin", "feature")).To(Succeed())
@@ -241,9 +241,9 @@ var _ = Describe("Remote Rebase Notes Remap", func() {
 					break
 				}
 				sha = sha[:len(sha)-1] // trim newline
-				if local.HasNote("refs/notes/claude-conversations", sha) && sha != featSHA {
+				if local.HasNote("refs/notes/shiftlog", sha) && sha != featSHA {
 					found = true
-					note, err := local.GetNote("refs/notes/claude-conversations", sha)
+					note, err := local.GetNote("refs/notes/shiftlog", sha)
 					Expect(err).NotTo(HaveOccurred())
 					Expect(note).To(ContainSubstring("hook-remap"))
 					break
@@ -255,7 +255,7 @@ var _ = Describe("Remote Rebase Notes Remap", func() {
 			if !found {
 				// If remap didn't find orphans (branch not yet pruned), the note
 				// should still exist on the original SHA
-				Expect(local.HasNote("refs/notes/claude-conversations", featSHA)).To(BeTrue())
+				Expect(local.HasNote("refs/notes/shiftlog", featSHA)).To(BeTrue())
 				_, _ = fmt.Println("Note still on original SHA (branch not yet pruned)")
 			} else {
 				_, _ = fmt.Println("Note successfully remapped to new SHA on", newHead[:7])

@@ -46,8 +46,8 @@ var _ = Describe("Local Rebase Notes Preservation", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Add a note to the feature commit
-			repo.AddNote("refs/notes/claude-conversations", featureHead, `{"session_id":"rebase-test","version":1}`)
-			Expect(repo.HasNote("refs/notes/claude-conversations", featureHead)).To(BeTrue())
+			repo.AddNote("refs/notes/shiftlog", featureHead, `{"session_id":"rebase-test","version":1}`)
+			Expect(repo.HasNote("refs/notes/shiftlog", featureHead)).To(BeTrue())
 
 			// Go back to master and add a new commit (so rebase will rewrite)
 			Expect(repo.Run("git", "checkout", "master")).To(Succeed())
@@ -64,9 +64,9 @@ var _ = Describe("Local Rebase Notes Preservation", func() {
 			Expect(newHead).NotTo(Equal(featureHead))
 
 			// The note should now be on the NEW commit SHA
-			Expect(repo.HasNote("refs/notes/claude-conversations", newHead)).To(BeTrue())
+			Expect(repo.HasNote("refs/notes/shiftlog", newHead)).To(BeTrue())
 
-			noteContent, err := repo.GetNote("refs/notes/claude-conversations", newHead)
+			noteContent, err := repo.GetNote("refs/notes/shiftlog", newHead)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(noteContent).To(ContainSubstring("rebase-test"))
 		})

@@ -53,7 +53,7 @@ var _ = Describe("Store Command", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(stderr).To(ContainSubstring("stored conversation"))
 
-				Expect(repo.HasNote("refs/notes/claude-conversations", head)).To(BeTrue())
+				Expect(repo.HasNote("refs/notes/shiftlog", head)).To(BeTrue())
 			})
 
 			It("stores note with expected metadata", func() {
@@ -67,7 +67,7 @@ var _ = Describe("Store Command", func() {
 				_, _, err = testutil.RunShiftlogInDirWithStdin(repo.Path, hookInput, config.StoreArgs...)
 				Expect(err).NotTo(HaveOccurred())
 
-				noteContent, err := repo.GetNote("refs/notes/claude-conversations", head)
+				noteContent, err := repo.GetNote("refs/notes/shiftlog", head)
 				Expect(err).NotTo(HaveOccurred())
 
 				var stored map[string]interface{}
@@ -91,7 +91,7 @@ var _ = Describe("Store Command", func() {
 				_, _, err = testutil.RunShiftlogInDirWithStdin(repo.Path, hookInput, config.StoreArgs...)
 				Expect(err).NotTo(HaveOccurred())
 
-				noteContent, err := repo.GetNote("refs/notes/claude-conversations", head)
+				noteContent, err := repo.GetNote("refs/notes/shiftlog", head)
 				Expect(err).NotTo(HaveOccurred())
 
 				var stored map[string]interface{}
@@ -114,7 +114,7 @@ var _ = Describe("Store Command", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(stderr).To(BeEmpty())
 
-				Expect(repo.HasNote("refs/notes/claude-conversations", head)).To(BeFalse())
+				Expect(repo.HasNote("refs/notes/shiftlog", head)).To(BeFalse())
 			})
 
 			It("exits silently for non-matching tool", func() {
@@ -127,7 +127,7 @@ var _ = Describe("Store Command", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(stderr).To(BeEmpty())
 
-				Expect(repo.HasNote("refs/notes/claude-conversations", head)).To(BeFalse())
+				Expect(repo.HasNote("refs/notes/shiftlog", head)).To(BeFalse())
 			})
 
 			It("exits with warning for malformed JSON", func() {
@@ -147,7 +147,7 @@ var _ = Describe("Store Command", func() {
 			_, _, err = testutil.RunShiftlogInDirWithStdin(repo.Path, hookInput, config.StoreArgs...)
 			Expect(err).NotTo(HaveOccurred())
 
-			noteContent, err := repo.GetNote("refs/notes/claude-conversations", head)
+			noteContent, err := repo.GetNote("refs/notes/shiftlog", head)
 			Expect(err).NotTo(HaveOccurred())
 
 			var stored map[string]interface{}

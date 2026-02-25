@@ -130,7 +130,7 @@ func initGitRepo(prefix string) string {
 func verifyNoteOnHead(tmpDir, expectedAgent string) {
 	GinkgoHelper()
 
-	cmd := exec.Command("git", "notes", "--ref=refs/notes/claude-conversations", "list")
+	cmd := exec.Command("git", "notes", "--ref=refs/notes/shiftlog", "list")
 	cmd.Dir = tmpDir
 	notesOutput, err := cmd.CombinedOutput()
 	Expect(err).NotTo(HaveOccurred(), "Commit was made but no git notes exist!\nOutput: %s", notesOutput)
@@ -138,7 +138,7 @@ func verifyNoteOnHead(tmpDir, expectedAgent string) {
 
 	By("Git note was created by shiftlog hook")
 
-	cmd = exec.Command("git", "notes", "--ref=refs/notes/claude-conversations", "show", "HEAD")
+	cmd = exec.Command("git", "notes", "--ref=refs/notes/shiftlog", "show", "HEAD")
 	cmd.Dir = tmpDir
 	noteContent, err := cmd.CombinedOutput()
 	Expect(err).NotTo(HaveOccurred(), "Note exists but cannot be read")

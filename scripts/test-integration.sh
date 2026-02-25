@@ -101,10 +101,10 @@ echo
 
 # Check if note was created
 echo "4. Verifying git note was created..."
-if git notes --ref=refs/notes/claude-conversations show HEAD &> /dev/null; then
+if git notes --ref=refs/notes/shiftlog show HEAD &> /dev/null; then
     echo "   ✓ Git note created successfully"
     echo "   Note content preview:"
-    git notes --ref=refs/notes/claude-conversations show HEAD | head -c 200
+    git notes --ref=refs/notes/shiftlog show HEAD | head -c 200
     echo "..."
 else
     echo "   ERROR: Git note was not created"

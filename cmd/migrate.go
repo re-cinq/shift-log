@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -79,6 +80,13 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 
 	// 4. Rename Copilot hooks file
 	n, err = migrateCopilotHooks(repoRoot)
+	if err != nil {
+		return err
+	}
+	changed += n
+
+	// 5. Migrate notes ref: refs/notes/claude-conversations → refs/notes/shiftlog
+	n, err = migrateNotesRef()
 	if err != nil {
 		return err
 	}
@@ -251,6 +259,49 @@ func migrateCopilotHooks(repoRoot string) (int, error) {
 	if !migrateDryRun {
 		if err := os.Rename(oldPath, newPath); err != nil {
 			return 0, fmt.Errorf("failed to rename claudit.json: %w", err)
+		}
+	}
+	return 1, nil
+}
+
+// migrateNotesRef copies refs/notes/claude-conversations → refs/notes/shiftlog
+// and updates notes.rewriteRef / notes.displayRef git config if they still
+// point to the old ref.
+func migrateNotesRef() (int, error) {
+	oldRef := git.LegacyNotesRef
+	newRef := git.NotesRef
+
+	// Check whether the old ref exists
+	if exec.Command("git", "rev-parse", "--verify", oldRef).Run() != nil {
+		return 0, nil
+	}
+
+	// Check whether the new ref already exists (already migrated)
+	if exec.Command("git", "rev-parse", "--verify", newRef).Run() == nil {
+		fmt.Printf("✓ %s already exists (skipping notes ref migration)\n", newRef)
+		return 0, nil
+	}
+
+	fmt.Printf("  %s → %s\n", oldRef, newRef)
+	if !migrateDryRun {
+		shaOut, err := exec.Command("git", "rev-parse", oldRef).Output()
+		if err != nil {
+			return 0, fmt.Errorf("failed to resolve %s: %w", oldRef, err)
+		}
+		sha := strings.TrimSpace(string(shaOut))
+
+		if err := exec.Command("git", "update-ref", newRef, sha).Run(); err != nil {
+			return 0, fmt.Errorf("failed to copy notes ref: %w", err)
+		}
+
+		// Update git config entries that still point to the old ref
+		for _, key := range []string{"notes.rewriteRef", "notes.displayRef"} {
+			out, err := exec.Command("git", "config", key).Output()
+			if err == nil && strings.TrimSpace(string(out)) == oldRef {
+				if err := exec.Command("git", "config", key, newRef).Run(); err != nil {
+					return 0, fmt.Errorf("failed to update %s: %w", key, err)
+				}
+			}
 		}
 	}
 	return 1, nil

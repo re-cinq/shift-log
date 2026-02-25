@@ -72,7 +72,7 @@ var _ = Describe("Summarise", func() {
 			By("Commit with conversation was created")
 
 			// Verify note exists
-			cmd = exec.Command("git", "notes", "--ref=refs/notes/claude-conversations", "list")
+			cmd = exec.Command("git", "notes", "--ref=refs/notes/shiftlog", "list")
 			cmd.Dir = tmpDir
 			notesOutput, err := cmd.CombinedOutput()
 			if err != nil || len(strings.TrimSpace(string(notesOutput))) == 0 {

@@ -190,7 +190,7 @@ var _ = Describe("Deinit Command", func() {
 			// Verify settings are set
 			out, err := repo.RunOutput("git", "config", "notes.displayRef")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(out).To(ContainSubstring("refs/notes/claude-conversations"))
+			Expect(out).To(ContainSubstring("refs/notes/shiftlog"))
 
 			// Deinit
 			_, _, err = testutil.RunShiftlogInDir(repo.Path, "deinit")

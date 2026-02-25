@@ -103,7 +103,7 @@ var _ = Describe("Claude Code Integration", func() {
 			GinkgoWriter.Printf("Git log: %s", logOutput)
 
 			// CRITICAL TEST: If commit was made, note MUST exist
-			cmd = exec.Command("git", "notes", "--ref=refs/notes/claude-conversations", "list")
+			cmd = exec.Command("git", "notes", "--ref=refs/notes/shiftlog", "list")
 			cmd.Dir = tmpDir
 			notesOutput, err := cmd.CombinedOutput()
 			Expect(err).NotTo(HaveOccurred(), "Commit was made but no git notes exist!\nOutput: %s", notesOutput)
@@ -112,7 +112,7 @@ var _ = Describe("Claude Code Integration", func() {
 			By("Git note was created by shiftlog hook")
 
 			// Verify note content is valid JSON
-			cmd = exec.Command("git", "notes", "--ref=refs/notes/claude-conversations", "show", "HEAD")
+			cmd = exec.Command("git", "notes", "--ref=refs/notes/shiftlog", "show", "HEAD")
 			cmd.Dir = tmpDir
 			noteContent, err := cmd.CombinedOutput()
 			Expect(err).NotTo(HaveOccurred(), "Note exists but cannot be read")
@@ -245,7 +245,7 @@ var _ = Describe("Claude Code Integration", func() {
 			By("Commit was created")
 
 			// Note should NOT exist because shiftlog was not in PATH
-			cmd = exec.Command("git", "notes", "--ref=refs/notes/claude-conversations", "list")
+			cmd = exec.Command("git", "notes", "--ref=refs/notes/shiftlog", "list")
 			cmd.Dir = tmpDir
 			notesOutput, err := cmd.CombinedOutput()
 
