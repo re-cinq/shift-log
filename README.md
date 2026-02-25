@@ -1,11 +1,14 @@
 # shiftlog
 
-Save AI coding conversations as Git Notes. Claude. Audit. See what we did there? 🥁
+Save, view, and search coding agent conversation history, persisted as Git Notes.
 
 ## Install
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/re-cinq/shift-log/master/scripts/install.sh | bash
+```
+
+```bash
 # ...In a Git repo
 shiftlog init --agent=<agent>
 ```
