@@ -1,4 +1,4 @@
-# shiftlog
+# Shift Log
 
 Save, view, and search coding agent conversation history, persisted as Git Notes.
 
