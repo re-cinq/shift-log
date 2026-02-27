@@ -23,7 +23,7 @@
     "codex": {
       "package": "@openai/codex",
       "constraint": null,
-      "last-known-good": "0.105.0"
+      "last-known-good": "0.106.0"
     }
   }
 }
