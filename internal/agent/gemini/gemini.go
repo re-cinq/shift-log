@@ -30,7 +30,6 @@ func (a *Agent) ConfigureHooks(repoRoot string) error {
 	}
 
 	AddShiftlogHook(settings)
-	AddSessionHooks(settings)
 
 	if err := WriteSettings(geminiDir, settings); err != nil {
 		return fmt.Errorf("failed to write Gemini settings: %w", err)
