@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/re-cinq/shift-log/internal/agent"
 	_ "github.com/re-cinq/shift-log/internal/agent/claude"   // register Claude agent
@@ -67,6 +68,34 @@ func runStore(cmd *cobra.Command, args []string) error {
 	return runHookStore()
 }
 
+// hookStdinTimeout is the maximum time to wait for stdin EOF from a hook invocation.
+// Copilot 1.0.3+ keeps the stdin pipe open for the lifetime of the session even
+// after writing hook data for non-commit tool invocations. Without a timeout,
+// io.ReadAll blocks until the 30-second hook timeout kills the process, causing
+// multiple retries that sum to the overall test timeout.
+const hookStdinTimeout = 10 * time.Second
+
+// readHookStdin reads hook input from stdin with a deadline. Returns nil, nil
+// when no EOF arrives within hookStdinTimeout (agent did not close the pipe).
+func readHookStdin() ([]byte, error) {
+	type result struct {
+		data []byte
+		err  error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		data, err := io.ReadAll(os.Stdin)
+		ch <- result{data, err}
+	}()
+	select {
+	case r := <-ch:
+		return r.data, r.err
+	case <-time.After(hookStdinTimeout):
+		cli.LogDebug("store: stdin read timed out after %v", hookStdinTimeout)
+		return nil, nil
+	}
+}
+
 // runHookStore handles the hook mode.
 func runHookStore() error {
 	cli.LogDebug("store: reading hook input from stdin")
@@ -77,10 +106,15 @@ func runHookStore() error {
 		return nil
 	}
 
-	// Read raw stdin
-	raw, err := io.ReadAll(os.Stdin)
+	// Read raw stdin with a timeout to avoid blocking when the agent keeps
+	// the pipe open past the point of writing hook data.
+	raw, err := readHookStdin()
 	if err != nil {
 		cli.LogDebug("store: failed to read stdin: %v", err)
+		return nil
+	}
+	if len(raw) == 0 {
+		cli.LogDebug("store: no hook data received")
 		return nil
 	}
 
