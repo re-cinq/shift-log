@@ -2,24 +2,18 @@ package cli
 
 import (
 	"encoding/json"
-	"io"
 	"os"
 )
 
-// ReadHookInput reads JSON from stdin and unmarshals it into the provided struct.
-// Returns nil error on success, or returns nil with a warning logged on failure.
-// This is designed to be used by hook commands that should fail silently.
+// ReadHookInput reads a single JSON object from stdin and unmarshals it into
+// the provided struct. It uses a JSON decoder rather than io.ReadAll so that
+// it returns as soon as one complete JSON object has been read, without
+// blocking on EOF. This is necessary for agent CLIs (e.g. Gemini CLI v0.29+)
+// that do not close stdin after writing the hook payload.
 func ReadHookInput(v interface{}) error {
-	input, err := io.ReadAll(os.Stdin)
-	if err != nil {
-		LogWarning("failed to read stdin: %v", err)
+	if err := json.NewDecoder(os.Stdin).Decode(v); err != nil {
+		LogWarning("failed to read/parse hook JSON: %v", err)
 		return err
 	}
-
-	if err := json.Unmarshal(input, v); err != nil {
-		LogWarning("failed to parse hook JSON: %v", err)
-		return err
-	}
-
 	return nil
 }
