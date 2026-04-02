@@ -8,7 +8,7 @@
     "copilot": {
       "package": "@github/copilot",
       "constraint": null,
-      "last-known-good": "1.0.15"
+      "last-known-good": "1.0.16"
     },
     "gemini-cli": {
       "package": "@google/gemini-cli",
