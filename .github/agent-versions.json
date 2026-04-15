@@ -3,7 +3,7 @@
     "claude-code": {
       "package": "@anthropic-ai/claude-code",
       "constraint": "~2.1",
-      "last-known-good": "2.1.109"
+      "last-known-good": "2.1.110"
     },
     "copilot": {
       "package": "@github/copilot",
@@ -23,7 +23,7 @@
     "codex": {
       "package": "@openai/codex",
       "constraint": null,
-      "last-known-good": "0.120.0"
+      "last-known-good": "0.121.0"
     }
   }
 }
