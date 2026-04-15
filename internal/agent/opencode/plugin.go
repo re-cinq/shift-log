@@ -1,6 +1,8 @@
+```go
 package opencode
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -86,7 +88,17 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
 };
 `
 
-// InstallPlugin writes the shiftlog plugin to .opencode/plugins/shiftlog.js.
+// InstallPlugin writes the shiftlog plugin to .opencode/plugins/shiftlog.js
+// and normalises the permission configuration in opencode.json (if present).
+//
+// OpenCode 1.4+ changed how "permission" is processed: the value must be a
+// JSON object mapping tool names to actions (e.g. {"bash":"allow"}).  Older
+// configs that used the string "allow" are silently broken because
+// Permission.fromConfig calls Object.entries() on the value — iterating a
+// string produces character-index pairs like [["0","a"],["1","l"],...] which
+// never match any real tool name.  Without a matching allow rule, every tool
+// call fires a permission.asked event that is auto-rejected in non-interactive
+// (run) mode, causing the model to retry endlessly until the test times out.
 func InstallPlugin(repoRoot string) error {
 	pluginDir := filepath.Join(repoRoot, ".opencode", "plugins")
 	if err := os.MkdirAll(pluginDir, 0755); err != nil {
@@ -96,6 +108,77 @@ func InstallPlugin(repoRoot string) error {
 	pluginPath := filepath.Join(pluginDir, "shiftlog.js")
 	if err := os.WriteFile(pluginPath, []byte(pluginTemplate), 0644); err != nil {
 		return fmt.Errorf("could not write plugin file: %w", err)
+	}
+
+	if err := ensurePermissionConfig(repoRoot); err != nil {
+		return fmt.Errorf("could not update opencode.json: %w", err)
+	}
+
+	return nil
+}
+
+// ensurePermissionConfig reads opencode.json from repoRoot and converts a
+// legacy string "permission" value into the object format required by
+// OpenCode 1.4+.  If the file does not exist or the field is already an
+// object, the function is a no-op.
+func ensurePermissionConfig(repoRoot string) error {
+	configPath := filepath.Join(repoRoot, "opencode.json")
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("could not read opencode.json: %w", err)
+	}
+
+	var config map[string]interface{}
+	if err := json.Unmarshal(data, &config); err != nil {
+		return nil // unparseable – leave it alone
+	}
+
+	perm, ok := config["permission"]
+	if !ok {
+		return nil // no permission field – nothing to fix
+	}
+
+	// Already an object – nothing to do.
+	if _, isMap := perm.(map[string]interface{}); isMap {
+		return nil
+	}
+
+	// Only rewrite when the value is the string "allow".  Any other string or
+	// unexpected type is left untouched so we don't silently corrupt configs.
+	permStr, isStr := perm.(string)
+	if !isStr || permStr != "allow" {
+		return nil
+	}
+
+	// Replace with an explicit per-tool allow map.  This produces rules of the
+	// form {permission:"bash", action:"allow", pattern:"*"} via fromConfig(),
+	// which Permission.ask() evaluates before firing permission.asked – so the
+	// event is never raised and the command is never auto-rejected.
+	config["permission"] = map[string]interface{}{
+		"bash":       "allow",
+		"read":       "allow",
+		"write":      "allow",
+		"edit":       "allow",
+		"glob":       "allow",
+		"grep":       "allow",
+		"list":       "allow",
+		"webfetch":   "allow",
+		"websearch":  "allow",
+		"codesearch": "allow",
+		"todowrite":  "allow",
+	}
+
+	updated, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return fmt.Errorf("could not marshal opencode.json: %w", err)
+	}
+
+	if err := os.WriteFile(configPath, append(updated, '\n'), 0644); err != nil {
+		return fmt.Errorf("could not write opencode.json: %w", err)
 	}
 
 	return nil
@@ -125,3 +208,4 @@ func HasPlugin(repoRoot string) bool {
 	_, err := os.Stat(pluginPath)
 	return err == nil
 }
+```
