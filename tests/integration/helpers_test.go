@@ -1,3 +1,4 @@
+```go
 package integration_test
 
 import (
@@ -344,7 +345,13 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
       let transcriptData = "";
       if (client && pending.sessionID) {
         try {
-          const msgs = await client.session.messages({ path: { id: pending.sessionID } });
+          const sdkTimeout = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("sdk_timeout")), 5000)
+          );
+          const msgs = await Promise.race([
+            client.session.messages({ path: { id: pending.sessionID } }),
+            sdkTimeout,
+          ]);
           if (msgs && Array.isArray(msgs)) {
             transcriptData = JSON.stringify(msgs.map(m => ({
               role: m.role || "",
@@ -382,3 +389,4 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
   };
 };
 `
+```
