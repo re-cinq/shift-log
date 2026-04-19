@@ -18,7 +18,7 @@
     "opencode-ai": {
       "package": "opencode-ai",
       "constraint": null,
-      "last-known-good": "1.4.17"
+      "last-known-good": "1.14.17"
     },
     "codex": {
       "package": "@openai/codex",
