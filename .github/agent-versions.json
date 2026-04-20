@@ -8,7 +8,7 @@
     "copilot": {
       "package": "@github/copilot",
       "constraint": null,
-      "last-known-good": "1.0.33"
+      "last-known-good": "1.0.34"
     },
     "gemini-cli": {
       "package": "@google/gemini-cli",
@@ -23,7 +23,7 @@
     "codex": {
       "package": "@openai/codex",
       "constraint": null,
-      "last-known-good": "0.121.0"
+      "last-known-good": "0.122.0"
     }
   }
 }
