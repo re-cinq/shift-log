@@ -52,6 +52,25 @@ func GetProjectID(projectPath string) string {
 	return "global"
 }
 
+// GetGitRootPath returns the absolute path of the git repository root.
+// OpenCode v1.12+ uses this as the project identifier stored in its SQLite database,
+// rather than the git root commit hash used by older versions.
+func GetGitRootPath(projectPath string) string {
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	cmd.Dir = projectPath
+	output, err := cmd.Output()
+	if err == nil {
+		if root := strings.TrimSpace(string(output)); root != "" {
+			return root
+		}
+	}
+	abs, err := filepath.Abs(projectPath)
+	if err != nil {
+		return projectPath
+	}
+	return abs
+}
+
 // GetSessionDir returns the session storage directory for a project.
 func GetSessionDir(projectPath string) (string, error) {
 	dataDir, err := GetDataDir()
