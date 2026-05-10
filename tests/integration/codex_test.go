@@ -2,7 +2,6 @@ package integration_test
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -43,16 +42,10 @@ var _ = Describe("Codex CLI Integration", func() {
 		// Create a test file
 		Expect(os.WriteFile(filepath.Join(tmpDir, "todo.txt"), []byte("- Buy milk\n- Walk dog\n"), 0644)).To(Succeed())
 
-		// Login Codex CLI
-		loginCmd := exec.Command("bash", "-c",
-			fmt.Sprintf("echo %q | codex login --with-api-key", apiKey))
-		loginCmd.Dir = tmpDir
-		loginOutput, err := loginCmd.CombinedOutput()
-		Expect(err).NotTo(HaveOccurred(), "codex login failed:\n%s", loginOutput)
-
-		// Run Codex CLI
+		// Run Codex CLI — codex 0.130.0+: authenticate via OPENAI_API_KEY env var,
+		// use --full-auto instead of the removed --dangerously-bypass-approvals-and-sandbox.
 		codexCmd := exec.Command("codex", "exec",
-			"--dangerously-bypass-approvals-and-sandbox",
+			"--full-auto",
 			"Please run: git add todo.txt && git commit -m 'Add todo list'",
 		)
 		codexCmd.Dir = tmpDir
