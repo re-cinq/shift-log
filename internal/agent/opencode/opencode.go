@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -337,36 +338,54 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 	timeOutput, err := cmd.Output()
 	if err == nil {
 		timeStr := strings.TrimSpace(string(timeOutput))
+		exceeded := false
 		if t, err := time.Parse(time.RFC3339Nano, timeStr); err == nil {
-			if time.Since(t) > agent.RecentSessionTimeout {
-				return nil, nil
-			}
+			exceeded = time.Since(t) > agent.RecentSessionTimeout
 		} else if t, err := time.Parse("2006-01-02T15:04:05.000Z", timeStr); err == nil {
-			if time.Since(t) > agent.RecentSessionTimeout {
-				return nil, nil
-			}
+			exceeded = time.Since(t) > agent.RecentSessionTimeout
 		} else if t, err := time.Parse("2006-01-02 15:04:05", timeStr); err == nil {
-			if time.Since(t) > agent.RecentSessionTimeout {
-				return nil, nil
-			}
+			exceeded = time.Since(t) > agent.RecentSessionTimeout
+		} else if ms, err := strconv.ParseInt(timeStr, 10, 64); err == nil {
+			// Unix timestamp in milliseconds (used in newer OpenCode versions)
+			t := time.Unix(ms/1000, (ms%1000)*int64(time.Millisecond))
+			exceeded = time.Since(t) > agent.RecentSessionTimeout
 		}
 		// If we can't parse the time, proceed anyway — better to try than skip
+		if exceeded {
+			return nil, nil
+		}
 	}
 
-	// Get messages for this session as a JSON array
-	msgQuery := fmt.Sprintf(
-		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
-		sessionID,
-	)
-	cmd = exec.Command("sqlite3", dbPath, msgQuery)
-	msgOutput, err := cmd.Output()
-	if err != nil {
-		return nil, nil
+	// Query messages as a JSON array. OpenCode v1.14.46+ stores messages with
+	// separate role and parts columns; earlier SQLite versions used a single data column.
+	// Try the new schema first, then fall back to the old schema.
+	var transcriptData []byte
+	for _, msgQuery := range []string{
+		// New schema (v1.14.46+): role + parts columns
+		fmt.Sprintf(
+			`SELECT json_group_array(json_object('id', id, 'role', role, 'content', json(COALESCE(parts,'[]')))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
+			sessionID,
+		),
+		// Old schema (pre-v1.14.46 SQLite): single data column with full message JSON
+		fmt.Sprintf(
+			`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
+			sessionID,
+		),
+	} {
+		cmd = exec.Command("sqlite3", dbPath, msgQuery)
+		msgOutput, err := cmd.Output()
+		if err != nil {
+			continue
+		}
+		raw := strings.TrimSpace(string(msgOutput))
+		if raw == "[null]" || raw == "[]" || raw == "" {
+			continue
+		}
+		transcriptData = []byte(raw)
+		break
 	}
 
-	transcriptData := []byte(strings.TrimSpace(string(msgOutput)))
-	// sqlite3 returns "[null]" when no rows match
-	if string(transcriptData) == "[null]" || string(transcriptData) == "[]" {
+	if transcriptData == nil {
 		return nil, nil
 	}
 
@@ -497,4 +516,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
