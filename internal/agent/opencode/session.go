@@ -52,7 +52,7 @@ func GetProjectID(projectPath string) string {
 	return "global"
 }
 
-// GetSessionDir returns the session storage directory for a project.
+// GetSessionDir returns the session storage directory for a project (pre-v1.14).
 func GetSessionDir(projectPath string) (string, error) {
 	dataDir, err := GetDataDir()
 	if err != nil {
@@ -63,7 +63,7 @@ func GetSessionDir(projectPath string) (string, error) {
 	return filepath.Join(dataDir, "storage", "session", projectID), nil
 }
 
-// GetMessageDir returns the message storage directory for a session.
+// GetMessageDir returns the message storage directory for a session (pre-v1.14).
 func GetMessageDir(sessionID string) (string, error) {
 	dataDir, err := GetDataDir()
 	if err != nil {
@@ -71,6 +71,24 @@ func GetMessageDir(sessionID string) (string, error) {
 	}
 
 	return filepath.Join(dataDir, "storage", "message", sessionID), nil
+}
+
+// GetSessionDiffDir returns the session_diff storage directory (OpenCode v1.14+).
+func GetSessionDiffDir() (string, error) {
+	dataDir, err := GetDataDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dataDir, "storage", "session_diff"), nil
+}
+
+// GetSessionDiffFile returns the path to a session's diff file (OpenCode v1.14+).
+func GetSessionDiffFile(sessionID string) (string, error) {
+	dir, err := GetSessionDiffDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, sessionID+".json"), nil
 }
 
 // sessionInfo represents an OpenCode session JSON file.
