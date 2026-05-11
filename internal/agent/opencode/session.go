@@ -1,3 +1,4 @@
+```go
 package opencode
 
 import (
@@ -127,3 +128,33 @@ func WriteSessionFile(projectPath, sessionID string, transcriptData []byte) (str
 
 	return sessionPath, nil
 }
+
+// getTableColumns returns the set of column names for a SQLite table.
+// Returns nil on error.
+func getTableColumns(dbPath, table string) map[string]bool {
+	cmd := exec.Command("sqlite3", dbPath,
+		fmt.Sprintf("SELECT name FROM pragma_table_info('%s');", table))
+	output, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+	cols := make(map[string]bool)
+	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
+		if name := strings.TrimSpace(line); name != "" {
+			cols[name] = true
+		}
+	}
+	return cols
+}
+
+// pickColumn returns the first candidate that exists in cols.
+// Returns fallback if no candidate is found.
+func pickColumn(cols map[string]bool, fallback string, candidates ...string) string {
+	for _, c := range candidates {
+		if cols[c] {
+			return c
+		}
+	}
+	return fallback
+}
+```
