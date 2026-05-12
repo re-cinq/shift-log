@@ -356,8 +356,9 @@ func TestGetDataDir(t *testing.T) {
 		}
 	}
 
-	// Without XDG_DATA_HOME, should return default path containing "opencode"
+	// Without XDG_DATA_HOME, should return a path containing "opencode"
 	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_STATE_HOME", "")
 	dir, err := GetDataDir()
 	if err != nil {
 		t.Fatalf("GetDataDir without env error: %v", err)
@@ -370,8 +371,12 @@ func TestGetDataDir(t *testing.T) {
 			t.Errorf("GetDataDir default = %q, expected Application Support/opencode on macOS", dir)
 		}
 	} else {
-		if !strings.HasSuffix(dir, ".local/share/opencode") {
-			t.Errorf("GetDataDir default = %q, expected .local/share/opencode on Linux", dir)
+		// Accept either ~/.local/share/opencode or ~/.local/state/opencode
+		// (opencode may use either depending on version)
+		isShareDir := strings.HasSuffix(dir, ".local/share/opencode")
+		isStateDir := strings.HasSuffix(dir, ".local/state/opencode")
+		if !isShareDir && !isStateDir {
+			t.Errorf("GetDataDir default = %q, expected .local/share/opencode or .local/state/opencode on Linux", dir)
 		}
 	}
 }

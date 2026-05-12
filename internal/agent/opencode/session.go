@@ -13,6 +13,7 @@ import (
 // GetDataDir returns the OpenCode data directory.
 // OpenCode follows XDG conventions: it uses $XDG_DATA_HOME/opencode on Linux
 // and ~/Library/Application Support/opencode on macOS.
+// Newer versions of opencode (v1.14+) may use $XDG_STATE_HOME/opencode instead.
 func GetDataDir() (string, error) {
 	if runtime.GOOS == "darwin" {
 		home, err := os.UserHomeDir()
@@ -27,10 +28,25 @@ func GetDataDir() (string, error) {
 		return filepath.Join(xdg, "opencode"), nil
 	}
 
+	// Respect XDG_STATE_HOME if set and opencode.db exists there
+	if state := os.Getenv("XDG_STATE_HOME"); state != "" {
+		statePath := filepath.Join(state, "opencode")
+		if _, err := os.Stat(filepath.Join(statePath, "opencode.db")); err == nil {
+			return statePath, nil
+		}
+	}
+
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("could not determine home directory: %w", err)
 	}
+
+	// Check ~/.local/state/opencode (XDG_STATE_HOME default — opencode v1.14+ may store here)
+	stateDir := filepath.Join(home, ".local", "state", "opencode")
+	if _, err := os.Stat(filepath.Join(stateDir, "opencode.db")); err == nil {
+		return stateDir, nil
+	}
+
 	return filepath.Join(home, ".local", "share", "opencode"), nil
 }
 
