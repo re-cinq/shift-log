@@ -96,12 +96,12 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 func (a *Agent) IsCommitCommand(toolName, command string) bool {
 	// OpenCode tool names for shell execution
 	shellTools := map[string]bool{
-		"bash":               true,
-		"shell":              true,
-		"terminal":           true,
-		"execute":            true,
-		"run":                true,
-		"command":            true,
+		"bash":     true,
+		"shell":    true,
+		"terminal": true,
+		"execute":  true,
+		"run":      true,
+		"command":  true,
 	}
 
 	if !shellTools[toolName] {
@@ -230,9 +230,16 @@ func (a *Agent) parseMessageDir(dir string) (*agent.Transcript, error) {
 }
 
 // DiscoverSession finds an active or recent OpenCode session.
-// It first tries flat file storage (pre-v1.2), then falls back to SQLite (v1.2+).
+// It checks (in order): plugin-written session marker, flat file storage, SQLite.
 func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) {
-	// Try flat file storage first (pre-v1.2 OpenCode)
+	// Try the plugin-written session marker first.
+	// The plugin writes .shiftlog/opencode-session.json on every tool execution,
+	// making this the most reliable discovery method regardless of OpenCode version.
+	if session, err := a.discoverFromSessionMarker(projectPath); err == nil && session != nil {
+		return session, nil
+	}
+
+	// Try flat file storage (pre-v1.2 OpenCode)
 	session, err := a.discoverFromFlatFiles(projectPath)
 	if err != nil {
 		return nil, err
@@ -249,6 +256,63 @@ func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) 
 
 	projectID := GetProjectID(projectPath)
 	return discoverFromSQLite(dataDir, projectID, projectPath)
+}
+
+// discoverFromSessionMarker checks for .shiftlog/opencode-session.json written by the plugin.
+// The plugin writes this file on every tool execution with session_id, data_dir,
+// project_dir, timestamp, and (when available) transcript_data from the client API.
+func (a *Agent) discoverFromSessionMarker(projectPath string) (*agent.SessionInfo, error) {
+	markerPath := filepath.Join(projectPath, ".shiftlog", "opencode-session.json")
+
+	data, err := os.ReadFile(markerPath)
+	if err != nil {
+		return nil, nil
+	}
+
+	var marker struct {
+		SessionID      string `json:"session_id"`
+		DataDir        string `json:"data_dir"`
+		ProjectDir     string `json:"project_dir"`
+		Timestamp      string `json:"timestamp"`
+		TranscriptData string `json:"transcript_data"`
+	}
+	if err := json.Unmarshal(data, &marker); err != nil {
+		return nil, nil
+	}
+
+	if marker.SessionID == "" {
+		return nil, nil
+	}
+
+	// Validate project path matches
+	if marker.ProjectDir != "" && !agent.PathsEqual(marker.ProjectDir, projectPath) {
+		return nil, nil
+	}
+
+	// Check recency via file mod time
+	info, err := os.Stat(markerPath)
+	if err != nil {
+		return nil, nil
+	}
+	if time.Since(info.ModTime()) > agent.RecentSessionTimeout {
+		return nil, nil
+	}
+
+	// Use transcript data from marker, or empty array as fallback
+	var transcriptData []byte
+	if marker.TranscriptData != "" {
+		transcriptData = []byte(marker.TranscriptData)
+	} else {
+		transcriptData = []byte("[]")
+	}
+
+	return &agent.SessionInfo{
+		SessionID:      marker.SessionID,
+		TranscriptPath: "",
+		StartedAt:      marker.Timestamp,
+		ProjectPath:    projectPath,
+		TranscriptData: transcriptData,
+	}, nil
 }
 
 // discoverFromFlatFiles tries the legacy flat file session discovery.
@@ -454,7 +518,6 @@ func parseOpenCodeEntry(raw map[string]json.RawMessage, fullData []byte) agent.T
 	return entry
 }
 
-
 // parseOpenCodeMessage parses message content from an OpenCode entry.
 func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageType) *agent.Message {
 	if msgType == "" {
@@ -497,4 +560,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
