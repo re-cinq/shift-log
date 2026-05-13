@@ -7,7 +7,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
+	"time"
+
+	"github.com/re-cinq/shift-log/internal/agent"
 )
 
 // GetDataDir returns the OpenCode data directory.
@@ -126,4 +130,131 @@ func WriteSessionFile(projectPath, sessionID string, transcriptData []byte) (str
 	_ = os.WriteFile(msgPath, transcriptData, 0600)
 
 	return sessionPath, nil
+}
+
+// discoverFromLocalSQLite discovers a session from a project-local opencode.db.
+// This handles OpenCode v1.14.48+ where the database lives at {project}/.opencode/opencode.db.
+// The new schema uses plural table names (sessions, messages) and integer timestamps.
+func discoverFromLocalSQLite(dbPath, projectPath string) (*agent.SessionInfo, error) {
+	if _, err := exec.LookPath("sqlite3"); err != nil {
+		return nil, nil
+	}
+
+	sessionID := sqliteQueryLatestSession(dbPath)
+	if sessionID == "" {
+		return nil, nil
+	}
+
+	if !sqliteIsSessionRecent(dbPath, sessionID) {
+		return nil, nil
+	}
+
+	transcriptData := sqliteQueryMessages(dbPath, sessionID)
+	if len(transcriptData) == 0 {
+		return nil, nil
+	}
+
+	return &agent.SessionInfo{
+		SessionID:      sessionID,
+		TranscriptPath: "",
+		StartedAt:      time.Now().Format(time.RFC3339),
+		ProjectPath:    projectPath,
+		TranscriptData: transcriptData,
+	}, nil
+}
+
+// sqliteQueryLatestSession returns the ID of the most recently updated session.
+// Tries the new schema (sessions table, updated_at column) then the old schema.
+func sqliteQueryLatestSession(dbPath string) string {
+	for _, q := range []string{
+		`SELECT id FROM sessions ORDER BY updated_at DESC LIMIT 1;`,
+		`SELECT id FROM sessions ORDER BY rowid DESC LIMIT 1;`,
+		`SELECT id FROM session ORDER BY rowid DESC LIMIT 1;`,
+	} {
+		out, err := exec.Command("sqlite3", dbPath, q).Output()
+		if err == nil {
+			if id := strings.TrimSpace(string(out)); id != "" {
+				return id
+			}
+		}
+	}
+	return ""
+}
+
+// sqliteIsSessionRecent returns true if the session was updated within the recent timeout.
+// Handles both integer timestamps (new schema) and ISO string timestamps (old schema).
+func sqliteIsSessionRecent(dbPath, sessionID string) bool {
+	for _, q := range []string{
+		fmt.Sprintf(`SELECT updated_at FROM sessions WHERE id='%s';`, sessionID),
+		fmt.Sprintf(`SELECT time_updated FROM session WHERE id='%s';`, sessionID),
+	} {
+		out, err := exec.Command("sqlite3", dbPath, q).Output()
+		if err != nil {
+			continue
+		}
+		timeStr := strings.TrimSpace(string(out))
+		if timeStr == "" {
+			continue
+		}
+		return sqliteParseTimeIsRecent(timeStr)
+	}
+	return true // assume recent if time cannot be determined
+}
+
+// sqliteParseTimeIsRecent parses a SQLite timestamp value and returns true if it
+// falls within the recent session timeout. Handles integer ms/s and ISO strings.
+func sqliteParseTimeIsRecent(timeStr string) bool {
+	timeout := agent.RecentSessionTimeout
+
+	// Integer: Unix milliseconds (>1e12) or Unix seconds
+	if n, err := strconv.ParseInt(timeStr, 10, 64); err == nil {
+		var t time.Time
+		if n > 1_000_000_000_000 {
+			t = time.Unix(n/1000, (n%1000)*int64(time.Millisecond))
+		} else {
+			t = time.Unix(n, 0)
+		}
+		return time.Since(t) <= timeout
+	}
+
+	// ISO 8601 string formats
+	for _, layout := range []string{time.RFC3339Nano, "2006-01-02T15:04:05.000Z", "2006-01-02 15:04:05"} {
+		if t, err := time.Parse(layout, timeStr); err == nil {
+			return time.Since(t) <= timeout
+		}
+	}
+
+	return true // assume recent if unparseable
+}
+
+// sqliteQueryMessages retrieves messages for a session as a JSON array.
+// Tries the new schema (messages table, parts column) then old schema fallbacks.
+func sqliteQueryMessages(dbPath, sessionID string) []byte {
+	for _, q := range []string{
+		// New schema: messages table with parts column (OpenCode v1.14.48+)
+		fmt.Sprintf(
+			`SELECT json_group_array(json_object('id', id, 'role', role, 'parts', json(parts))) FROM messages WHERE session_id='%s';`,
+			sessionID,
+		),
+		// Old schema: message table with data column, ordered by creation time
+		fmt.Sprintf(
+			`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
+			sessionID,
+		),
+		// Old schema without ORDER BY (handles renamed time columns)
+		fmt.Sprintf(
+			`SELECT json_group_array(data) FROM message WHERE session_id='%s';`,
+			sessionID,
+		),
+	} {
+		out, err := exec.Command("sqlite3", dbPath, q).Output()
+		if err != nil {
+			continue
+		}
+		raw := strings.TrimSpace(string(out))
+		if raw != "" && raw != "[null]" && raw != "[]" {
+			return []byte(raw)
+		}
+	}
+	return nil
 }
