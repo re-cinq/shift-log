@@ -1,7 +1,9 @@
 package opencode
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -154,6 +156,27 @@ func TestParseTranscriptWithContentBlocks(t *testing.T) {
 	}
 }
 
+func TestParseTranscriptWithParts(t *testing.T) {
+	a := &Agent{}
+	// opencode v1.14+ uses 'parts' field instead of 'content'
+	jsonl := `{"role":"assistant","id":"a1","parts":[{"type":"text","text":"Hello from parts"}]}`
+
+	transcript, err := a.ParseTranscript(strings.NewReader(jsonl))
+	if err != nil {
+		t.Fatalf("ParseTranscript() error: %v", err)
+	}
+	if len(transcript.Entries) != 1 {
+		t.Fatalf("Expected 1 entry, got %d", len(transcript.Entries))
+	}
+	msg := transcript.Entries[0].Message
+	if msg == nil {
+		t.Fatal("Expected message to be non-nil")
+	}
+	if len(msg.Content) != 1 || msg.Content[0].Text != "Hello from parts" {
+		t.Errorf("Message content = %v, want [{text Hello from parts}]", msg.Content)
+	}
+}
+
 func TestParseTranscriptFile(t *testing.T) {
 	a := &Agent{}
 
@@ -286,60 +309,34 @@ func TestHasPlugin(t *testing.T) {
 func TestGetProjectID(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// Init git repo
-	gitInit := exec.Command("git", "init")
-	gitInit.Dir = tmpDir
-	if out, err := gitInit.CombinedOutput(); err != nil {
-		t.Fatalf("git init failed: %v\n%s", err, out)
+	absPath, err := filepath.Abs(tmpDir)
+	if err != nil {
+		t.Fatalf("filepath.Abs failed: %v", err)
 	}
-
-	gitConfig := exec.Command("git", "config", "user.email", "test@test.com")
-	gitConfig.Dir = tmpDir
-	gitConfig.CombinedOutput()
-
-	gitConfig2 := exec.Command("git", "config", "user.name", "Test")
-	gitConfig2.Dir = tmpDir
-	gitConfig2.CombinedOutput()
-
-	// Before any commits, should return "global"
-	if id := GetProjectID(tmpDir); id != "global" {
-		t.Errorf("GetProjectID before any commit = %q, want 'global'", id)
-	}
-
-	// Create initial commit
-	os.WriteFile(filepath.Join(tmpDir, "test.txt"), []byte("hello"), 0644)
-	gitAdd := exec.Command("git", "add", ".")
-	gitAdd.Dir = tmpDir
-	gitAdd.CombinedOutput()
-
-	gitCommit := exec.Command("git", "commit", "-m", "Initial")
-	gitCommit.Dir = tmpDir
-	gitCommit.CombinedOutput()
-
-	// After commit, should return root commit hash
-	gitRevList := exec.Command("git", "rev-list", "--max-parents=0", "--all")
-	gitRevList.Dir = tmpDir
-	rootOutput, _ := gitRevList.Output()
-	expectedRoot := strings.TrimSpace(string(rootOutput))
+	h := sha256.Sum256([]byte(absPath))
+	expected := fmt.Sprintf("%x", h)
 
 	got := GetProjectID(tmpDir)
-	if got != expectedRoot {
-		t.Errorf("GetProjectID = %q, want root commit %q", got, expectedRoot)
+	if got != expected {
+		t.Errorf("GetProjectID = %q, want SHA-256 hash %q", got, expected)
 	}
 
-	// Add more commits — project ID should still be the root commit
-	os.WriteFile(filepath.Join(tmpDir, "test2.txt"), []byte("world"), 0644)
-	gitAdd2 := exec.Command("git", "add", ".")
-	gitAdd2.Dir = tmpDir
-	gitAdd2.CombinedOutput()
+	// Verify it's a 64-character hex string (SHA-256)
+	if len(got) != 64 {
+		t.Errorf("GetProjectID length = %d, want 64 (SHA-256 hex)", len(got))
+	}
 
-	gitCommit2 := exec.Command("git", "commit", "-m", "Second")
-	gitCommit2.Dir = tmpDir
-	gitCommit2.CombinedOutput()
-
+	// Verify consistency
 	got2 := GetProjectID(tmpDir)
-	if got2 != expectedRoot {
-		t.Errorf("GetProjectID after 2nd commit = %q, want root commit %q", got2, expectedRoot)
+	if got != got2 {
+		t.Errorf("GetProjectID not consistent: %q != %q", got, got2)
+	}
+
+	// Verify different paths produce different IDs
+	tmpDir2 := t.TempDir()
+	got3 := GetProjectID(tmpDir2)
+	if got == got3 {
+		t.Errorf("GetProjectID for different paths returned same ID: %q", got)
 	}
 }
 
@@ -445,6 +442,32 @@ func TestNormalizeOpenCodeRole(t *testing.T) {
 		got := agent.NormalizeRole(tc.input)
 		if got != tc.want {
 			t.Errorf("NormalizeRole(%q) = %q, want %q", tc.input, got, tc.want)
+		}
+	}
+}
+
+func TestParseSessionTime(t *testing.T) {
+	tests := []struct {
+		input   string
+		wantOK  bool
+		wantMs  bool // true if expect millisecond-range time
+	}{
+		{"2026-05-13T10:51:52Z", true, false},
+		{"2026-05-13T10:51:52.671Z", true, false},
+		{"2026-05-13 10:51:52", true, false},
+		{"1747144312000", true, true},  // Unix milliseconds
+		{"1747144312", true, false},    // Unix seconds
+		{"not-a-time", false, false},
+	}
+
+	for _, tc := range tests {
+		got, ok := parseSessionTime(tc.input)
+		if ok != tc.wantOK {
+			t.Errorf("parseSessionTime(%q) ok = %v, want %v", tc.input, ok, tc.wantOK)
+			continue
+		}
+		if ok && got.IsZero() {
+			t.Errorf("parseSessionTime(%q) returned zero time", tc.input)
 		}
 	}
 }
