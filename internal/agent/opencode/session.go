@@ -1,3 +1,4 @@
+```go
 package opencode
 
 import (
@@ -127,3 +128,19 @@ func WriteSessionFile(projectPath, sessionID string, transcriptData []byte) (str
 
 	return sessionPath, nil
 }
+
+// runSQLite executes a SQLite query and returns the trimmed output, or "" on any error.
+func runSQLite(dbPath, query string) string {
+	cmd := exec.Command("sqlite3", dbPath, query)
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// sqliteStr returns a safely-quoted SQLite string literal.
+func sqliteStr(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+}
+```
