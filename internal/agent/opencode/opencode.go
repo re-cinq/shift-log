@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -96,12 +97,12 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 func (a *Agent) IsCommitCommand(toolName, command string) bool {
 	// OpenCode tool names for shell execution
 	shellTools := map[string]bool{
-		"bash":               true,
-		"shell":              true,
-		"terminal":           true,
-		"execute":            true,
-		"run":                true,
-		"command":            true,
+		"bash":      true,
+		"shell":     true,
+		"terminal":  true,
+		"execute":   true,
+		"run":       true,
+		"command":   true,
 	}
 
 	if !shellTools[toolName] {
@@ -230,9 +231,29 @@ func (a *Agent) parseMessageDir(dir string) (*agent.Transcript, error) {
 }
 
 // DiscoverSession finds an active or recent OpenCode session.
-// It first tries flat file storage (pre-v1.2), then falls back to SQLite (v1.2+).
+// It tries, in order:
+//  1. Project-local SQLite (opencode v1.14.50+): <project>/.opencode/opencode.db
+//  2. Flat file storage (pre-v1.2 OpenCode)
+//  3. Global SQLite (OpenCode v1.2–v1.14.x): ~/.local/share/opencode/opencode.db
 func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) {
-	// Try flat file storage first (pre-v1.2 OpenCode)
+	// Check sqlite3 availability once for all SQLite paths
+	hasSQLite := false
+	if _, err := exec.LookPath("sqlite3"); err == nil {
+		hasSQLite = true
+	}
+
+	// 1. Try project-local SQLite first (opencode v1.14.50+)
+	if hasSQLite {
+		projectDB := GetProjectDBPath(projectPath)
+		if _, err := os.Stat(projectDB); err == nil {
+			session, err := discoverFromProjectSQLite(projectDB, projectPath)
+			if err == nil && session != nil {
+				return session, nil
+			}
+		}
+	}
+
+	// 2. Try flat file storage (pre-v1.2 OpenCode)
 	session, err := a.discoverFromFlatFiles(projectPath)
 	if err != nil {
 		return nil, err
@@ -241,14 +262,17 @@ func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) 
 		return session, nil
 	}
 
-	// Fall back to SQLite (OpenCode v1.2+)
-	dataDir, err := GetDataDir()
-	if err != nil {
-		return nil, nil
+	// 3. Fall back to global SQLite (OpenCode v1.2–v1.14.x)
+	if hasSQLite {
+		dataDir, err := GetDataDir()
+		if err != nil {
+			return nil, nil
+		}
+		projectID := GetProjectID(projectPath)
+		return discoverFromSQLite(dataDir, projectID, projectPath)
 	}
 
-	projectID := GetProjectID(projectPath)
-	return discoverFromSQLite(dataDir, projectID, projectPath)
+	return nil, nil
 }
 
 // discoverFromFlatFiles tries the legacy flat file session discovery.
@@ -304,7 +328,62 @@ func (a *Agent) discoverFromFlatFiles(projectPath string) (*agent.SessionInfo, e
 	}, nil
 }
 
-// discoverFromSQLite queries the OpenCode SQLite database for the most recent session.
+// discoverFromProjectSQLite queries the project-local OpenCode SQLite database.
+// Used for opencode v1.14.50+ which stores sessions in <project>/.opencode/opencode.db.
+// Schema: sessions(id, title, message_count, updated_at INTEGER, created_at INTEGER)
+//
+//	messages(id, session_id, role, parts TEXT, model, created_at INTEGER)
+func discoverFromProjectSQLite(dbPath, projectPath string) (*agent.SessionInfo, error) {
+	// Find most recent session (no project_id filter — all sessions in the local DB
+	// belong to this project)
+	sessionQuery := `SELECT id FROM sessions ORDER BY updated_at DESC LIMIT 1;`
+	cmd := exec.Command("sqlite3", dbPath, sessionQuery)
+	sessionOutput, err := cmd.Output()
+	if err != nil || strings.TrimSpace(string(sessionOutput)) == "" {
+		return nil, nil
+	}
+	sessionID := strings.TrimSpace(string(sessionOutput))
+
+	// Check if this session was recent (updated_at is Unix milliseconds)
+	timeQuery := fmt.Sprintf(`SELECT updated_at FROM sessions WHERE id='%s';`, sessionID)
+	cmd = exec.Command("sqlite3", dbPath, timeQuery)
+	timeOutput, err := cmd.Output()
+	if err == nil {
+		timeStr := strings.TrimSpace(string(timeOutput))
+		if ms, parseErr := strconv.ParseInt(timeStr, 10, 64); parseErr == nil {
+			t := time.UnixMilli(ms)
+			if time.Since(t) > agent.RecentSessionTimeout {
+				return nil, nil
+			}
+		}
+	}
+
+	// Get messages for this session as a JSON array using the parts-based schema
+	msgQuery := fmt.Sprintf(
+		`SELECT json_group_array(json_object('id', id, 'role', role, 'parts', json(COALESCE(parts, '[]')))) FROM messages WHERE session_id='%s' ORDER BY created_at;`,
+		sessionID,
+	)
+	cmd = exec.Command("sqlite3", dbPath, msgQuery)
+	msgOutput, err := cmd.Output()
+	if err != nil {
+		return nil, nil
+	}
+
+	transcriptData := []byte(strings.TrimSpace(string(msgOutput)))
+	if string(transcriptData) == "[null]" || string(transcriptData) == "[]" || len(transcriptData) == 0 {
+		return nil, nil
+	}
+
+	return &agent.SessionInfo{
+		SessionID:      sessionID,
+		TranscriptPath: "",
+		StartedAt:      time.Now().Format(time.RFC3339),
+		ProjectPath:    projectPath,
+		TranscriptData: transcriptData,
+	}, nil
+}
+
+// discoverFromSQLite queries the global OpenCode SQLite database (v1.2–v1.14.x).
 func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionInfo, error) {
 	dbPath := filepath.Join(dataDir, "opencode.db")
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
@@ -454,7 +533,6 @@ func parseOpenCodeEntry(raw map[string]json.RawMessage, fullData []byte) agent.T
 	return entry
 }
 
-
 // parseOpenCodeMessage parses message content from an OpenCode entry.
 func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageType) *agent.Message {
 	if msgType == "" {
@@ -487,6 +565,32 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 		}
 	}
 
+	// Try "parts" field (opencode v1.14.50+ format)
+	// Parts is a JSON array of typed entries: [{type, data: {text}}]
+	if partsRaw, ok := raw["parts"]; ok {
+		var parts []struct {
+			Type string          `json:"type"`
+			Data json.RawMessage `json:"data"`
+		}
+		if err := json.Unmarshal(partsRaw, &parts); err == nil && len(parts) > 0 {
+			var textParts []string
+			for _, part := range parts {
+				if part.Type == "text" || part.Type == "reasoning" {
+					var textData struct {
+						Text string `json:"text"`
+					}
+					if err := json.Unmarshal(part.Data, &textData); err == nil && textData.Text != "" {
+						textParts = append(textParts, textData.Text)
+					}
+				}
+			}
+			if len(textParts) > 0 {
+				msg.Content = []agent.ContentBlock{{Type: "text", Text: strings.Join(textParts, "\n")}}
+			}
+			return msg
+		}
+	}
+
 	// Try "message" field
 	if msgRaw, ok := raw["message"]; ok {
 		var innerMsg agent.Message
@@ -497,4 +601,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
