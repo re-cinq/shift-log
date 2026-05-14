@@ -53,6 +53,7 @@ func GetProjectID(projectPath string) string {
 }
 
 // GetSessionDir returns the session storage directory for a project.
+// Used for the legacy flat-file storage format (pre-opencode v1.14).
 func GetSessionDir(projectPath string) (string, error) {
 	dataDir, err := GetDataDir()
 	if err != nil {
@@ -61,6 +62,17 @@ func GetSessionDir(projectPath string) (string, error) {
 
 	projectID := GetProjectID(projectPath)
 	return filepath.Join(dataDir, "storage", "session", projectID), nil
+}
+
+// GetSessionDiffDir returns the session_diff storage directory used by
+// opencode v1.14+. Sessions are stored flat in this directory (no
+// project-specific subdirectory) as {sessionID}.json files.
+func GetSessionDiffDir() (string, error) {
+	dataDir, err := GetDataDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dataDir, "storage", "session_diff"), nil
 }
 
 // GetMessageDir returns the message storage directory for a session.
