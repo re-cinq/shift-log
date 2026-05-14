@@ -1,3 +1,4 @@
+```go
 package opencode
 
 import (
@@ -8,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 // GetDataDir returns the OpenCode data directory.
@@ -52,7 +54,7 @@ func GetProjectID(projectPath string) string {
 	return "global"
 }
 
-// GetSessionDir returns the session storage directory for a project.
+// GetSessionDir returns the legacy session storage directory for a project (pre-v1.14).
 func GetSessionDir(projectPath string) (string, error) {
 	dataDir, err := GetDataDir()
 	if err != nil {
@@ -61,6 +63,17 @@ func GetSessionDir(projectPath string) (string, error) {
 
 	projectID := GetProjectID(projectPath)
 	return filepath.Join(dataDir, "storage", "session", projectID), nil
+}
+
+// GetSessionDiffDir returns the session_diff storage directory used by OpenCode v1.14+.
+// In v1.14+, session files are stored flat in storage/session_diff/ rather than
+// per-project subdirectories under storage/session/{projectID}/.
+func GetSessionDiffDir() (string, error) {
+	dataDir, err := GetDataDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dataDir, "storage", "session_diff"), nil
 }
 
 // GetMessageDir returns the message storage directory for a session.
@@ -78,7 +91,9 @@ type sessionInfo struct {
 	ID        string `json:"id"`
 	ProjectID string `json:"projectID,omitempty"`
 	Directory string `json:"directory,omitempty"`
-	Title     string `json:"title,omitempty"`
+	// v1.14+ fields
+	Path  string `json:"path,omitempty"`
+	Title string `json:"title,omitempty"`
 }
 
 // WriteSessionFile writes a session and its messages to OpenCode's storage.
@@ -127,3 +142,84 @@ func WriteSessionFile(projectPath, sessionID string, transcriptData []byte) (str
 
 	return sessionPath, nil
 }
+
+// sqliteSchema holds column names discovered via PRAGMA table_info.
+type sqliteSchema struct {
+	columns map[string]bool
+}
+
+// loadSchema runs PRAGMA table_info and returns the set of column names.
+func loadSchema(dbPath, table string) *sqliteSchema {
+	cmd := exec.Command("sqlite3", dbPath, fmt.Sprintf("PRAGMA table_info(%s);", table))
+	out, err := cmd.Output()
+	cols := map[string]bool{}
+	if err == nil {
+		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			parts := strings.Split(line, "|")
+			if len(parts) >= 2 {
+				cols[strings.TrimSpace(parts[1])] = true
+			}
+		}
+	}
+	return &sqliteSchema{columns: cols}
+}
+
+// pick returns the first candidate column name that exists in the schema.
+func (s *sqliteSchema) pick(candidates ...string) string {
+	for _, c := range candidates {
+		if s.columns[c] {
+			return c
+		}
+	}
+	return ""
+}
+
+// parseOpenCodeTime parses timestamps stored by OpenCode in various formats.
+// v1.14+ stores timestamps as Unix milliseconds (integer strings).
+// Earlier versions stored RFC3339 strings.
+func parseOpenCodeTime(raw string) (time.Time, bool) {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return time.Time{}, false
+	}
+	for _, layout := range []string{time.RFC3339Nano, "2006-01-02T15:04:05.000Z", "2006-01-02 15:04:05"} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t, true
+		}
+	}
+	// Unix milliseconds (v1.14+ integer timestamp)
+	var ms int64
+	if _, err := fmt.Sscanf(s, "%d", &ms); err == nil && ms > 1_000_000_000_000 {
+		return time.UnixMilli(ms), true
+	}
+	return time.Time{}, false
+}
+
+// queryMessages retrieves messages for a session from SQLite, handling both
+// old schema (data column with full JSON) and new schema (role/content columns).
+func queryMessages(dbPath, sessionID string) []byte {
+	escapedID := strings.ReplaceAll(sessionID, "'", "''")
+
+	queries := []string{
+		// v1.14+ schema: individual role/content/id columns
+		fmt.Sprintf(`SELECT json_group_array(json_object('role',role,'id',id,'content',content)) FROM message WHERE session_id='%s' ORDER BY rowid;`, escapedID),
+		// pre-v1.14 schema: 'data' column contains full JSON blob
+		fmt.Sprintf(`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`, escapedID),
+		// minimal fallback
+		fmt.Sprintf(`SELECT json_group_array(json_object('role',role,'content',content)) FROM message WHERE session_id='%s';`, escapedID),
+	}
+
+	for _, q := range queries {
+		out, err := exec.Command("sqlite3", dbPath, q).Output()
+		if err != nil {
+			continue
+		}
+		result := strings.TrimSpace(string(out))
+		if result == "" || result == "[null]" || result == "[]" {
+			continue
+		}
+		return []byte(result)
+	}
+	return nil
+}
+```
