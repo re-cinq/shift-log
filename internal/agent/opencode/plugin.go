@@ -10,8 +10,9 @@ import (
 // tool execution hooks and calls shiftlog store after git commits.
 //
 // OpenCode plugin hooks:
-//   tool.execute.before(input, output) — input: {tool, sessionID, callID}, output: {args}
-//   tool.execute.after(input, output)  — input: {tool, sessionID, callID}, output: {title, output, metadata}
+//
+//	tool.execute.before(input, output) — input: {tool, sessionID, callID}, output: {args}
+//	tool.execute.after(input, output)  — input: {tool, sessionID, callID}, output: {title, output, metadata}
 //
 // The command string is only available in the "before" hook (via output.args),
 // so we capture it there and act on it in the "after" hook, matching by callID.
@@ -21,9 +22,34 @@ const pluginTemplate = `// shiftlog plugin for OpenCode CLI
 
 export const ShiftlogPlugin = async ({ directory, client }) => {
   const pendingCommits = new Map();
+  let markerWritten = false;
+
+  const dataDir = process.platform === "darwin"
+      ? process.env.HOME + "/Library/Application Support/opencode"
+      : (process.env.XDG_DATA_HOME || process.env.HOME + "/.local/share") + "/opencode";
 
   return {
     "tool.execute.before": async (input, output) => {
+      // Write a session marker on the first tool call so the post-commit hook
+      // can discover this session even if the SQLite schema has changed.
+      if (!markerWritten && input?.sessionID) {
+        markerWritten = true;
+        try {
+          const { mkdirSync, writeFileSync } = await import("fs");
+          const { join } = await import("path");
+          const markerDir = join(directory, ".shiftlog");
+          mkdirSync(markerDir, { recursive: true });
+          writeFileSync(
+            join(markerDir, "opencode-last-session.json"),
+            JSON.stringify({
+              session_id: input.sessionID,
+              data_dir: dataDir,
+              timestamp: new Date().toISOString(),
+            }),
+          );
+        } catch (e) { /* ignore — marker is best-effort */ }
+      }
+
       const command = output?.args?.command || output?.args?.cmd || "";
       if (command.includes("git commit") || command.includes("git-commit")) {
         pendingCommits.set(input.callID, {
@@ -56,10 +82,6 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
           // Fall back to data_dir approach below
         }
       }
-
-      const dataDir = process.platform === "darwin"
-          ? process.env.HOME + "/Library/Application Support/opencode"
-          : (process.env.XDG_DATA_HOME || process.env.HOME + "/.local/share") + "/opencode";
 
       const hookData = JSON.stringify({
         session_id: pending.sessionID || "",
