@@ -153,8 +153,37 @@ func (a *Agent) DiagnoseHooks(repoRoot string) []agent.DiagnosticCheck {
 }
 
 // ParseHookInput parses Claude Code's PostToolUse hook JSON.
+// Claude Code 2.1.x+ may omit transcript_path from the hook payload; when it
+// is absent (or points to a file that does not exist), we fall back to
+// discovering the session file from the session ID and the current working
+// directory so that storeConversation can still read the transcript.
 func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
-	return agent.ParseStandardHookInput(raw)
+	hookData, err := agent.ParseStandardHookInput(raw)
+	if err != nil {
+		return nil, err
+	}
+
+	// If transcript_path is present and the file exists, use it as-is.
+	if hookData.TranscriptPath != "" {
+		if _, statErr := os.Stat(hookData.TranscriptPath); statErr == nil {
+			return hookData, nil
+		}
+		// Provided path does not exist; reset and try discovery below.
+		hookData.TranscriptPath = ""
+	}
+
+	// Discover transcript path from session ID + current working directory.
+	if hookData.SessionID != "" {
+		if cwd, err := os.Getwd(); err == nil {
+			if sessionPath, err := GetSessionFilePath(cwd, hookData.SessionID); err == nil {
+				if _, statErr := os.Stat(sessionPath); statErr == nil {
+					hookData.TranscriptPath = sessionPath
+				}
+			}
+		}
+	}
+
+	return hookData, nil
 }
 
 // IsCommitCommand checks if a tool invocation represents a git commit.
@@ -452,5 +481,3 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	}
 	return agent.ScanDirForRecentSession(sessionDir, ".jsonl", nil, projectPath)
 }
-
-

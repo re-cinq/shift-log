@@ -68,6 +68,8 @@ func runStore(cmd *cobra.Command, args []string) error {
 }
 
 // runHookStore handles the hook mode.
+// It always exits with code 0 to avoid blocking the calling agent on hook
+// failures (Claude Code 2.1.x+ may hang if a PostToolUse hook exits non-zero).
 func runHookStore() error {
 	cli.LogDebug("store: reading hook input from stdin")
 
@@ -77,16 +79,19 @@ func runHookStore() error {
 		return nil
 	}
 
-	// Read raw stdin
-	raw, err := io.ReadAll(os.Stdin)
-	if err != nil {
+	// Use json.Decoder rather than io.ReadAll so we return as soon as one
+	// complete JSON object has been read, even if the calling process keeps
+	// stdin open (observed with Claude Code 2.1.x PostToolUse hooks).
+	var rawMsg json.RawMessage
+	if err := json.NewDecoder(os.Stdin).Decode(&rawMsg); err != nil {
 		cli.LogDebug("store: failed to read stdin: %v", err)
 		return nil
 	}
+	raw := []byte(rawMsg)
 
 	hookData, err := ag.ParseHookInput(raw)
 	if err != nil {
-		cli.LogWarning("failed to parse hook JSON: %v", err)
+		cli.LogDebug("store: failed to parse hook JSON: %v", err)
 		return nil
 	}
 
@@ -100,11 +105,14 @@ func runHookStore() error {
 
 	// Verify we're in a git repository
 	if !git.IsInsideWorkTree() {
-		cli.LogWarning("not inside a git repository")
+		cli.LogDebug("store: not inside a git repository")
 		return nil
 	}
 
-	return storeConversation(ag, hookData.SessionID, hookData.TranscriptPath, hookData.TranscriptData)
+	if err := storeConversation(ag, hookData.SessionID, hookData.TranscriptPath, hookData.TranscriptData); err != nil {
+		cli.LogDebug("store: hook mode: %v", err)
+	}
+	return nil
 }
 
 // runManualStore handles the manual (post-commit hook) mode.
