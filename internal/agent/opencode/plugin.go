@@ -10,8 +10,9 @@ import (
 // tool execution hooks and calls shiftlog store after git commits.
 //
 // OpenCode plugin hooks:
-//   tool.execute.before(input, output) — input: {tool, sessionID, callID}, output: {args}
-//   tool.execute.after(input, output)  — input: {tool, sessionID, callID}, output: {title, output, metadata}
+//
+//	tool.execute.before(input, output) — input: {tool, sessionID, callID}, output: {args}
+//	tool.execute.after(input, output)  — input: {tool, sessionID, callID}, output: {title, output, metadata}
 //
 // The command string is only available in the "before" hook (via output.args),
 // so we capture it there and act on it in the "after" hook, matching by callID.
@@ -21,9 +22,38 @@ const pluginTemplate = `// shiftlog plugin for OpenCode CLI
 
 export const ShiftlogPlugin = async ({ directory, client }) => {
   const pendingCommits = new Map();
+  let sessionStarted = false;
 
   return {
     "tool.execute.before": async (input, output) => {
+      // Register session on first tool use so manual commits can be attributed.
+      // OpenCode lacks SessionStart/SessionEnd hooks, so we piggyback on the
+      // first tool invocation to write .shiftlog/active-session.json.
+      const sid = input?.sessionID || input?.session_id || input?.sessionId || "";
+      if (!sessionStarted && sid) {
+        sessionStarted = true;
+        const dataDir = process.platform === "darwin"
+            ? process.env.HOME + "/Library/Application Support/opencode"
+            : (process.env.XDG_DATA_HOME || process.env.HOME + "/.local/share") + "/opencode";
+        const transcriptPath = dataDir + "/storage/message/" + sid;
+        const sessionData = JSON.stringify({
+          session_id: sid,
+          transcript_path: transcriptPath,
+          cwd: directory,
+        });
+        try {
+          const { execSync } = await import("child_process");
+          execSync("shiftlog session-start", {
+            input: sessionData,
+            cwd: directory,
+            timeout: 5000,
+            stdio: ["pipe", "pipe", "pipe"],
+          });
+        } catch (e) {
+          // Silently ignore errors to not disrupt workflow
+        }
+      }
+
       const command = output?.args?.command || output?.args?.cmd || "";
       if (command.includes("git commit") || command.includes("git-commit")) {
         pendingCommits.set(input.callID, {

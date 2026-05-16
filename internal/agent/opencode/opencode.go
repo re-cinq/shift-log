@@ -20,7 +20,7 @@ func init() {
 // Agent implements the agent.Agent interface for OpenCode CLI.
 type Agent struct{}
 
-func (a *Agent) Name() agent.Name   { return agent.OpenCode }
+func (a *Agent) Name() agent.Name    { return agent.OpenCode }
 func (a *Agent) DisplayName() string { return "OpenCode CLI" }
 
 // ConfigureHooks installs the shiftlog plugin for OpenCode.
@@ -96,12 +96,12 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 func (a *Agent) IsCommitCommand(toolName, command string) bool {
 	// OpenCode tool names for shell execution
 	shellTools := map[string]bool{
-		"bash":               true,
-		"shell":              true,
-		"terminal":           true,
-		"execute":            true,
-		"run":                true,
-		"command":            true,
+		"bash":     true,
+		"shell":    true,
+		"terminal": true,
+		"execute":  true,
+		"run":      true,
+		"command":  true,
 	}
 
 	if !shellTools[toolName] {
@@ -230,9 +230,17 @@ func (a *Agent) parseMessageDir(dir string) (*agent.Transcript, error) {
 }
 
 // DiscoverSession finds an active or recent OpenCode session.
-// It first tries flat file storage (pre-v1.2), then falls back to SQLite (v1.2+).
+// It checks (in order): active-session.json written by the plugin, flat file
+// storage (pre-v1.2), and SQLite (v1.2+).
 func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) {
-	// Try flat file storage first (pre-v1.2 OpenCode)
+	// Check active-session.json written by the plugin on first tool use.
+	// This is the most reliable source: the plugin records the exact session ID,
+	// so we can query SQLite directly without depending on project_id computation.
+	if session, err := a.discoverFromActiveSessionFile(projectPath); err == nil && session != nil {
+		return session, nil
+	}
+
+	// Try flat file storage (pre-v1.2 OpenCode)
 	session, err := a.discoverFromFlatFiles(projectPath)
 	if err != nil {
 		return nil, err
@@ -249,6 +257,111 @@ func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) 
 
 	projectID := GetProjectID(projectPath)
 	return discoverFromSQLite(dataDir, projectID, projectPath)
+}
+
+// discoverFromActiveSessionFile reads .shiftlog/active-session.json written by the
+// OpenCode plugin on first tool use. Freshness is based on the file's own mtime
+// (not the transcript path) since OpenCode may store sessions in SQLite rather
+// than files. The known session ID is then used to fetch transcript data directly.
+func (a *Agent) discoverFromActiveSessionFile(projectPath string) (*agent.SessionInfo, error) {
+	sessionFilePath := filepath.Join(projectPath, ".shiftlog", "active-session.json")
+
+	info, err := os.Stat(sessionFilePath)
+	if err != nil {
+		return nil, nil
+	}
+
+	const staleTimeout = 10 * time.Minute
+	if time.Since(info.ModTime()) > staleTimeout {
+		return nil, nil
+	}
+
+	data, err := os.ReadFile(sessionFilePath)
+	if err != nil {
+		return nil, nil
+	}
+
+	var active struct {
+		SessionID   string `json:"session_id"`
+		ProjectPath string `json:"project_path"`
+	}
+	if err := json.Unmarshal(data, &active); err != nil {
+		return nil, nil
+	}
+
+	if active.SessionID == "" {
+		return nil, nil
+	}
+
+	// Validate project path if present (cwd written by session-start)
+	if active.ProjectPath != "" && !agent.PathsEqual(active.ProjectPath, projectPath) {
+		return nil, nil
+	}
+
+	// Try to fetch transcript from SQLite using the known session ID.
+	// This bypasses the project_id computation, which may differ across versions.
+	dataDir, err := GetDataDir()
+	if err == nil {
+		if session, _ := discoverFromSQLiteByID(dataDir, active.SessionID, projectPath); session != nil {
+			return session, nil
+		}
+	}
+
+	// SQLite unavailable or returned no data; try the message directory (flat files)
+	msgDir, _ := GetMessageDir(active.SessionID)
+	if msgInfo, statErr := os.Stat(msgDir); statErr == nil && msgInfo.IsDir() {
+		return &agent.SessionInfo{
+			SessionID:      active.SessionID,
+			TranscriptPath: msgDir,
+			StartedAt:      info.ModTime().Format(time.RFC3339),
+			ProjectPath:    projectPath,
+		}, nil
+	}
+
+	// Last resort: session ID is known but transcript is inaccessible.
+	// Return an empty transcript so a git note can still be created.
+	return &agent.SessionInfo{
+		SessionID:      active.SessionID,
+		TranscriptData: []byte("[]"),
+		StartedAt:      info.ModTime().Format(time.RFC3339),
+		ProjectPath:    projectPath,
+	}, nil
+}
+
+// discoverFromSQLiteByID fetches transcript data for a specific session ID directly,
+// bypassing the project_id lookup used by discoverFromSQLite.
+func discoverFromSQLiteByID(dataDir, sessionID, projectPath string) (*agent.SessionInfo, error) {
+	dbPath := filepath.Join(dataDir, "opencode.db")
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		return nil, nil
+	}
+
+	if _, err := exec.LookPath("sqlite3"); err != nil {
+		return nil, nil
+	}
+
+	msgQuery := fmt.Sprintf(
+		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
+		sessionID,
+	)
+	cmd := exec.Command("sqlite3", dbPath, msgQuery)
+	msgOutput, err := cmd.Output()
+	if err != nil {
+		return nil, nil
+	}
+
+	transcriptData := []byte(strings.TrimSpace(string(msgOutput)))
+	if string(transcriptData) == "[null]" || string(transcriptData) == "[]" || len(transcriptData) == 0 {
+		return nil, nil
+	}
+
+	return &agent.SessionInfo{
+		SessionID:      sessionID,
+		TranscriptPath: "",
+		StartedAt:      time.Now().Format(time.RFC3339),
+		ProjectPath:    projectPath,
+		TranscriptData: transcriptData,
+	}, nil
 }
 
 // discoverFromFlatFiles tries the legacy flat file session discovery.
@@ -454,7 +567,6 @@ func parseOpenCodeEntry(raw map[string]json.RawMessage, fullData []byte) agent.T
 	return entry
 }
 
-
 // parseOpenCodeMessage parses message content from an OpenCode entry.
 func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageType) *agent.Message {
 	if msgType == "" {
@@ -497,4 +609,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
