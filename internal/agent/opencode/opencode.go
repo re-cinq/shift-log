@@ -96,12 +96,12 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 func (a *Agent) IsCommitCommand(toolName, command string) bool {
 	// OpenCode tool names for shell execution
 	shellTools := map[string]bool{
-		"bash":               true,
-		"shell":              true,
-		"terminal":           true,
-		"execute":            true,
-		"run":                true,
-		"command":            true,
+		"bash":    true,
+		"shell":   true,
+		"terminal": true,
+		"execute": true,
+		"run":     true,
+		"command": true,
 	}
 
 	if !shellTools[toolName] {
@@ -353,20 +353,11 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		// If we can't parse the time, proceed anyway — better to try than skip
 	}
 
-	// Get messages for this session as a JSON array
-	msgQuery := fmt.Sprintf(
-		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
-		sessionID,
-	)
-	cmd = exec.Command("sqlite3", dbPath, msgQuery)
-	msgOutput, err := cmd.Output()
-	if err != nil {
-		return nil, nil
-	}
-
-	transcriptData := []byte(strings.TrimSpace(string(msgOutput)))
-	// sqlite3 returns "[null]" when no rows match
-	if string(transcriptData) == "[null]" || string(transcriptData) == "[]" {
+	// Get messages for this session as a JSON array.
+	// OpenCode v1.15+ uses a 'parts' column; older versions (v1.2-v1.14) used 'data'.
+	// Try the newer schema first and fall back on error.
+	transcriptData, err := queryMessagesFromSQLite(dbPath, sessionID)
+	if err != nil || len(transcriptData) == 0 {
 		return nil, nil
 	}
 
@@ -377,6 +368,38 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		ProjectPath:    projectPath,
 		TranscriptData: transcriptData,
 	}, nil
+}
+
+// queryMessagesFromSQLite retrieves messages for a session as a JSON array.
+// It tries the v1.15+ schema (parts column) first, then falls back to the legacy schema (data column).
+func queryMessagesFromSQLite(dbPath, sessionID string) ([]byte, error) {
+	// v1.15+: messages use separate role/parts columns
+	partsQuery := fmt.Sprintf(
+		`SELECT json_group_array(json_object('id', id, 'role', role, 'parts', json(parts))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
+		sessionID,
+	)
+	cmd := exec.Command("sqlite3", dbPath, partsQuery)
+	out, err := cmd.Output()
+	trimmed := strings.TrimSpace(string(out))
+	if err == nil && trimmed != "[null]" && trimmed != "[]" && trimmed != "" {
+		return []byte(trimmed), nil
+	}
+
+	// Legacy schema (v1.2-v1.14): messages stored as JSON blob in data column
+	dataQuery := fmt.Sprintf(
+		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
+		sessionID,
+	)
+	cmd = exec.Command("sqlite3", dbPath, dataQuery)
+	out, err = cmd.Output()
+	if err != nil {
+		return nil, nil
+	}
+	trimmed = strings.TrimSpace(string(out))
+	if trimmed == "[null]" || trimmed == "[]" || trimmed == "" {
+		return nil, nil
+	}
+	return []byte(trimmed), nil
 }
 
 // RestoreSession writes a session to OpenCode's storage location.
@@ -454,7 +477,6 @@ func parseOpenCodeEntry(raw map[string]json.RawMessage, fullData []byte) agent.T
 	return entry
 }
 
-
 // parseOpenCodeMessage parses message content from an OpenCode entry.
 func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageType) *agent.Message {
 	if msgType == "" {
@@ -487,6 +509,40 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 		}
 	}
 
+	// Try "parts" (OpenCode v1.15+ format: array of typed content parts)
+	if partsRaw, ok := raw["parts"]; ok {
+		var parts []json.RawMessage
+		if err := json.Unmarshal(partsRaw, &parts); err == nil && len(parts) > 0 {
+			var blocks []agent.ContentBlock
+			for _, part := range parts {
+				var partMap map[string]json.RawMessage
+				if err := json.Unmarshal(part, &partMap); err != nil {
+					continue
+				}
+				typeRaw, hasType := partMap["type"]
+				if !hasType {
+					continue
+				}
+				var partType string
+				if err := json.Unmarshal(typeRaw, &partType); err != nil {
+					continue
+				}
+				if partType == "text" {
+					if textRaw, ok := partMap["text"]; ok {
+						var text string
+						if err := json.Unmarshal(textRaw, &text); err == nil && text != "" {
+							blocks = append(blocks, agent.ContentBlock{Type: "text", Text: text})
+						}
+					}
+				}
+			}
+			if len(blocks) > 0 {
+				msg.Content = blocks
+				return msg
+			}
+		}
+	}
+
 	// Try "message" field
 	if msgRaw, ok := raw["message"]; ok {
 		var innerMsg agent.Message
@@ -497,4 +553,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
