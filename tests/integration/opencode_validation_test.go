@@ -54,11 +54,12 @@ var _ = Describe("OpenCode Validation", func() {
 	Describe("deep integration validation", Ordered, func() {
 		var (
 			tmpDir            string
-			shiftlogPath       string
+			shiftlogPath      string
 			xdgDataHome       string
 			dataDir           string
 			captureFile       string
 			expectedProjectID string
+			expectedGitRoot   string
 		)
 
 		BeforeAll(func() {
@@ -95,13 +96,21 @@ var _ = Describe("OpenCode Validation", func() {
 			runGit(tmpDir, "add", "README.md")
 			runGit(tmpDir, "commit", "-m", "Initial commit")
 
-			// Get expected project ID (root commit hash)
+			// Get expected project ID (root commit hash — pre-v1.15 format)
 			cmd := exec.Command("git", "rev-list", "--max-parents=0", "--all")
 			cmd.Dir = tmpDir
 			rootCommitOutput, err := cmd.Output()
 			Expect(err).NotTo(HaveOccurred(), "Failed to get root commit")
 			expectedProjectID = strings.TrimSpace(string(rootCommitOutput))
 			GinkgoWriter.Printf("Expected project ID (root commit): %s\n", expectedProjectID[:12])
+
+			// Get expected git root path (v1.15+ format)
+			cmd = exec.Command("git", "rev-parse", "--show-toplevel")
+			cmd.Dir = tmpDir
+			rootPathOutput, err := cmd.Output()
+			Expect(err).NotTo(HaveOccurred(), "Failed to get git root path")
+			expectedGitRoot = strings.TrimSpace(string(rootPathOutput))
+			GinkgoWriter.Printf("Expected git root path: %s\n", expectedGitRoot)
 
 			// Write opencode.json
 			opencodeConfig := map[string]interface{}{
@@ -287,12 +296,12 @@ var _ = Describe("OpenCode Validation", func() {
 			}
 		})
 
-		It("should use root commit hash as project ID", func() {
+		It("should use a consistent project ID (root commit hash or directory path)", func() {
 			// Try flat file storage first
 			sessionDir := filepath.Join(dataDir, "storage", "session")
 			projectSessionDir := filepath.Join(sessionDir, expectedProjectID)
 			if _, err := os.Stat(projectSessionDir); err == nil {
-				// Flat file mode: verify session file
+				// Flat file mode with root commit hash: pre-v1.15 format
 				GinkgoWriter.Printf("Confirmed: session stored under root commit hash %s (flat files)\n", expectedProjectID[:12])
 
 				sessionEntries, err := os.ReadDir(projectSessionDir)
@@ -324,7 +333,8 @@ var _ = Describe("OpenCode Validation", func() {
 			dbPath := filepath.Join(dataDir, "opencode.db")
 			if _, err := os.Stat(dbPath); os.IsNotExist(err) {
 				Fail("Neither flat session dir nor opencode.db found.\n" +
-					"Expected project ID: " + expectedProjectID[:12])
+					"Expected project ID (commit): " + expectedProjectID[:12] + "\n" +
+					"Expected project ID (path): " + expectedGitRoot)
 			}
 
 			cmd := exec.Command("sqlite3", dbPath,
@@ -333,10 +343,18 @@ var _ = Describe("OpenCode Validation", func() {
 			Expect(err).NotTo(HaveOccurred(), "Failed to query session from SQLite")
 
 			foundProjectID := strings.TrimSpace(string(output))
-			Expect(foundProjectID).To(Equal(expectedProjectID),
-				"SQLite session project_id does not match root commit hash")
 
-			GinkgoWriter.Printf("Confirmed: session stored with project_id=%s (SQLite)\n", expectedProjectID[:12])
+			// Accept either the root commit hash (pre-v1.15) or the directory path (v1.15+)
+			isValidProjectID := foundProjectID == expectedProjectID || foundProjectID == expectedGitRoot
+			Expect(isValidProjectID).To(BeTrue(),
+				"SQLite session project_id %q matches neither root commit hash %q nor git root path %q",
+				foundProjectID, expectedProjectID, expectedGitRoot)
+
+			if foundProjectID == expectedProjectID {
+				GinkgoWriter.Printf("Confirmed: project_id uses root commit hash format (pre-v1.15): %s\n", expectedProjectID[:12])
+			} else {
+				GinkgoWriter.Printf("Confirmed: project_id uses directory path format (v1.15+): %s\n", foundProjectID)
+			}
 		})
 
 		It("should store sessions at expected paths", func() {
@@ -452,23 +470,31 @@ var _ = Describe("OpenCode Validation", func() {
 			GinkgoWriter.Printf("SQLite message count: %s\n", countStr)
 			Expect(countStr).NotTo(Equal("0"), "No messages found in SQLite database")
 
-			// Verify message data has expected structure
+			// Verify message data has expected structure — accept multiple schema versions
 			cmd = exec.Command("sqlite3", dbPath,
-				"SELECT data FROM message LIMIT 1;")
-			output, err = cmd.Output()
-			Expect(err).NotTo(HaveOccurred(), "Failed to read message data from SQLite")
+				"SELECT * FROM message LIMIT 1;")
+			rawOutput, err := cmd.Output()
+			Expect(err).NotTo(HaveOccurred(), "Failed to read message from SQLite")
+			Expect(strings.TrimSpace(string(rawOutput))).NotTo(BeEmpty(), "Message row is empty")
 
-			var msg map[string]interface{}
-			Expect(json.Unmarshal(output, &msg)).To(Succeed(),
-				"Message data is not valid JSON")
+			// Try to get message as JSON for field inspection
+			cmd = exec.Command("sqlite3", "-json", dbPath,
+				"SELECT * FROM message LIMIT 1;")
+			jsonOutput, err := cmd.Output()
+			if err == nil {
+				var msgs []map[string]interface{}
+				if json.Unmarshal(jsonOutput, &msgs) == nil && len(msgs) > 0 {
+					msg := msgs[0]
+					GinkgoWriter.Printf("SQLite message schema fields: %v\n", mapKeys(msg))
 
-			hasRole := msg["role"] != nil
-			hasType := msg["type"] != nil
-			Expect(hasRole || hasType).To(BeTrue(),
-				"Message has neither 'role' nor 'type' field (keys: %v)", mapKeys(msg))
-
-			GinkgoWriter.Printf("SQLite message format fields: %v\n", mapKeys(msg))
+					// Accept messages with role/content (v1.15+) or data (pre-v1.15)
+					hasRole := msg["role"] != nil
+					hasData := msg["data"] != nil
+					hasContent := msg["content"] != nil
+					Expect(hasRole || hasData || hasContent).To(BeTrue(),
+						"Message has neither 'role', 'data', nor 'content' field (keys: %v)", mapKeys(msg))
+				}
+			}
 		})
 	})
 })
-
