@@ -34,6 +34,34 @@ func GetDataDir() (string, error) {
 	return filepath.Join(home, ".local", "share", "opencode"), nil
 }
 
+// getDataDirCandidates returns all potential opencode data directories to search.
+// Different versions of opencode use different default locations when XDG_DATA_HOME
+// is not set, so we try all known locations.
+func getDataDirCandidates() []string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+
+	var candidates []string
+
+	// Always respect XDG_DATA_HOME if set
+	if xdg := os.Getenv("XDG_DATA_HOME"); xdg != "" {
+		candidates = append(candidates, filepath.Join(xdg, "opencode"))
+	}
+
+	if runtime.GOOS == "darwin" {
+		candidates = append(candidates, filepath.Join(home, "Library", "Application Support", "opencode"))
+	} else {
+		// XDG standard path (~/.local/share/opencode)
+		candidates = append(candidates, filepath.Join(home, ".local", "share", "opencode"))
+		// Simple dot-directory (~/.opencode), used by some opencode versions
+		candidates = append(candidates, filepath.Join(home, ".opencode"))
+	}
+
+	return candidates
+}
+
 // GetProjectID returns the project identifier for OpenCode.
 // For git repos, this is the root commit hash. For non-git dirs, it's "global".
 func GetProjectID(projectPath string) string {
