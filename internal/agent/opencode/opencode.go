@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -96,12 +97,12 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 func (a *Agent) IsCommitCommand(toolName, command string) bool {
 	// OpenCode tool names for shell execution
 	shellTools := map[string]bool{
-		"bash":               true,
-		"shell":              true,
-		"terminal":           true,
-		"execute":            true,
-		"run":                true,
-		"command":            true,
+		"bash":     true,
+		"shell":    true,
+		"terminal": true,
+		"execute":  true,
+		"run":      true,
+		"command":  true,
 	}
 
 	if !shellTools[toolName] {
@@ -316,9 +317,11 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		return nil, nil
 	}
 
-	// Find most recent session for this project
+	// Find most recent session for this project.
+	// Use rowid for ordering — avoids dependence on timestamp column name which
+	// changed from time_updated (pre-v1.15) to updated_at (v1.15+).
 	sessionQuery := fmt.Sprintf(
-		`SELECT id FROM session WHERE project_id='%s' ORDER BY time_updated DESC LIMIT 1;`,
+		`SELECT id FROM session WHERE project_id='%s' ORDER BY rowid DESC LIMIT 1;`,
 		projectID,
 	)
 	cmd := exec.Command("sqlite3", "-separator", "\t", dbPath, sessionQuery)
@@ -328,55 +331,93 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 	}
 	sessionID := strings.TrimSpace(string(sessionOutput))
 
-	// Check if this session was recent (within timeout)
-	timeQuery := fmt.Sprintf(
-		`SELECT time_updated FROM session WHERE id='%s';`,
-		sessionID,
-	)
-	cmd = exec.Command("sqlite3", dbPath, timeQuery)
-	timeOutput, err := cmd.Output()
-	if err == nil {
+	// Check if this session was recent.
+	// Try updated_at (v1.15+, integer ms) then time_updated (pre-v1.15, string).
+	for _, timeCol := range []string{"updated_at", "time_updated"} {
+		timeQuery := fmt.Sprintf(`SELECT %s FROM session WHERE id='%s';`, timeCol, sessionID)
+		cmd = exec.Command("sqlite3", dbPath, timeQuery)
+		timeOutput, err := cmd.Output()
+		if err != nil {
+			continue
+		}
 		timeStr := strings.TrimSpace(string(timeOutput))
-		if t, err := time.Parse(time.RFC3339Nano, timeStr); err == nil {
-			if time.Since(t) > agent.RecentSessionTimeout {
-				return nil, nil
-			}
-		} else if t, err := time.Parse("2006-01-02T15:04:05.000Z", timeStr); err == nil {
-			if time.Since(t) > agent.RecentSessionTimeout {
-				return nil, nil
-			}
-		} else if t, err := time.Parse("2006-01-02 15:04:05", timeStr); err == nil {
+		if t, ok := parseOpenCodeTimestamp(timeStr); ok {
 			if time.Since(t) > agent.RecentSessionTimeout {
 				return nil, nil
 			}
 		}
-		// If we can't parse the time, proceed anyway — better to try than skip
+		break
 	}
+	// If no time column could be queried, proceed anyway.
 
-	// Get messages for this session as a JSON array
-	msgQuery := fmt.Sprintf(
-		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
-		sessionID,
-	)
-	cmd = exec.Command("sqlite3", dbPath, msgQuery)
-	msgOutput, err := cmd.Output()
-	if err != nil {
-		return nil, nil
-	}
-
-	transcriptData := []byte(strings.TrimSpace(string(msgOutput)))
-	// sqlite3 returns "[null]" when no rows match
-	if string(transcriptData) == "[null]" || string(transcriptData) == "[]" {
+	transcriptData := discoverMessages(dbPath, sessionID)
+	if len(transcriptData) == 0 {
 		return nil, nil
 	}
 
 	return &agent.SessionInfo{
 		SessionID:      sessionID,
-		TranscriptPath: "", // no file path for SQLite
+		TranscriptPath: "",
 		StartedAt:      time.Now().Format(time.RFC3339),
 		ProjectPath:    projectPath,
 		TranscriptData: transcriptData,
 	}, nil
+}
+
+// discoverMessages queries OpenCode's SQLite DB for session messages.
+// Tries new schema (parts column, v1.15+) first, then old schema (data column).
+func discoverMessages(dbPath, sessionID string) []byte {
+	// New schema (v1.15+): separate role/parts/created_at columns.
+	msgQuery := fmt.Sprintf(
+		`SELECT json_group_array(json_object('id', id, 'role', role, 'parts', json(parts), 'created_at', created_at)) FROM message WHERE session_id='%s' ORDER BY rowid;`,
+		sessionID,
+	)
+	cmd := exec.Command("sqlite3", dbPath, msgQuery)
+	if out, err := cmd.Output(); err == nil {
+		td := []byte(strings.TrimSpace(string(out)))
+		if s := string(td); s != "[null]" && s != "[]" && len(td) > 0 {
+			return td
+		}
+	}
+
+	// Old schema (pre-v1.15): data column stores full message JSON.
+	msgQuery = fmt.Sprintf(
+		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY rowid;`,
+		sessionID,
+	)
+	cmd = exec.Command("sqlite3", dbPath, msgQuery)
+	out, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+	td := []byte(strings.TrimSpace(string(out)))
+	if s := string(td); s == "[null]" || s == "[]" {
+		return nil
+	}
+	return td
+}
+
+// parseOpenCodeTimestamp parses various time formats used by OpenCode.
+// v1.15+ stores timestamps as integer milliseconds; older versions used RFC3339 strings.
+func parseOpenCodeTimestamp(s string) (time.Time, bool) {
+	if s == "" {
+		return time.Time{}, false
+	}
+	// Integer milliseconds (OpenCode v1.15+).
+	if ms, err := strconv.ParseInt(s, 10, 64); err == nil {
+		return time.UnixMilli(ms), true
+	}
+	// RFC3339 variants (pre-v1.15).
+	for _, layout := range []string{
+		time.RFC3339Nano,
+		"2006-01-02T15:04:05.000Z",
+		"2006-01-02 15:04:05",
+	} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
 }
 
 // RestoreSession writes a session to OpenCode's storage location.
@@ -438,8 +479,15 @@ func parseOpenCodeEntry(raw map[string]json.RawMessage, fullData []byte) agent.T
 		}
 	}
 
-	// Parse timestamp
-	if timeRaw, ok := raw["time"]; ok {
+	// Parse timestamp.
+	// v1.15+: created_at is an integer (Unix milliseconds).
+	// pre-v1.15: time is an object with a "created" string field.
+	if createdAtRaw, ok := raw["created_at"]; ok {
+		var ms int64
+		if err := json.Unmarshal(createdAtRaw, &ms); err == nil {
+			entry.Timestamp = time.UnixMilli(ms).UTC().Format(time.RFC3339)
+		}
+	} else if timeRaw, ok := raw["time"]; ok {
 		var timeObj struct {
 			Created string `json:"created"`
 		}
@@ -453,7 +501,6 @@ func parseOpenCodeEntry(raw map[string]json.RawMessage, fullData []byte) agent.T
 
 	return entry
 }
-
 
 // parseOpenCodeMessage parses message content from an OpenCode entry.
 func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageType) *agent.Message {
@@ -469,6 +516,14 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 		msg.Role = "assistant"
 	case agent.MessageTypeSystem:
 		msg.Role = "system"
+	}
+
+	// Try "parts" field (OpenCode v1.15+ schema — array of typed part objects)
+	if partsRaw, ok := raw["parts"]; ok {
+		if blocks := parseOpenCodeParts(partsRaw); len(blocks) > 0 {
+			msg.Content = blocks
+			return msg
+		}
 	}
 
 	// Try "content" as string
@@ -498,3 +553,58 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 	return msg
 }
 
+// parseOpenCodeParts converts OpenCode v1.15+ "parts" array into ContentBlocks.
+// Parts use hyphenated types ("tool-use", "tool-result") and camelCase field names.
+func parseOpenCodeParts(raw json.RawMessage) []agent.ContentBlock {
+	var parts []json.RawMessage
+	if err := json.Unmarshal(raw, &parts); err != nil {
+		return nil
+	}
+
+	var blocks []agent.ContentBlock
+	for _, partRaw := range parts {
+		var part map[string]json.RawMessage
+		if err := json.Unmarshal(partRaw, &part); err != nil {
+			continue
+		}
+
+		var partType string
+		if typeRaw, ok := part["type"]; ok {
+			_ = json.Unmarshal(typeRaw, &partType)
+		}
+
+		switch partType {
+		case "text":
+			block := agent.ContentBlock{Type: "text"}
+			if v, ok := part["text"]; ok {
+				_ = json.Unmarshal(v, &block.Text)
+			}
+			blocks = append(blocks, block)
+
+		case "tool-use":
+			block := agent.ContentBlock{Type: "tool_use"}
+			if v, ok := part["id"]; ok {
+				_ = json.Unmarshal(v, &block.ID)
+			}
+			if v, ok := part["name"]; ok {
+				_ = json.Unmarshal(v, &block.Name)
+			}
+			if v, ok := part["input"]; ok {
+				block.Input = v
+			}
+			blocks = append(blocks, block)
+
+		case "tool-result":
+			block := agent.ContentBlock{Type: "tool_result"}
+			if v, ok := part["toolUseId"]; ok {
+				_ = json.Unmarshal(v, &block.ToolUseID)
+			}
+			if v, ok := part["content"]; ok {
+				block.Content = v
+			}
+			blocks = append(blocks, block)
+		}
+	}
+
+	return blocks
+}
