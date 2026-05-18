@@ -96,12 +96,12 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 func (a *Agent) IsCommitCommand(toolName, command string) bool {
 	// OpenCode tool names for shell execution
 	shellTools := map[string]bool{
-		"bash":               true,
-		"shell":              true,
-		"terminal":           true,
-		"execute":            true,
-		"run":                true,
-		"command":            true,
+		"bash":      true,
+		"shell":     true,
+		"terminal":  true,
+		"execute":   true,
+		"run":       true,
+		"command":   true,
 	}
 
 	if !shellTools[toolName] {
@@ -304,7 +304,27 @@ func (a *Agent) discoverFromFlatFiles(projectPath string) (*agent.SessionInfo, e
 	}, nil
 }
 
+// sqliteTableColumns returns the set of column names for a table in a SQLite database.
+// Used to detect the schema version (snake_case vs camelCase) at runtime.
+func sqliteTableColumns(dbPath, table string) map[string]bool {
+	cmd := exec.Command("sqlite3", dbPath, fmt.Sprintf("PRAGMA table_info(%s);", table))
+	output, err := cmd.Output()
+	if err != nil {
+		return map[string]bool{}
+	}
+	cols := map[string]bool{}
+	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
+		// PRAGMA table_info format: cid|name|type|notnull|dflt_value|pk
+		parts := strings.Split(line, "|")
+		if len(parts) >= 2 {
+			cols[strings.TrimSpace(parts[1])] = true
+		}
+	}
+	return cols
+}
+
 // discoverFromSQLite queries the OpenCode SQLite database for the most recent session.
+// Supports both legacy snake_case schema (pre-v1.2) and camelCase schema (v1.2+).
 func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionInfo, error) {
 	dbPath := filepath.Join(dataDir, "opencode.db")
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
@@ -316,10 +336,28 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		return nil, nil
 	}
 
+	// Detect schema version by inspecting actual column names.
+	// OpenCode v1.2+ uses camelCase (projectId, sessionID, time-as-JSON-object).
+	// Older versions used snake_case (project_id, session_id, time_updated).
+	sessionCols := sqliteTableColumns(dbPath, "session")
+	msgCols := sqliteTableColumns(dbPath, "message")
+
+	// Determine project ID column
+	projectIDCol := "project_id"
+	if sessionCols["projectId"] {
+		projectIDCol = "projectId"
+	}
+
+	// Determine time ordering expression for session table
+	sessionTimeExpr := "time_updated"
+	if sessionCols["time"] {
+		sessionTimeExpr = "json_extract(time, '$.updated')"
+	}
+
 	// Find most recent session for this project
 	sessionQuery := fmt.Sprintf(
-		`SELECT id FROM session WHERE project_id='%s' ORDER BY time_updated DESC LIMIT 1;`,
-		projectID,
+		`SELECT id FROM session WHERE %s='%s' ORDER BY %s DESC LIMIT 1;`,
+		projectIDCol, projectID, sessionTimeExpr,
 	)
 	cmd := exec.Command("sqlite3", "-separator", "\t", dbPath, sessionQuery)
 	sessionOutput, err := cmd.Output()
@@ -329,9 +367,13 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 	sessionID := strings.TrimSpace(string(sessionOutput))
 
 	// Check if this session was recent (within timeout)
+	sessionTimeCol := "time_updated"
+	if sessionCols["time"] {
+		sessionTimeCol = "json_extract(time, '$.updated')"
+	}
 	timeQuery := fmt.Sprintf(
-		`SELECT time_updated FROM session WHERE id='%s';`,
-		sessionID,
+		`SELECT %s FROM session WHERE id='%s';`,
+		sessionTimeCol, sessionID,
 	)
 	cmd = exec.Command("sqlite3", dbPath, timeQuery)
 	timeOutput, err := cmd.Output()
@@ -353,11 +395,34 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		// If we can't parse the time, proceed anyway — better to try than skip
 	}
 
-	// Get messages for this session as a JSON array
-	msgQuery := fmt.Sprintf(
-		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
-		sessionID,
-	)
+	// Determine session ID column for message table
+	msgSessionIDCol := "session_id"
+	if msgCols["sessionID"] {
+		msgSessionIDCol = "sessionID"
+	}
+
+	// Determine message time ordering expression
+	msgTimeExpr := "time_created"
+	if msgCols["time"] {
+		msgTimeExpr = "json_extract(time, '$.created')"
+	}
+
+	// Build message query based on schema version.
+	// Old schema has a `data` column with the full JSON blob.
+	// New schema (v1.2+) stores fields in individual columns.
+	var msgQuery string
+	if msgCols["data"] {
+		msgQuery = fmt.Sprintf(
+			`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE %s='%s' ORDER BY %s;`,
+			msgSessionIDCol, sessionID, msgTimeExpr,
+		)
+	} else {
+		msgQuery = fmt.Sprintf(
+			`SELECT json_group_array(json_object('id', id, 'role', role, 'content', json(content), 'time', json(time))) FROM message WHERE %s='%s' ORDER BY %s;`,
+			msgSessionIDCol, sessionID, msgTimeExpr,
+		)
+	}
+
 	cmd = exec.Command("sqlite3", dbPath, msgQuery)
 	msgOutput, err := cmd.Output()
 	if err != nil {
@@ -497,4 +562,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
