@@ -316,12 +316,26 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		return nil, nil
 	}
 
+	// OpenCode v1.15+ uses a project table keyed by directory path.
+	// Look up the actual project_id by matching the working directory path.
+	safeProjectPath := strings.ReplaceAll(projectPath, "'", "''")
+	projectLookupQuery := fmt.Sprintf(
+		`SELECT id FROM project WHERE path='%s' LIMIT 1;`,
+		safeProjectPath,
+	)
+	cmd := exec.Command("sqlite3", dbPath, projectLookupQuery)
+	if out, err := cmd.Output(); err == nil {
+		if pid := strings.TrimSpace(string(out)); pid != "" {
+			projectID = pid
+		}
+	}
+
 	// Find most recent session for this project
 	sessionQuery := fmt.Sprintf(
 		`SELECT id FROM session WHERE project_id='%s' ORDER BY time_updated DESC LIMIT 1;`,
 		projectID,
 	)
-	cmd := exec.Command("sqlite3", "-separator", "\t", dbPath, sessionQuery)
+	cmd = exec.Command("sqlite3", "-separator", "\t", dbPath, sessionQuery)
 	sessionOutput, err := cmd.Output()
 	if err != nil || strings.TrimSpace(string(sessionOutput)) == "" {
 		return nil, nil
@@ -353,15 +367,25 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		// If we can't parse the time, proceed anyway — better to try than skip
 	}
 
-	// Get messages for this session as a JSON array
-	msgQuery := fmt.Sprintf(
-		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
+	// Get messages for this session as a JSON array.
+	// Try new schema first (v1.15+): parts column for content, ordered by rowid.
+	newMsgQuery := fmt.Sprintf(
+		`SELECT json_group_array(json_object('id', id, 'role', role, 'content', json(parts), 'time', json(time))) FROM message WHERE session_id='%s' ORDER BY rowid;`,
 		sessionID,
 	)
-	cmd = exec.Command("sqlite3", dbPath, msgQuery)
-	msgOutput, err := cmd.Output()
-	if err != nil {
-		return nil, nil
+	cmd = exec.Command("sqlite3", dbPath, newMsgQuery)
+	msgOutput, msgErr := cmd.Output()
+	if msgErr != nil {
+		// Fall back to legacy schema (v1.2-v1.14): data column, time_created ordering.
+		legacyMsgQuery := fmt.Sprintf(
+			`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
+			sessionID,
+		)
+		cmd = exec.Command("sqlite3", dbPath, legacyMsgQuery)
+		msgOutput, msgErr = cmd.Output()
+		if msgErr != nil {
+			return nil, nil
+		}
 	}
 
 	transcriptData := []byte(strings.TrimSpace(string(msgOutput)))
@@ -497,4 +521,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
