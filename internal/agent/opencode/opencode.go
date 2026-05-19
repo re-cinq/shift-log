@@ -96,12 +96,12 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 func (a *Agent) IsCommitCommand(toolName, command string) bool {
 	// OpenCode tool names for shell execution
 	shellTools := map[string]bool{
-		"bash":               true,
-		"shell":              true,
-		"terminal":           true,
-		"execute":            true,
-		"run":                true,
-		"command":            true,
+		"bash":     true,
+		"shell":    true,
+		"terminal": true,
+		"execute":  true,
+		"run":      true,
+		"command":  true,
 	}
 
 	if !shellTools[toolName] {
@@ -316,24 +316,36 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		return nil, nil
 	}
 
-	// Find most recent session for this project
-	sessionQuery := fmt.Sprintf(
-		`SELECT id FROM session WHERE project_id='%s' ORDER BY time_updated DESC LIMIT 1;`,
-		projectID,
-	)
-	cmd := exec.Command("sqlite3", "-separator", "\t", dbPath, sessionQuery)
-	sessionOutput, err := cmd.Output()
-	if err != nil || strings.TrimSpace(string(sessionOutput)) == "" {
+	// Try different project_id formats across opencode versions.
+	// v1.x+ stores the absolute directory path; earlier versions stored the git root commit hash.
+	sessionID := ""
+	for _, pid := range []string{projectPath, projectID} {
+		if pid == "" || pid == "global" {
+			continue
+		}
+		q := fmt.Sprintf(
+			`SELECT id FROM session WHERE project_id='%s' ORDER BY time_updated DESC LIMIT 1;`,
+			strings.ReplaceAll(pid, "'", "''"),
+		)
+		cmd := exec.Command("sqlite3", "-separator", "\t", dbPath, q)
+		out, err := cmd.Output()
+		if err == nil {
+			if sid := strings.TrimSpace(string(out)); sid != "" {
+				sessionID = sid
+				break
+			}
+		}
+	}
+	if sessionID == "" {
 		return nil, nil
 	}
-	sessionID := strings.TrimSpace(string(sessionOutput))
 
 	// Check if this session was recent (within timeout)
 	timeQuery := fmt.Sprintf(
 		`SELECT time_updated FROM session WHERE id='%s';`,
 		sessionID,
 	)
-	cmd = exec.Command("sqlite3", dbPath, timeQuery)
+	cmd := exec.Command("sqlite3", dbPath, timeQuery)
 	timeOutput, err := cmd.Output()
 	if err == nil {
 		timeStr := strings.TrimSpace(string(timeOutput))
@@ -454,7 +466,6 @@ func parseOpenCodeEntry(raw map[string]json.RawMessage, fullData []byte) agent.T
 	return entry
 }
 
-
 // parseOpenCodeMessage parses message content from an OpenCode entry.
 func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageType) *agent.Message {
 	if msgType == "" {
@@ -497,4 +508,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
