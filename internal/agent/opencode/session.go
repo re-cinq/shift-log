@@ -1,6 +1,7 @@
 package opencode
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -50,6 +51,30 @@ func GetProjectID(projectPath string) string {
 		return strings.TrimSpace(lines[0])
 	}
 	return "global"
+}
+
+// projectIDCandidates returns all project IDs to try when discovering sessions.
+// Different versions of OpenCode compute project IDs differently:
+//   - Pre-v1.15: git root commit hash (40-char hex SHA-1)
+//   - v1.15+: SHA-256 of the project directory path (8 or 12 char prefix, or full)
+//
+// We try all known formats to ensure compatibility across opencode versions.
+func projectIDCandidates(projectPath string) []string {
+	var ids []string
+
+	// Git root commit hash (pre-v1.15 and primary format)
+	if gitID := GetProjectID(projectPath); gitID != "" && gitID != "global" {
+		ids = append(ids, gitID)
+	}
+
+	// SHA-256 of the directory path (v1.15+ format, tried in common prefix lengths)
+	h := sha256.Sum256([]byte(projectPath))
+	full := fmt.Sprintf("%x", h[:])
+	ids = append(ids, full[:8])  // 8-char prefix
+	ids = append(ids, full[:12]) // 12-char prefix
+	ids = append(ids, full)      // full 64-char hash
+
+	return ids
 }
 
 // GetSessionDir returns the session storage directory for a project.
