@@ -96,12 +96,12 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 func (a *Agent) IsCommitCommand(toolName, command string) bool {
 	// OpenCode tool names for shell execution
 	shellTools := map[string]bool{
-		"bash":               true,
-		"shell":              true,
-		"terminal":           true,
-		"execute":            true,
-		"run":                true,
-		"command":            true,
+		"bash":     true,
+		"shell":    true,
+		"terminal": true,
+		"execute":  true,
+		"run":      true,
+		"command":  true,
 	}
 
 	if !shellTools[toolName] {
@@ -230,7 +230,8 @@ func (a *Agent) parseMessageDir(dir string) (*agent.Transcript, error) {
 }
 
 // DiscoverSession finds an active or recent OpenCode session.
-// It first tries flat file storage (pre-v1.2), then falls back to SQLite (v1.2+).
+// It tries flat file storage (pre-v1.2), SQLite (v1.2+), and finally the
+// last-session marker file written by the shiftlog plugin (v1.15+).
 func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) {
 	// Try flat file storage first (pre-v1.2 OpenCode)
 	session, err := a.discoverFromFlatFiles(projectPath)
@@ -248,7 +249,18 @@ func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) 
 	}
 
 	projectID := GetProjectID(projectPath)
-	return discoverFromSQLite(dataDir, projectID, projectPath)
+	session, err = discoverFromSQLite(dataDir, projectID, projectPath)
+	if err != nil {
+		return nil, err
+	}
+	if session != nil {
+		return session, nil
+	}
+
+	// Final fallback: last-session marker file written by the plugin.
+	// Handles opencode-ai v1.15+ where "opencode run" may not persist sessions
+	// in the SQLite store that discoverFromSQLite queries.
+	return a.discoverFromLastSessionFile(projectPath)
 }
 
 // discoverFromFlatFiles tries the legacy flat file session discovery.
@@ -379,6 +391,58 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 	}, nil
 }
 
+// discoverFromLastSessionFile reads the last-session marker file written by the
+// shiftlog plugin on every tool execution. This provides session discovery for
+// opencode-ai v1.15+ where "opencode run" sessions may not appear in SQLite.
+func (a *Agent) discoverFromLastSessionFile(projectPath string) (*agent.SessionInfo, error) {
+	dataDir, err := GetDataDir()
+	if err != nil {
+		return nil, nil
+	}
+
+	lastSessionPath := filepath.Join(dataDir, "shiftlog-last-session.json")
+	data, err := os.ReadFile(lastSessionPath)
+	if err != nil {
+		return nil, nil
+	}
+
+	var info struct {
+		SessionID      string `json:"sessionId"`
+		ProjectDir     string `json:"projectDir"`
+		TranscriptData string `json:"transcriptData"`
+		Timestamp      int64  `json:"timestamp"`
+	}
+	if err := json.Unmarshal(data, &info); err != nil {
+		return nil, nil
+	}
+
+	if info.SessionID == "" || info.ProjectDir == "" {
+		return nil, nil
+	}
+
+	age := time.Since(time.UnixMilli(info.Timestamp))
+	if age > agent.RecentSessionTimeout {
+		return nil, nil
+	}
+
+	if !agent.PathsEqual(info.ProjectDir, projectPath) {
+		return nil, nil
+	}
+
+	transcriptData := []byte(info.TranscriptData)
+	if len(transcriptData) == 0 {
+		transcriptData = []byte("[]")
+	}
+
+	return &agent.SessionInfo{
+		SessionID:      info.SessionID,
+		TranscriptPath: "",
+		TranscriptData: transcriptData,
+		StartedAt:      time.UnixMilli(info.Timestamp).Format(time.RFC3339),
+		ProjectPath:    projectPath,
+	}, nil
+}
+
 // RestoreSession writes a session to OpenCode's storage location.
 func (a *Agent) RestoreSession(projectPath, sessionID, gitBranch string,
 	transcriptData []byte, messageCount int, summary string) error {
@@ -454,7 +518,6 @@ func parseOpenCodeEntry(raw map[string]json.RawMessage, fullData []byte) agent.T
 	return entry
 }
 
-
 // parseOpenCodeMessage parses message content from an OpenCode entry.
 func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageType) *agent.Message {
 	if msgType == "" {
@@ -497,4 +560,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-

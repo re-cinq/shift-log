@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Hook defines a Gemini CLI hook configuration.
@@ -85,14 +86,28 @@ func WriteSettings(geminiDir string, settings *Settings) error {
 	return os.WriteFile(path, data, 0644)
 }
 
+// isShiftlogStoreCommand reports whether a hook command string is the shiftlog
+// store hook for Gemini (matches both the legacy stdin form and the current
+// --manual form so that add/remove operations are idempotent across upgrades).
+func isShiftlogStoreCommand(cmd string) bool {
+	return strings.Contains(cmd, "shiftlog store") && strings.Contains(cmd, "gemini")
+}
+
 // AddShiftlogHook adds or updates the shiftlog store hook in Gemini settings.
+//
+// The hook uses --manual mode so that shiftlog discovers the session from the
+// filesystem rather than reading hook JSON from stdin. This avoids a hang in
+// Gemini CLI ≥ v0.29.7 where the hook process inherits an open stdin pipe
+// (previously Gemini closed stdin after writing the JSON payload; now the pipe
+// stays open), causing io.ReadAll to block for the full 30-second timeout on
+// every tool invocation.
 func AddShiftlogHook(settings *Settings) {
 	shiftlogHook := Hook{
 		Matcher: "run_shell_command",
 		Hooks: []HookCmd{
 			{
 				Type:    "command",
-				Command: "shiftlog store --agent=gemini",
+				Command: "shiftlog store --manual --agent=gemini",
 				Timeout: 30000,
 			},
 		},
@@ -100,7 +115,7 @@ func AddShiftlogHook(settings *Settings) {
 
 	for i, hook := range settings.Hooks.AfterTool {
 		for _, h := range hook.Hooks {
-			if h.Command == "shiftlog store --agent=gemini" {
+			if isShiftlogStoreCommand(h.Command) {
 				settings.Hooks.AfterTool[i] = shiftlogHook
 				return
 			}
@@ -141,7 +156,7 @@ func RemoveShiftlogHook(settings *Settings) {
 	for _, hook := range settings.Hooks.AfterTool {
 		isShiftlog := false
 		for _, h := range hook.Hooks {
-			if h.Command == "shiftlog store --agent=gemini" {
+			if isShiftlogStoreCommand(h.Command) {
 				isShiftlog = true
 				break
 			}
