@@ -1,3 +1,4 @@
+```go
 package gemini
 
 import (
@@ -85,6 +86,20 @@ func WriteSettings(geminiDir string, settings *Settings) error {
 	return os.WriteFile(path, data, 0644)
 }
 
+// shiftlogStoreCommand is the AfterTool hook command for Gemini CLI.
+// Uses --manual mode to avoid blocking on stdin: Gemini CLI 0.29.7+ does not
+// reliably pipe hook data via stdin, causing the hook to hang until the
+// 30-second timeout fires for each tool call. --manual mode uses session
+// discovery instead, which exits quickly.
+const shiftlogStoreCommand = "shiftlog store --manual --agent=gemini"
+
+// isShiftlogStoreCommand returns true if the command is any known variant
+// of the shiftlog store hook command for Gemini.
+func isShiftlogStoreCommand(cmd string) bool {
+	return cmd == shiftlogStoreCommand ||
+		cmd == "shiftlog store --agent=gemini"
+}
+
 // AddShiftlogHook adds or updates the shiftlog store hook in Gemini settings.
 func AddShiftlogHook(settings *Settings) {
 	shiftlogHook := Hook{
@@ -92,7 +107,7 @@ func AddShiftlogHook(settings *Settings) {
 		Hooks: []HookCmd{
 			{
 				Type:    "command",
-				Command: "shiftlog store --agent=gemini",
+				Command: shiftlogStoreCommand,
 				Timeout: 30000,
 			},
 		},
@@ -100,7 +115,7 @@ func AddShiftlogHook(settings *Settings) {
 
 	for i, hook := range settings.Hooks.AfterTool {
 		for _, h := range hook.Hooks {
-			if h.Command == "shiftlog store --agent=gemini" {
+			if isShiftlogStoreCommand(h.Command) {
 				settings.Hooks.AfterTool[i] = shiftlogHook
 				return
 			}
@@ -141,7 +156,7 @@ func RemoveShiftlogHook(settings *Settings) {
 	for _, hook := range settings.Hooks.AfterTool {
 		isShiftlog := false
 		for _, h := range hook.Hooks {
-			if h.Command == "shiftlog store --agent=gemini" {
+			if isShiftlogStoreCommand(h.Command) {
 				isShiftlog = true
 				break
 			}
@@ -187,3 +202,4 @@ func addOrUpdateHook(hooks []Hook, newHook Hook, commandPrefix string) []Hook {
 	}
 	return append(hooks, newHook)
 }
+```
