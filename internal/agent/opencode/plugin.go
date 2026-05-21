@@ -10,8 +10,9 @@ import (
 // tool execution hooks and calls shiftlog store after git commits.
 //
 // OpenCode plugin hooks:
-//   tool.execute.before(input, output) — input: {tool, sessionID, callID}, output: {args}
-//   tool.execute.after(input, output)  — input: {tool, sessionID, callID}, output: {title, output, metadata}
+//
+//	tool.execute.before(input, output) — input: {tool, sessionID, callID}, output: {args}
+//	tool.execute.after(input, output)  — input: {tool, sessionID, callID}, output: {title, output, metadata}
 //
 // The command string is only available in the "before" hook (via output.args),
 // so we capture it there and act on it in the "after" hook, matching by callID.
@@ -24,6 +25,23 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
 
   return {
     "tool.execute.before": async (input, output) => {
+      // Write the current session ID to .shiftlog/opencode-session.json so that
+      // 'shiftlog store --manual' (triggered by the git post-commit hook) can
+      // discover the active session without relying on SQLite project_id queries.
+      if (input && input.sessionID) {
+        try {
+          const { writeFileSync, mkdirSync } = await import("fs");
+          const shiftlogDir = directory + "/.shiftlog";
+          mkdirSync(shiftlogDir, { recursive: true });
+          writeFileSync(
+            shiftlogDir + "/opencode-session.json",
+            JSON.stringify({ session_id: input.sessionID })
+          );
+        } catch(e) {
+          // Ignore write errors — do not disrupt workflow
+        }
+      }
+
       const command = output?.args?.command || output?.args?.cmd || "";
       if (command.includes("git commit") || command.includes("git-commit")) {
         pendingCommits.set(input.callID, {
