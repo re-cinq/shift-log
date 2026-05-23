@@ -1,3 +1,4 @@
+```go
 package opencode
 
 import (
@@ -230,9 +231,20 @@ func (a *Agent) parseMessageDir(dir string) (*agent.Transcript, error) {
 }
 
 // DiscoverSession finds an active or recent OpenCode session.
-// It first tries flat file storage (pre-v1.2), then falls back to SQLite (v1.2+).
+// It checks, in order: per-project SQLite (v1.15+), flat files (pre-v1.2), global SQLite (v1.2+).
 func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) {
-	// Try flat file storage first (pre-v1.2 OpenCode)
+	// Try per-project SQLite (OpenCode v1.15+).
+	// v1.15+ stores the database at <project>/.opencode/opencode.db instead of
+	// the global XDG data directory.
+	projectDB := filepath.Join(projectPath, ".opencode", "opencode.db")
+	if _, err := os.Stat(projectDB); err == nil {
+		session, err := discoverFromProjectSQLite(projectDB, projectPath)
+		if err == nil && session != nil {
+			return session, nil
+		}
+	}
+
+	// Try flat file storage (pre-v1.2 OpenCode)
 	session, err := a.discoverFromFlatFiles(projectPath)
 	if err != nil {
 		return nil, err
@@ -241,7 +253,7 @@ func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) 
 		return session, nil
 	}
 
-	// Fall back to SQLite (OpenCode v1.2+)
+	// Fall back to global SQLite (OpenCode v1.2+)
 	dataDir, err := GetDataDir()
 	if err != nil {
 		return nil, nil
@@ -249,6 +261,106 @@ func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) 
 
 	projectID := GetProjectID(projectPath)
 	return discoverFromSQLite(dataDir, projectID, projectPath)
+}
+
+// discoverFromProjectSQLite queries a per-project OpenCode SQLite database (v1.15+).
+// This version uses 'sessions' and 'messages' tables with epoch-integer timestamps
+// (seconds or milliseconds) rather than the older RFC3339 text format.
+func discoverFromProjectSQLite(dbPath, projectPath string) (*agent.SessionInfo, error) {
+	if _, err := exec.LookPath("sqlite3"); err != nil {
+		return nil, nil
+	}
+
+	// Find the most recent session by updated_at.
+	out, err := exec.Command("sqlite3", "-json", dbPath,
+		"SELECT id, updated_at FROM sessions ORDER BY updated_at DESC LIMIT 1;").Output()
+	if err != nil || strings.TrimSpace(string(out)) == "" {
+		return nil, nil
+	}
+
+	var rows []struct {
+		ID        string `json:"id"`
+		UpdatedAt int64  `json:"updated_at"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(string(out))), &rows); err != nil || len(rows) == 0 {
+		return nil, nil
+	}
+
+	sessionID := rows[0].ID
+	epochVal := rows[0].UpdatedAt
+
+	// Determine whether epoch is in seconds, milliseconds, or microseconds.
+	var updatedAt time.Time
+	switch {
+	case epochVal > 1e15:
+		// microseconds
+		updatedAt = time.Unix(epochVal/1e6, (epochVal%1e6)*1000)
+	case epochVal > 1e12:
+		// milliseconds
+		updatedAt = time.Unix(epochVal/1000, (epochVal%1000)*int64(time.Millisecond))
+	default:
+		// seconds
+		updatedAt = time.Unix(epochVal, 0)
+	}
+
+	if time.Since(updatedAt) > agent.RecentSessionTimeout {
+		return nil, nil
+	}
+
+	transcriptData := queryProjectMessages(dbPath, sessionID)
+
+	return &agent.SessionInfo{
+		SessionID:      sessionID,
+		TranscriptPath: "",
+		StartedAt:      updatedAt.Format(time.RFC3339),
+		ProjectPath:    projectPath,
+		TranscriptData: transcriptData,
+	}, nil
+}
+
+// queryProjectMessages fetches messages from a per-project OpenCode v1.15+ database
+// and returns them as a JSON array that ParseTranscript can handle.
+func queryProjectMessages(dbPath, sessionID string) []byte {
+	out, err := exec.Command("sqlite3", "-json", dbPath,
+		fmt.Sprintf("SELECT id, role, parts FROM messages WHERE session_id='%s' ORDER BY created_at;", sessionID)).Output()
+	if err != nil {
+		return nil
+	}
+
+	trimmed := strings.TrimSpace(string(out))
+	if trimmed == "" || trimmed == "[]" {
+		return nil
+	}
+
+	var rows []struct {
+		ID    string `json:"id"`
+		Role  string `json:"role"`
+		Parts string `json:"parts"`
+	}
+	if err := json.Unmarshal([]byte(trimmed), &rows); err != nil || len(rows) == 0 {
+		return nil
+	}
+
+	type entry struct {
+		ID      string          `json:"id"`
+		Role    string          `json:"role"`
+		Content json.RawMessage `json:"content,omitempty"`
+	}
+
+	var entries []entry
+	for _, row := range rows {
+		e := entry{ID: row.ID, Role: row.Role}
+		if strings.HasPrefix(strings.TrimSpace(row.Parts), "[") {
+			e.Content = json.RawMessage(row.Parts)
+		}
+		entries = append(entries, e)
+	}
+
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return nil
+	}
+	return data
 }
 
 // discoverFromFlatFiles tries the legacy flat file session discovery.
@@ -497,4 +609,4 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
+```
