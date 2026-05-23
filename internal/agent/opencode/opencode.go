@@ -96,12 +96,12 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 func (a *Agent) IsCommitCommand(toolName, command string) bool {
 	// OpenCode tool names for shell execution
 	shellTools := map[string]bool{
-		"bash":               true,
-		"shell":              true,
-		"terminal":           true,
-		"execute":            true,
-		"run":                true,
-		"command":            true,
+		"bash":     true,
+		"shell":    true,
+		"terminal": true,
+		"execute":  true,
+		"run":      true,
+		"command":  true,
 	}
 
 	if !shellTools[toolName] {
@@ -230,10 +230,19 @@ func (a *Agent) parseMessageDir(dir string) (*agent.Transcript, error) {
 }
 
 // DiscoverSession finds an active or recent OpenCode session.
-// It first tries flat file storage (pre-v1.2), then falls back to SQLite (v1.2+).
+// It tries session_diff storage (v1.15+), flat file storage (pre-v1.15), then SQLite (v1.2+).
 func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) {
-	// Try flat file storage first (pre-v1.2 OpenCode)
-	session, err := a.discoverFromFlatFiles(projectPath)
+	// Try session_diff storage first (OpenCode v1.15+)
+	session, err := a.discoverFromSessionDiff(projectPath)
+	if err != nil {
+		return nil, err
+	}
+	if session != nil {
+		return session, nil
+	}
+
+	// Try flat file storage (pre-v1.15 OpenCode)
+	session, err = a.discoverFromFlatFiles(projectPath)
 	if err != nil {
 		return nil, err
 	}
@@ -251,7 +260,114 @@ func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) 
 	return discoverFromSQLite(dataDir, projectID, projectPath)
 }
 
-// discoverFromFlatFiles tries the legacy flat file session discovery.
+// sessionDiffFile represents the structure of an OpenCode v1.15+ session_diff JSON file.
+type sessionDiffFile struct {
+	ID        string            `json:"id"`
+	Path      string            `json:"path"`
+	Directory string            `json:"directory"`
+	CWD       string            `json:"cwd"`
+	Time      json.RawMessage   `json:"time"`
+	Messages  []json.RawMessage `json:"messages"`
+}
+
+// discoverFromSessionDiff tries the v1.15+ session_diff flat storage format.
+// Sessions are stored as {dataDir}/storage/session_diff/{sessionID}.json, each
+// containing a "path" field with the project directory.
+func (a *Agent) discoverFromSessionDiff(projectPath string) (*agent.SessionInfo, error) {
+	dataDir, err := GetDataDir()
+	if err != nil {
+		return nil, nil
+	}
+
+	sessionDiffDir := filepath.Join(dataDir, "storage", "session_diff")
+	entries, err := os.ReadDir(sessionDiffDir)
+	if err != nil {
+		return nil, nil
+	}
+
+	now := time.Now()
+	var bestSession *agent.SessionInfo
+	var bestModTime time.Time
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+
+		modTime := info.ModTime()
+		if now.Sub(modTime) > agent.RecentSessionTimeout {
+			continue
+		}
+
+		data, err := os.ReadFile(filepath.Join(sessionDiffDir, entry.Name()))
+		if err != nil {
+			continue
+		}
+
+		var sess sessionDiffFile
+		if err := json.Unmarshal(data, &sess); err != nil {
+			continue
+		}
+
+		// Resolve session's project path from multiple possible field names
+		sessionPath := sess.Path
+		if sessionPath == "" {
+			sessionPath = sess.Directory
+		}
+		if sessionPath == "" {
+			sessionPath = sess.CWD
+		}
+
+		if filepath.Clean(sessionPath) != filepath.Clean(projectPath) {
+			continue
+		}
+
+		sessionID := strings.TrimSuffix(entry.Name(), ".json")
+		if sess.ID != "" {
+			sessionID = sess.ID
+		}
+
+		if bestSession == nil || modTime.After(bestModTime) {
+			si := &agent.SessionInfo{
+				SessionID:   sessionID,
+				StartedAt:   modTime.Format(time.RFC3339),
+				ProjectPath: projectPath,
+			}
+
+			// Use embedded messages if present
+			if len(sess.Messages) > 0 {
+				if msgData, err := json.Marshal(sess.Messages); err == nil {
+					si.TranscriptData = msgData
+				}
+			}
+
+			// Fall back to message directory if it exists
+			if len(si.TranscriptData) == 0 {
+				msgDir, _ := GetMessageDir(sessionID)
+				if _, statErr := os.Stat(msgDir); statErr == nil {
+					si.TranscriptPath = msgDir
+				}
+			}
+
+			// Provide minimal transcript so a note can be created even without messages
+			if len(si.TranscriptData) == 0 && si.TranscriptPath == "" {
+				si.TranscriptData = []byte("[]")
+			}
+
+			bestSession = si
+			bestModTime = modTime
+		}
+	}
+
+	return bestSession, nil
+}
+
+// discoverFromFlatFiles tries the legacy flat file session discovery (pre-v1.15).
 func (a *Agent) discoverFromFlatFiles(projectPath string) (*agent.SessionInfo, error) {
 	sessionDir, err := GetSessionDir(projectPath)
 	if err != nil {
@@ -305,6 +421,7 @@ func (a *Agent) discoverFromFlatFiles(projectPath string) (*agent.SessionInfo, e
 }
 
 // discoverFromSQLite queries the OpenCode SQLite database for the most recent session.
+// It tries multiple column names to handle schema differences across versions.
 func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionInfo, error) {
 	dbPath := filepath.Join(dataDir, "opencode.db")
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
@@ -316,63 +433,78 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		return nil, nil
 	}
 
-	// Find most recent session for this project
-	sessionQuery := fmt.Sprintf(
-		`SELECT id FROM session WHERE project_id='%s' ORDER BY time_updated DESC LIMIT 1;`,
-		projectID,
-	)
-	cmd := exec.Command("sqlite3", "-separator", "\t", dbPath, sessionQuery)
-	sessionOutput, err := cmd.Output()
-	if err != nil || strings.TrimSpace(string(sessionOutput)) == "" {
+	// Find most recent session for this project, trying multiple column names
+	sessionID := ""
+	sessionQueries := []string{
+		fmt.Sprintf("SELECT id FROM session WHERE project_id='%s' ORDER BY time_updated DESC LIMIT 1;", projectID),
+		fmt.Sprintf("SELECT id FROM session WHERE path='%s' ORDER BY time_updated DESC LIMIT 1;", projectPath),
+		fmt.Sprintf("SELECT id FROM session WHERE path='%s' ORDER BY time DESC LIMIT 1;", projectPath),
+		fmt.Sprintf("SELECT id FROM session WHERE path='%s' ORDER BY rowid DESC LIMIT 1;", projectPath),
+	}
+	for _, q := range sessionQueries {
+		cmd := exec.Command("sqlite3", "-separator", "\t", dbPath, q)
+		output, err := cmd.Output()
+		if err == nil && strings.TrimSpace(string(output)) != "" {
+			sessionID = strings.TrimSpace(string(output))
+			break
+		}
+	}
+	if sessionID == "" {
 		return nil, nil
 	}
-	sessionID := strings.TrimSpace(string(sessionOutput))
 
 	// Check if this session was recent (within timeout)
-	timeQuery := fmt.Sprintf(
-		`SELECT time_updated FROM session WHERE id='%s';`,
-		sessionID,
-	)
-	cmd = exec.Command("sqlite3", dbPath, timeQuery)
-	timeOutput, err := cmd.Output()
-	if err == nil {
-		timeStr := strings.TrimSpace(string(timeOutput))
-		if t, err := time.Parse(time.RFC3339Nano, timeStr); err == nil {
-			if time.Since(t) > agent.RecentSessionTimeout {
-				return nil, nil
-			}
-		} else if t, err := time.Parse("2006-01-02T15:04:05.000Z", timeStr); err == nil {
-			if time.Since(t) > agent.RecentSessionTimeout {
-				return nil, nil
-			}
-		} else if t, err := time.Parse("2006-01-02 15:04:05", timeStr); err == nil {
-			if time.Since(t) > agent.RecentSessionTimeout {
-				return nil, nil
+	timeQueries := []string{
+		fmt.Sprintf("SELECT time_updated FROM session WHERE id='%s';", sessionID),
+		fmt.Sprintf("SELECT time FROM session WHERE id='%s';", sessionID),
+	}
+	for _, q := range timeQueries {
+		cmd := exec.Command("sqlite3", dbPath, q)
+		output, err := cmd.Output()
+		if err != nil {
+			continue
+		}
+		timeStr := strings.TrimSpace(string(output))
+		if timeStr == "" {
+			continue
+		}
+		// Try multiple timestamp formats
+		for _, format := range []string{time.RFC3339Nano, "2006-01-02T15:04:05.000Z", "2006-01-02 15:04:05"} {
+			if t, err := time.Parse(format, timeStr); err == nil {
+				if time.Since(t) > agent.RecentSessionTimeout {
+					return nil, nil
+				}
+				break
 			}
 		}
-		// If we can't parse the time, proceed anyway — better to try than skip
+		break
 	}
 
-	// Get messages for this session as a JSON array
-	msgQuery := fmt.Sprintf(
-		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
-		sessionID,
-	)
-	cmd = exec.Command("sqlite3", dbPath, msgQuery)
-	msgOutput, err := cmd.Output()
-	if err != nil {
-		return nil, nil
+	// Get messages for this session, trying multiple schema patterns
+	var transcriptData []byte
+	msgQueries := []string{
+		fmt.Sprintf("SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;", sessionID),
+		fmt.Sprintf("SELECT json_group_array(json_patch(parts, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;", sessionID),
+		fmt.Sprintf("SELECT json_group_array(json_object('id', id, 'role', role, 'content', content)) FROM message WHERE session_id='%s' ORDER BY time_created;", sessionID),
+		fmt.Sprintf("SELECT json_group_array(data) FROM message WHERE session_id='%s' ORDER BY time_created;", sessionID),
+	}
+	for _, q := range msgQueries {
+		cmd := exec.Command("sqlite3", dbPath, q)
+		output, err := cmd.Output()
+		if err != nil {
+			continue
+		}
+		data := strings.TrimSpace(string(output))
+		if data != "[null]" && data != "[]" && data != "" {
+			transcriptData = []byte(data)
+			break
+		}
 	}
 
-	transcriptData := []byte(strings.TrimSpace(string(msgOutput)))
-	// sqlite3 returns "[null]" when no rows match
-	if string(transcriptData) == "[null]" || string(transcriptData) == "[]" {
-		return nil, nil
-	}
-
+	// Return session even without messages; storeConversation handles empty transcripts
 	return &agent.SessionInfo{
 		SessionID:      sessionID,
-		TranscriptPath: "", // no file path for SQLite
+		TranscriptPath: "",
 		StartedAt:      time.Now().Format(time.RFC3339),
 		ProjectPath:    projectPath,
 		TranscriptData: transcriptData,
@@ -454,7 +586,6 @@ func parseOpenCodeEntry(raw map[string]json.RawMessage, fullData []byte) agent.T
 	return entry
 }
 
-
 // parseOpenCodeMessage parses message content from an OpenCode entry.
 func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageType) *agent.Message {
 	if msgType == "" {
@@ -497,4 +628,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
