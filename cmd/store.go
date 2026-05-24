@@ -170,17 +170,21 @@ func storeConversation(ag agent.Agent, sessionID, transcriptPath string, transcr
 		}
 	}
 
-	// Use inline transcript data if provided, otherwise read from path
+	// Use inline transcript data if provided, otherwise read from path.
+	// If neither is available (e.g. agent DB schema changed and messages could
+	// not be retrieved), fall back to an empty transcript so a minimal note is
+	// still created — the session identity and agent field are still useful.
 	if len(transcriptData) == 0 {
 		if transcriptPath == "" {
-			return fmt.Errorf("no transcript path or inline data provided")
-		}
+			cli.LogDebug("store: no transcript available, using empty transcript")
+			transcriptData = []byte("[]")
+		} else {
+			cli.LogDebug("store: reading transcript from %s", transcriptPath)
 
-		cli.LogDebug("store: reading transcript from %s", transcriptPath)
-
-		transcriptData, err = readTranscriptData(transcriptPath)
-		if err != nil {
-			return fmt.Errorf("failed to read transcript: %w", err)
+			transcriptData, err = readTranscriptData(transcriptPath)
+			if err != nil {
+				return fmt.Errorf("failed to read transcript: %w", err)
+			}
 		}
 	} else {
 		cli.LogDebug("store: using inline transcript data (%d bytes)", len(transcriptData))
