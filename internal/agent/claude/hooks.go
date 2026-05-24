@@ -94,7 +94,11 @@ func AddShiftlogHook(settings *Settings) {
 			{
 				Type:    "command",
 				Command: "shiftlog store",
-				Timeout: 30,
+				// Timeout kept short: in Claude Code 2.x the hook process may block on
+				// stdin if the pipe is not closed promptly, so a shorter timeout prevents
+				// cascading delays (each blocked invocation × max-turns can exhaust the
+				// overall test/session budget).
+				Timeout: 10,
 			},
 		},
 	}
