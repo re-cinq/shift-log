@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-// GetDataDir returns the OpenCode data directory.
+// GetDataDir returns the primary OpenCode data directory.
 // OpenCode follows XDG conventions: it uses $XDG_DATA_HOME/opencode on Linux
 // and ~/Library/Application Support/opencode on macOS.
 func GetDataDir() (string, error) {
@@ -32,6 +32,32 @@ func GetDataDir() (string, error) {
 		return "", fmt.Errorf("could not determine home directory: %w", err)
 	}
 	return filepath.Join(home, ".local", "share", "opencode"), nil
+}
+
+// getDataDirCandidates returns all candidate data directories in priority order.
+// opencode v1.15+ may use ~/.opencode as the default instead of the XDG path.
+func getDataDirCandidates() []string {
+	if runtime.GOOS == "darwin" {
+		home, err := os.UserHomeDir()
+		if err != nil || home == "" {
+			return nil
+		}
+		return []string{filepath.Join(home, "Library", "Application Support", "opencode")}
+	}
+
+	if xdg := os.Getenv("XDG_DATA_HOME"); xdg != "" {
+		return []string{filepath.Join(xdg, "opencode")}
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return nil
+	}
+
+	return []string{
+		filepath.Join(home, ".local", "share", "opencode"), // XDG convention (pre-v1.15)
+		filepath.Join(home, ".opencode"),                    // opencode v1.15+ default
+	}
 }
 
 // GetProjectID returns the project identifier for OpenCode.
