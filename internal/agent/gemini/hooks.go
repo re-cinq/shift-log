@@ -21,9 +21,7 @@ type HookCmd struct {
 
 // HooksConfig represents the hooks section of Gemini settings.
 type HooksConfig struct {
-	AfterTool    []Hook `json:"AfterTool,omitempty"`
-	SessionStart []Hook `json:"SessionStart,omitempty"`
-	SessionEnd   []Hook `json:"SessionEnd,omitempty"`
+	AfterTool []Hook `json:"AfterTool,omitempty"`
 }
 
 // Settings represents Gemini CLI's settings.json structure.
@@ -68,7 +66,7 @@ func WriteSettings(geminiDir string, settings *Settings) error {
 		output[k] = v
 	}
 
-	if len(settings.Hooks.AfterTool) > 0 || len(settings.Hooks.SessionStart) > 0 || len(settings.Hooks.SessionEnd) > 0 {
+	if len(settings.Hooks.AfterTool) > 0 {
 		output["hooks"] = settings.Hooks
 	}
 
@@ -110,31 +108,6 @@ func AddShiftlogHook(settings *Settings) {
 	settings.Hooks.AfterTool = append(settings.Hooks.AfterTool, shiftlogHook)
 }
 
-// AddSessionHooks adds SessionStart and SessionEnd hooks for session tracking.
-func AddSessionHooks(settings *Settings) {
-	startHook := Hook{
-		Hooks: []HookCmd{
-			{
-				Type:    "command",
-				Command: "shiftlog session-start --agent=gemini",
-				Timeout: 5000,
-			},
-		},
-	}
-	endHook := Hook{
-		Hooks: []HookCmd{
-			{
-				Type:    "command",
-				Command: "shiftlog session-end --agent=gemini",
-				Timeout: 5000,
-			},
-		},
-	}
-
-	settings.Hooks.SessionStart = addOrUpdateHook(settings.Hooks.SessionStart, startHook, "shiftlog session-start")
-	settings.Hooks.SessionEnd = addOrUpdateHook(settings.Hooks.SessionEnd, endHook, "shiftlog session-end")
-}
-
 // RemoveShiftlogHook removes shiftlog store hook entries from AfterTool.
 func RemoveShiftlogHook(settings *Settings) {
 	filtered := settings.Hooks.AfterTool[:0]
@@ -151,39 +124,4 @@ func RemoveShiftlogHook(settings *Settings) {
 		}
 	}
 	settings.Hooks.AfterTool = filtered
-}
-
-// RemoveSessionHooks removes shiftlog session hooks from SessionStart and SessionEnd.
-func RemoveSessionHooks(settings *Settings) {
-	settings.Hooks.SessionStart = removeHookByCommand(settings.Hooks.SessionStart, "shiftlog session-start --agent=gemini")
-	settings.Hooks.SessionEnd = removeHookByCommand(settings.Hooks.SessionEnd, "shiftlog session-end --agent=gemini")
-}
-
-func removeHookByCommand(hooks []Hook, command string) []Hook {
-	filtered := hooks[:0]
-	for _, hook := range hooks {
-		isShiftlog := false
-		for _, h := range hook.Hooks {
-			if h.Command == command {
-				isShiftlog = true
-				break
-			}
-		}
-		if !isShiftlog {
-			filtered = append(filtered, hook)
-		}
-	}
-	return filtered
-}
-
-func addOrUpdateHook(hooks []Hook, newHook Hook, commandPrefix string) []Hook {
-	for i, hook := range hooks {
-		for _, h := range hook.Hooks {
-			if h.Command == commandPrefix || h.Command == commandPrefix+" --agent=gemini" {
-				hooks[i] = newHook
-				return hooks
-			}
-		}
-	}
-	return append(hooks, newHook)
 }

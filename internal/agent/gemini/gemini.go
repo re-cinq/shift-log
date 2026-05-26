@@ -18,7 +18,7 @@ func init() {
 // Agent implements the agent.Agent interface for Gemini CLI.
 type Agent struct{}
 
-func (a *Agent) Name() agent.Name   { return agent.Gemini }
+func (a *Agent) Name() agent.Name    { return agent.Gemini }
 func (a *Agent) DisplayName() string { return "Gemini CLI" }
 
 // ConfigureHooks sets up Gemini CLI hooks in .gemini/settings.json.
@@ -30,7 +30,6 @@ func (a *Agent) ConfigureHooks(repoRoot string) error {
 	}
 
 	AddShiftlogHook(settings)
-	AddSessionHooks(settings)
 
 	if err := WriteSettings(geminiDir, settings); err != nil {
 		return fmt.Errorf("failed to write Gemini settings: %w", err)
@@ -47,13 +46,9 @@ func (a *Agent) RemoveHooks(repoRoot string) error {
 	}
 
 	RemoveShiftlogHook(settings)
-	RemoveSessionHooks(settings)
 
 	// If only shiftlog content was present, remove the file
-	if len(settings.Other) == 0 &&
-		len(settings.Hooks.AfterTool) == 0 &&
-		len(settings.Hooks.SessionStart) == 0 &&
-		len(settings.Hooks.SessionEnd) == 0 {
+	if len(settings.Other) == 0 && len(settings.Hooks.AfterTool) == 0 {
 		path := filepath.Join(geminiDir, "settings.json")
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			return err
@@ -196,13 +191,13 @@ func (a *Agent) ResumeCommand(sessionID string) (string, []string) {
 // ToolAliases returns Gemini CLI's tool name mappings to canonical names.
 func (a *Agent) ToolAliases() map[string]string {
 	return map[string]string{
-		"run_shell_command": "Bash",
-		"replace":          "Edit",
-		"grep_search":      "Grep",
-		"glob":             "Glob",
-		"list_directory":   "Glob",
-		"google_web_search": "WebSearch",
-		"web_fetch":        "WebFetch",
+		"run_shell_command":  "Bash",
+		"replace":            "Edit",
+		"grep_search":        "Grep",
+		"glob":               "Glob",
+		"list_directory":     "Glob",
+		"google_web_search":  "WebSearch",
+		"web_fetch":          "WebFetch",
 	}
 }
 
@@ -313,7 +308,6 @@ func ParseGeminiTranscript(r io.Reader) (*agent.Transcript, error) {
 	return t, nil
 }
 
-
 // scanForRecentSession scans Gemini's session directory for recent files.
 // It tries the primary directory (slug-based for v0.29+, hash-based otherwise),
 // falls back to the legacy hash directory, and finally does a broad scan of all
@@ -344,5 +338,3 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	// (e.g., absent file, path key mismatch, or non-interactive -p mode).
 	return ScanAllProjectDirs(projectPath)
 }
-
-
