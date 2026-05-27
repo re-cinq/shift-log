@@ -96,12 +96,12 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 func (a *Agent) IsCommitCommand(toolName, command string) bool {
 	// OpenCode tool names for shell execution
 	shellTools := map[string]bool{
-		"bash":               true,
-		"shell":              true,
-		"terminal":           true,
-		"execute":            true,
-		"run":                true,
-		"command":            true,
+		"bash":    true,
+		"shell":   true,
+		"terminal": true,
+		"execute": true,
+		"run":     true,
+		"command": true,
 	}
 
 	if !shellTools[toolName] {
@@ -230,14 +230,23 @@ func (a *Agent) parseMessageDir(dir string) (*agent.Transcript, error) {
 }
 
 // DiscoverSession finds an active or recent OpenCode session.
-// It first tries flat file storage (pre-v1.2), then falls back to SQLite (v1.2+).
+// Discovery order:
+//  1. Session heartbeat file written by the plugin (.shiftlog/opencode-session.json)
+//  2. Flat file storage (pre-v1.2 OpenCode)
+//  3. SQLite database (OpenCode v1.2+)
 func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) {
-	// Try flat file storage first (pre-v1.2 OpenCode)
-	session, err := a.discoverFromFlatFiles(projectPath)
-	if err != nil {
+	// First: check for the session heartbeat file written by the plugin on every
+	// tool execution. This is the most reliable path and doesn't require sqlite3.
+	if session, err := a.discoverFromSessionFile(projectPath); err != nil {
 		return nil, err
+	} else if session != nil {
+		return session, nil
 	}
-	if session != nil {
+
+	// Try flat file storage (pre-v1.2 OpenCode)
+	if session, err := a.discoverFromFlatFiles(projectPath); err != nil {
+		return nil, err
+	} else if session != nil {
 		return session, nil
 	}
 
@@ -249,6 +258,114 @@ func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) 
 
 	projectID := GetProjectID(projectPath)
 	return discoverFromSQLite(dataDir, projectID, projectPath)
+}
+
+// discoverFromSessionFile reads the session heartbeat file that the plugin writes
+// on every tool execution. This enables manual-commit note creation without
+// requiring sqlite3 or knowledge of OpenCode's internal storage format.
+func (a *Agent) discoverFromSessionFile(projectPath string) (*agent.SessionInfo, error) {
+	sessionFilePath := filepath.Join(projectPath, ".shiftlog", "opencode-session.json")
+	data, err := os.ReadFile(sessionFilePath)
+	if err != nil {
+		return nil, nil // not found is not an error
+	}
+
+	var sf struct {
+		SessionID      string `json:"session_id"`
+		DataDir        string `json:"data_dir"`
+		WrittenAt      string `json:"written_at"`
+		TranscriptData string `json:"transcript_data"`
+	}
+	if err := json.Unmarshal(data, &sf); err != nil {
+		return nil, nil
+	}
+
+	if sf.SessionID == "" {
+		return nil, nil
+	}
+
+	// Check recency
+	if sf.WrittenAt != "" {
+		var writtenAt time.Time
+		var parseErr error
+		if writtenAt, parseErr = time.Parse(time.RFC3339Nano, sf.WrittenAt); parseErr != nil {
+			writtenAt, parseErr = time.Parse(time.RFC3339, sf.WrittenAt)
+		}
+		if parseErr == nil && time.Since(writtenAt) > agent.RecentSessionTimeout {
+			return nil, nil
+		}
+	}
+
+	session := &agent.SessionInfo{
+		SessionID:   sf.SessionID,
+		StartedAt:   sf.WrittenAt,
+		ProjectPath: projectPath,
+	}
+
+	// Best case: plugin fetched transcript via SDK client
+	if sf.TranscriptData != "" {
+		session.TranscriptData = []byte(sf.TranscriptData)
+		return session, nil
+	}
+
+	// Fallback: try flat-file message directory using data_dir from session file
+	if sf.DataDir != "" {
+		msgDir := filepath.Join(sf.DataDir, "storage", "message", sf.SessionID)
+		if _, statErr := os.Stat(msgDir); statErr == nil {
+			session.TranscriptPath = msgDir
+			return session, nil
+		}
+
+		// Fallback: try SQLite directly by session ID (no project_id lookup needed)
+		if td := queryMessagesBySessionID(filepath.Join(sf.DataDir, "opencode.db"), sf.SessionID); len(td) > 0 {
+			session.TranscriptData = td
+			return session, nil
+		}
+	}
+
+	// Session file found but no transcript available; fall through to other methods.
+	return nil, nil
+}
+
+// queryMessagesBySessionID fetches message JSON from the SQLite database using
+// only the session ID, bypassing the project_id lookup.
+func queryMessagesBySessionID(dbPath, sessionID string) []byte {
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		return nil
+	}
+	if _, err := exec.LookPath("sqlite3"); err != nil {
+		return nil
+	}
+
+	// Try multiple query patterns to handle schema evolution across OpenCode versions.
+	queries := []string{
+		fmt.Sprintf(
+			`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
+			sessionID,
+		),
+		fmt.Sprintf(
+			`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY rowid;`,
+			sessionID,
+		),
+		fmt.Sprintf(
+			`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s';`,
+			sessionID,
+		),
+	}
+
+	for _, q := range queries {
+		cmd := exec.Command("sqlite3", dbPath, q)
+		out, err := cmd.Output()
+		if err != nil {
+			continue
+		}
+		td := strings.TrimSpace(string(out))
+		if td == "[null]" || td == "[]" || td == "" {
+			continue
+		}
+		return []byte(td)
+	}
+	return nil
 }
 
 // discoverFromFlatFiles tries the legacy flat file session discovery.
@@ -354,29 +471,17 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 	}
 
 	// Get messages for this session as a JSON array
-	msgQuery := fmt.Sprintf(
-		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
-		sessionID,
-	)
-	cmd = exec.Command("sqlite3", dbPath, msgQuery)
-	msgOutput, err := cmd.Output()
-	if err != nil {
-		return nil, nil
+	if td := queryMessagesBySessionID(dbPath, sessionID); len(td) > 0 {
+		return &agent.SessionInfo{
+			SessionID:      sessionID,
+			TranscriptPath: "",
+			StartedAt:      time.Now().Format(time.RFC3339),
+			ProjectPath:    projectPath,
+			TranscriptData: td,
+		}, nil
 	}
 
-	transcriptData := []byte(strings.TrimSpace(string(msgOutput)))
-	// sqlite3 returns "[null]" when no rows match
-	if string(transcriptData) == "[null]" || string(transcriptData) == "[]" {
-		return nil, nil
-	}
-
-	return &agent.SessionInfo{
-		SessionID:      sessionID,
-		TranscriptPath: "", // no file path for SQLite
-		StartedAt:      time.Now().Format(time.RFC3339),
-		ProjectPath:    projectPath,
-		TranscriptData: transcriptData,
-	}, nil
+	return nil, nil
 }
 
 // RestoreSession writes a session to OpenCode's storage location.
@@ -454,7 +559,6 @@ func parseOpenCodeEntry(raw map[string]json.RawMessage, fullData []byte) agent.T
 	return entry
 }
 
-
 // parseOpenCodeMessage parses message content from an OpenCode entry.
 func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageType) *agent.Message {
 	if msgType == "" {
@@ -497,4 +601,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
