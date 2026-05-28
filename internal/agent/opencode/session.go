@@ -1,6 +1,7 @@
 package opencode
 
 import (
+	"crypto/sha1"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -50,6 +51,17 @@ func GetProjectID(projectPath string) string {
 		return strings.TrimSpace(lines[0])
 	}
 	return "global"
+}
+
+// GetProjectIDFromPath computes the SHA1-based project ID used by OpenCode v1.15+.
+// OpenCode v1.15+ identifies projects by SHA1 of the absolute directory path.
+func GetProjectIDFromPath(projectPath string) string {
+	abs, err := filepath.Abs(projectPath)
+	if err != nil {
+		abs = projectPath
+	}
+	h := sha1.Sum([]byte(abs))
+	return fmt.Sprintf("%x", h)
 }
 
 // GetSessionDir returns the session storage directory for a project.
