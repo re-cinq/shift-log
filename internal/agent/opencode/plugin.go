@@ -48,7 +48,8 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
             transcriptData = JSON.stringify(msgs.map(m => ({
               role: m.role || "",
               id: m.id || "",
-              content: m.content || "",
+              // OpenCode >=1.15 uses 'parts'; older versions use 'content'
+              content: m.parts || m.content || "",
               time: m.time || {},
             })));
           }
