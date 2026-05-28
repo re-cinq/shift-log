@@ -96,12 +96,12 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 func (a *Agent) IsCommitCommand(toolName, command string) bool {
 	// OpenCode tool names for shell execution
 	shellTools := map[string]bool{
-		"bash":               true,
-		"shell":              true,
-		"terminal":           true,
-		"execute":            true,
-		"run":                true,
-		"command":            true,
+		"bash":      true,
+		"shell":     true,
+		"terminal":  true,
+		"execute":   true,
+		"run":       true,
+		"command":   true,
 	}
 
 	if !shellTools[toolName] {
@@ -230,9 +230,14 @@ func (a *Agent) parseMessageDir(dir string) (*agent.Transcript, error) {
 }
 
 // DiscoverSession finds an active or recent OpenCode session.
-// It first tries flat file storage (pre-v1.2), then falls back to SQLite (v1.2+).
+// It checks (in order): active-session.json (written by plugin), flat files, SQLite.
 func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) {
-	// Try flat file storage first (pre-v1.2 OpenCode)
+	// Check active-session.json first (written by plugin on first tool execution)
+	if info, err := a.discoverFromActiveFile(projectPath); err == nil && info != nil {
+		return info, nil
+	}
+
+	// Try flat file storage (pre-v1.2 OpenCode)
 	session, err := a.discoverFromFlatFiles(projectPath)
 	if err != nil {
 		return nil, err
@@ -241,7 +246,7 @@ func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) 
 		return session, nil
 	}
 
-	// Fall back to SQLite (OpenCode v1.2+)
+	// Fall back to SQLite (v1.2+)
 	dataDir, err := GetDataDir()
 	if err != nil {
 		return nil, nil
@@ -249,6 +254,128 @@ func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) 
 
 	projectID := GetProjectID(projectPath)
 	return discoverFromSQLite(dataDir, projectID, projectPath)
+}
+
+// discoverFromActiveFile checks the .shiftlog/active-session.json file
+// written by the OpenCode plugin on first tool execution.
+// Uses time-based validation since OpenCode may store messages in SQLite
+// rather than flat files, making transcript file existence checks unreliable.
+func (a *Agent) discoverFromActiveFile(projectPath string) (*agent.SessionInfo, error) {
+	sessionPath := filepath.Join(projectPath, ".shiftlog", "active-session.json")
+	data, err := os.ReadFile(sessionPath)
+	if err != nil {
+		return nil, err
+	}
+
+	var active struct {
+		SessionID      string `json:"session_id"`
+		TranscriptPath string `json:"transcript_path"`
+		StartedAt      string `json:"started_at"`
+		ProjectPath    string `json:"project_path"`
+		DataDir        string `json:"data_dir"`
+	}
+	if err := json.Unmarshal(data, &active); err != nil {
+		return nil, err
+	}
+
+	if !agent.PathsEqual(active.ProjectPath, projectPath) {
+		return nil, nil
+	}
+
+	// Validate recency using started_at timestamp
+	var startedAt time.Time
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339} {
+		if t, parseErr := time.Parse(layout, active.StartedAt); parseErr == nil {
+			startedAt = t
+			break
+		}
+	}
+	if startedAt.IsZero() || time.Since(startedAt) > agent.RecentSessionTimeout {
+		return nil, nil
+	}
+
+	// Try to get transcript data using the known session ID
+	transcriptData, transcriptPath := a.getTranscriptForSession(
+		active.SessionID, active.TranscriptPath, active.DataDir,
+	)
+
+	return &agent.SessionInfo{
+		SessionID:      active.SessionID,
+		TranscriptPath: transcriptPath,
+		TranscriptData: transcriptData,
+		StartedAt:      active.StartedAt,
+		ProjectPath:    projectPath,
+	}, nil
+}
+
+// getTranscriptForSession attempts to fetch transcript data for a known session ID.
+// Tries the flat-file message directory first, then SQLite with multiple query
+// variants to handle schema differences across OpenCode versions.
+// Returns an empty JSON array as a last resort so the git note is still created.
+func (a *Agent) getTranscriptForSession(sessionID, transcriptPath, dataDir string) (transcriptData []byte, usedPath string) {
+	// Try flat-file message directory
+	if transcriptPath != "" {
+		if info, err := os.Stat(transcriptPath); err == nil && info.IsDir() {
+			entries, _ := os.ReadDir(transcriptPath)
+			if len(entries) > 0 {
+				return nil, transcriptPath
+			}
+		}
+	}
+
+	// Resolve data dir if not provided
+	if dataDir == "" {
+		if d, err := GetDataDir(); err == nil {
+			dataDir = d
+		}
+	}
+
+	// Try SQLite by exact session ID
+	if dataDir != "" {
+		if result := queryTranscriptFromSQLite(dataDir, sessionID); result != nil {
+			return result, ""
+		}
+	}
+
+	// Fallback: empty transcript so the git note is still written
+	return []byte("[]"), ""
+}
+
+// queryTranscriptFromSQLite queries messages for a session by ID, trying multiple
+// query forms to handle schema changes across OpenCode versions.
+func queryTranscriptFromSQLite(dataDir, sessionID string) []byte {
+	dbPath := filepath.Join(dataDir, "opencode.db")
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		return nil
+	}
+	if _, err := exec.LookPath("sqlite3"); err != nil {
+		return nil
+	}
+
+	// Try progressively simpler queries to handle different schema versions
+	queries := []string{
+		// Current schema: data column ordered by time_created
+		fmt.Sprintf(`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`, sessionID),
+		// Newer schema: data column ordered by created_at
+		fmt.Sprintf(`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY created_at;`, sessionID),
+		// Fallback: data column ordered by rowid (always available in SQLite)
+		fmt.Sprintf(`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY rowid;`, sessionID),
+		// Last resort: raw data column without patching
+		fmt.Sprintf(`SELECT json_group_array(data) FROM message WHERE session_id='%s' ORDER BY rowid;`, sessionID),
+	}
+
+	for _, q := range queries {
+		cmd := exec.Command("sqlite3", dbPath, q)
+		output, err := cmd.Output()
+		if err != nil {
+			continue
+		}
+		trimmed := strings.TrimSpace(string(output))
+		if trimmed != "" && trimmed != "[null]" && trimmed != "[]" {
+			return []byte(trimmed)
+		}
+	}
+	return nil
 }
 
 // discoverFromFlatFiles tries the legacy flat file session discovery.
@@ -454,7 +581,6 @@ func parseOpenCodeEntry(raw map[string]json.RawMessage, fullData []byte) agent.T
 	return entry
 }
 
-
 // parseOpenCodeMessage parses message content from an OpenCode entry.
 func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageType) *agent.Message {
 	if msgType == "" {
@@ -497,4 +623,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-

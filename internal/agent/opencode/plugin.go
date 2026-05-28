@@ -10,8 +10,9 @@ import (
 // tool execution hooks and calls shiftlog store after git commits.
 //
 // OpenCode plugin hooks:
-//   tool.execute.before(input, output) — input: {tool, sessionID, callID}, output: {args}
-//   tool.execute.after(input, output)  — input: {tool, sessionID, callID}, output: {title, output, metadata}
+//
+//	tool.execute.before(input, output) — input: {tool, sessionID, callID}, output: {args}
+//	tool.execute.after(input, output)  — input: {tool, sessionID, callID}, output: {title, output, metadata}
 //
 // The command string is only available in the "before" hook (via output.args),
 // so we capture it there and act on it in the "after" hook, matching by callID.
@@ -21,15 +22,43 @@ const pluginTemplate = `// shiftlog plugin for OpenCode CLI
 
 export const ShiftlogPlugin = async ({ directory, client }) => {
   const pendingCommits = new Map();
+  let sessionRecorded = false;
 
   return {
     "tool.execute.before": async (input, output) => {
+      // Record the active session on first tool execution (enables manual commit capture)
+      const sessionID = input?.sessionID || input?.session_id || "";
+      if (!sessionRecorded && sessionID && directory) {
+        sessionRecorded = true;
+        const dataDir = process.platform === "darwin"
+            ? process.env.HOME + "/Library/Application Support/opencode"
+            : (process.env.XDG_DATA_HOME || process.env.HOME + "/.local/share") + "/opencode";
+        try {
+          const { mkdirSync, writeFileSync } = await import("fs");
+          const { join } = await import("path");
+          const shiftlogDir = join(directory, ".shiftlog");
+          mkdirSync(shiftlogDir, { recursive: true });
+          writeFileSync(
+            join(shiftlogDir, "active-session.json"),
+            JSON.stringify({
+              session_id: sessionID,
+              transcript_path: join(dataDir, "storage", "message", sessionID),
+              started_at: new Date().toISOString(),
+              project_path: directory,
+              data_dir: dataDir,
+            }, null, 2)
+          );
+        } catch(e) {
+          // Silently ignore to not disrupt workflow
+        }
+      }
+
       const command = output?.args?.command || output?.args?.cmd || "";
       if (command.includes("git commit") || command.includes("git-commit")) {
         pendingCommits.set(input.callID, {
           command,
           tool: input.tool,
-          sessionID: input.sessionID,
+          sessionID: sessionID,
         });
       }
     },
