@@ -20,7 +20,7 @@ func init() {
 // Agent implements the agent.Agent interface for OpenCode CLI.
 type Agent struct{}
 
-func (a *Agent) Name() agent.Name   { return agent.OpenCode }
+func (a *Agent) Name() agent.Name    { return agent.OpenCode }
 func (a *Agent) DisplayName() string { return "OpenCode CLI" }
 
 // ConfigureHooks installs the shiftlog plugin for OpenCode.
@@ -96,12 +96,12 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 func (a *Agent) IsCommitCommand(toolName, command string) bool {
 	// OpenCode tool names for shell execution
 	shellTools := map[string]bool{
-		"bash":               true,
-		"shell":              true,
-		"terminal":           true,
-		"execute":            true,
-		"run":                true,
-		"command":            true,
+		"bash":     true,
+		"shell":    true,
+		"terminal": true,
+		"execute":  true,
+		"run":      true,
+		"command":  true,
 	}
 
 	if !shellTools[toolName] {
@@ -316,6 +316,22 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		return nil, nil
 	}
 
+	// v1.15+: OpenCode introduced a project table keyed on directory path whose
+	// UUID is used as session.project_id, replacing the git root commit hash that
+	// older versions stored directly.  Try to resolve the real project ID first;
+	// if the table doesn't exist (older builds) the query will error and we keep
+	// the git root commit hash as the fallback.
+	if absPath, err := filepath.Abs(projectPath); err == nil {
+		safeAbsPath := strings.ReplaceAll(absPath, "'", "''")
+		pathQuery := fmt.Sprintf(`SELECT id FROM project WHERE path='%s' LIMIT 1;`, safeAbsPath)
+		cmd := exec.Command("sqlite3", dbPath, pathQuery)
+		if output, err := cmd.Output(); err == nil {
+			if id := strings.TrimSpace(string(output)); id != "" {
+				projectID = id
+			}
+		}
+	}
+
 	// Find most recent session for this project
 	sessionQuery := fmt.Sprintf(
 		`SELECT id FROM session WHERE project_id='%s' ORDER BY time_updated DESC LIMIT 1;`,
@@ -353,21 +369,19 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		// If we can't parse the time, proceed anyway — better to try than skip
 	}
 
-	// Get messages for this session as a JSON array
+	// Get messages for this session as a JSON array.
+	// A missing or empty result is not fatal — we still have a valid session ID.
+	var transcriptData []byte
 	msgQuery := fmt.Sprintf(
 		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
 		sessionID,
 	)
 	cmd = exec.Command("sqlite3", dbPath, msgQuery)
-	msgOutput, err := cmd.Output()
-	if err != nil {
-		return nil, nil
-	}
-
-	transcriptData := []byte(strings.TrimSpace(string(msgOutput)))
-	// sqlite3 returns "[null]" when no rows match
-	if string(transcriptData) == "[null]" || string(transcriptData) == "[]" {
-		return nil, nil
+	if msgOutput, err := cmd.Output(); err == nil {
+		trimmed := strings.TrimSpace(string(msgOutput))
+		if trimmed != "" && trimmed != "[null]" && trimmed != "[]" {
+			transcriptData = []byte(trimmed)
+		}
 	}
 
 	return &agent.SessionInfo{
@@ -454,7 +468,6 @@ func parseOpenCodeEntry(raw map[string]json.RawMessage, fullData []byte) agent.T
 	return entry
 }
 
-
 // parseOpenCodeMessage parses message content from an OpenCode entry.
 func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageType) *agent.Message {
 	if msgType == "" {
@@ -497,4 +510,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
