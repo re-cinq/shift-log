@@ -10,6 +10,61 @@ import (
 	"strings"
 )
 
+// getSQLiteColumns returns the column names of a SQLite table using PRAGMA table_info.
+func getSQLiteColumns(dbPath, table string) []string {
+	query := fmt.Sprintf("SELECT name FROM pragma_table_info('%s');", table)
+	cmd := exec.Command("sqlite3", dbPath, query)
+	out, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+	var cols []string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if c := strings.TrimSpace(line); c != "" {
+			cols = append(cols, c)
+		}
+	}
+	return cols
+}
+
+// findSQLiteColumn returns the first candidate that exists in available, or "".
+func findSQLiteColumn(available []string, candidates ...string) string {
+	colSet := make(map[string]bool, len(available))
+	for _, c := range available {
+		colSet[c] = true
+	}
+	for _, c := range candidates {
+		if colSet[c] {
+			return c
+		}
+	}
+	return ""
+}
+
+// sqliteTimeOrderExpr returns an ORDER BY expression for most-recent-first ordering,
+// handling both legacy snake_case (pre-v1.15) and camelCase/JSON (v1.15+) schemas.
+func sqliteTimeOrderExpr(cols []string) string {
+	if col := findSQLiteColumn(cols, "time_updated", "timeUpdated", "updated_at"); col != "" {
+		return fmt.Sprintf(`"%s" DESC`, col)
+	}
+	if findSQLiteColumn(cols, "time") != "" {
+		return `json_extract("time", '$.updated') DESC`
+	}
+	return "rowid DESC"
+}
+
+// sqliteTimeValueExpr returns a SELECT expression for the session's last-updated
+// timestamp, or "" if no time column can be detected.
+func sqliteTimeValueExpr(cols []string) string {
+	if col := findSQLiteColumn(cols, "time_updated", "timeUpdated", "updated_at"); col != "" {
+		return fmt.Sprintf(`"%s"`, col)
+	}
+	if findSQLiteColumn(cols, "time") != "" {
+		return `json_extract("time", '$.updated')`
+	}
+	return ""
+}
+
 // GetDataDir returns the OpenCode data directory.
 // OpenCode follows XDG conventions: it uses $XDG_DATA_HOME/opencode on Linux
 // and ~/Library/Application Support/opencode on macOS.
