@@ -10,8 +10,9 @@ import (
 // tool execution hooks and calls shiftlog store after git commits.
 //
 // OpenCode plugin hooks:
-//   tool.execute.before(input, output) — input: {tool, sessionID, callID}, output: {args}
-//   tool.execute.after(input, output)  — input: {tool, sessionID, callID}, output: {title, output, metadata}
+//
+//	tool.execute.before(input, output) — input: {tool, sessionID, callID}, output: {args}
+//	tool.execute.after(input, output)  — input: {tool, sessionID, callID}, output: {title, output, metadata}
 //
 // The command string is only available in the "before" hook (via output.args),
 // so we capture it there and act on it in the "after" hook, matching by callID.
@@ -48,7 +49,7 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
             transcriptData = JSON.stringify(msgs.map(m => ({
               role: m.role || "",
               id: m.id || "",
-              content: m.content || "",
+              parts: m.parts || [],
               time: m.time || {},
             })));
           }
