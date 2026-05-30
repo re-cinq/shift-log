@@ -127,3 +127,74 @@ func WriteSessionFile(projectPath, sessionID string, transcriptData []byte) (str
 
 	return sessionPath, nil
 }
+
+// sqliteQuery runs a sqlite3 query and returns trimmed stdout, or "" on error.
+func sqliteQuery(dbPath string, query string) string {
+	cmd := exec.Command("sqlite3", dbPath, query)
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// findRecentSessionID queries the SQLite database for the most recent session
+// matching the given project_id, trying multiple time column formats for
+// compatibility across OpenCode versions.
+func findRecentSessionID(dbPath, projectID string) string {
+	// OpenCode v1.15+: time stored as JSON object {"created": "...", "updated": "..."}
+	// OpenCode v1.2–v1.14: time stored in separate time_updated column
+	// Fallback: order by rowid (insertion order)
+	queries := []string{
+		fmt.Sprintf(`SELECT id FROM session WHERE project_id='%s' ORDER BY json_extract(time, '$.updated') DESC LIMIT 1;`, projectID),
+		fmt.Sprintf(`SELECT id FROM session WHERE project_id='%s' ORDER BY time_updated DESC LIMIT 1;`, projectID),
+		fmt.Sprintf(`SELECT id FROM session WHERE project_id='%s' ORDER BY rowid DESC LIMIT 1;`, projectID),
+	}
+	for _, q := range queries {
+		if id := sqliteQuery(dbPath, q); id != "" {
+			return id
+		}
+	}
+	return ""
+}
+
+// getSessionTimeUpdated retrieves the last-updated timestamp for a session,
+// trying multiple column formats for compatibility across OpenCode versions.
+func getSessionTimeUpdated(dbPath, sessionID string) string {
+	queries := []string{
+		fmt.Sprintf(`SELECT json_extract(time, '$.updated') FROM session WHERE id='%s';`, sessionID),
+		fmt.Sprintf(`SELECT time_updated FROM session WHERE id='%s';`, sessionID),
+		fmt.Sprintf(`SELECT json_extract(time, '$.created') FROM session WHERE id='%s';`, sessionID),
+		fmt.Sprintf(`SELECT time_created FROM session WHERE id='%s';`, sessionID),
+	}
+	for _, q := range queries {
+		if ts := sqliteQuery(dbPath, q); ts != "" {
+			return ts
+		}
+	}
+	return ""
+}
+
+// querySessionMessages retrieves all messages for a session as a JSON array,
+// trying multiple schema formats for compatibility across OpenCode versions.
+func querySessionMessages(dbPath, sessionID string) []byte {
+	// OpenCode v1.15+: time stored as JSON, ordering by json_extract(time, '$.created')
+	// OpenCode v1.2–v1.14: time stored in time_created column
+	queries := []string{
+		fmt.Sprintf(`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY json_extract(time, '$.created');`, sessionID),
+		fmt.Sprintf(`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`, sessionID),
+		fmt.Sprintf(`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s';`, sessionID),
+	}
+	for _, q := range queries {
+		cmd := exec.Command("sqlite3", dbPath, q)
+		out, err := cmd.Output()
+		if err != nil {
+			continue
+		}
+		trimmed := strings.TrimSpace(string(out))
+		if trimmed != "" && trimmed != "[null]" && trimmed != "[]" {
+			return []byte(trimmed)
+		}
+	}
+	return nil
+}
