@@ -96,12 +96,12 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 func (a *Agent) IsCommitCommand(toolName, command string) bool {
 	// OpenCode tool names for shell execution
 	shellTools := map[string]bool{
-		"bash":               true,
-		"shell":              true,
-		"terminal":           true,
-		"execute":            true,
-		"run":                true,
-		"command":            true,
+		"bash":     true,
+		"shell":    true,
+		"terminal": true,
+		"execute":  true,
+		"run":      true,
+		"command":  true,
 	}
 
 	if !shellTools[toolName] {
@@ -230,7 +230,8 @@ func (a *Agent) parseMessageDir(dir string) (*agent.Transcript, error) {
 }
 
 // DiscoverSession finds an active or recent OpenCode session.
-// It first tries flat file storage (pre-v1.2), then falls back to SQLite (v1.2+).
+// It tries flat file storage (pre-v1.2), SQLite (v1.2-v1.14), and
+// session_diff flat files (v1.15+).
 func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) {
 	// Try flat file storage first (pre-v1.2 OpenCode)
 	session, err := a.discoverFromFlatFiles(projectPath)
@@ -241,14 +242,24 @@ func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) 
 		return session, nil
 	}
 
-	// Fall back to SQLite (OpenCode v1.2+)
 	dataDir, err := GetDataDir()
 	if err != nil {
 		return nil, nil
 	}
 
 	projectID := GetProjectID(projectPath)
-	return discoverFromSQLite(dataDir, projectID, projectPath)
+
+	// Try SQLite (OpenCode v1.2 - v1.14)
+	session, err = discoverFromSQLite(dataDir, projectID, projectPath)
+	if err != nil {
+		return nil, err
+	}
+	if session != nil {
+		return session, nil
+	}
+
+	// Try session_diff directory (OpenCode v1.15+)
+	return discoverFromSessionDiff(dataDir, projectID, projectPath)
 }
 
 // discoverFromFlatFiles tries the legacy flat file session discovery.
@@ -349,6 +360,10 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 			if time.Since(t) > agent.RecentSessionTimeout {
 				return nil, nil
 			}
+		} else if ms, parseErr := parseUnixMillis(timeStr); parseErr == nil {
+			if time.Since(ms) > agent.RecentSessionTimeout {
+				return nil, nil
+			}
 		}
 		// If we can't parse the time, proceed anyway — better to try than skip
 	}
@@ -360,23 +375,156 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 	)
 	cmd = exec.Command("sqlite3", dbPath, msgQuery)
 	msgOutput, err := cmd.Output()
-	if err != nil {
-		return nil, nil
+
+	var transcriptData []byte
+	if err == nil {
+		transcriptData = []byte(strings.TrimSpace(string(msgOutput)))
 	}
 
-	transcriptData := []byte(strings.TrimSpace(string(msgOutput)))
-	// sqlite3 returns "[null]" when no rows match
-	if string(transcriptData) == "[null]" || string(transcriptData) == "[]" {
-		return nil, nil
+	// If messages are empty/null in SQLite (v1.15+ stores messages in session_diff files),
+	// try to read the session_diff file instead.
+	if len(transcriptData) == 0 || string(transcriptData) == "[null]" || string(transcriptData) == "[]" {
+		sessionDiffPath := filepath.Join(dataDir, "storage", "session_diff", sessionID+".json")
+		if diffData, readErr := os.ReadFile(sessionDiffPath); readErr == nil {
+			transcriptData = extractSessionDiffTranscript(diffData)
+		} else {
+			// Return session with empty transcript — creates a valid note with 0 messages
+			transcriptData = []byte("[]")
+		}
 	}
 
 	return &agent.SessionInfo{
 		SessionID:      sessionID,
-		TranscriptPath: "", // no file path for SQLite
+		TranscriptPath: "",
 		StartedAt:      time.Now().Format(time.RFC3339),
 		ProjectPath:    projectPath,
 		TranscriptData: transcriptData,
 	}, nil
+}
+
+// discoverFromSessionDiff scans the session_diff directory for recent sessions
+// matching the project. This is the storage format used by OpenCode v1.15+.
+func discoverFromSessionDiff(dataDir, projectID, projectPath string) (*agent.SessionInfo, error) {
+	sessionDiffDir := filepath.Join(dataDir, "storage", "session_diff")
+	entries, err := os.ReadDir(sessionDiffDir)
+	if err != nil {
+		return nil, nil
+	}
+
+	now := time.Now()
+	var best *agent.SessionInfo
+	var bestModTime time.Time
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+
+		modTime := info.ModTime()
+		if now.Sub(modTime) > agent.RecentSessionTimeout {
+			continue
+		}
+
+		filePath := filepath.Join(sessionDiffDir, entry.Name())
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			continue
+		}
+
+		if !sessionDiffMatchesProject(data, projectID, projectPath) {
+			continue
+		}
+
+		if best == nil || modTime.After(bestModTime) {
+			sessionID := strings.TrimSuffix(entry.Name(), ".json")
+			transcriptData := extractSessionDiffTranscript(data)
+			best = &agent.SessionInfo{
+				SessionID:      sessionID,
+				TranscriptPath: "",
+				StartedAt:      modTime.Format(time.RFC3339),
+				ProjectPath:    projectPath,
+				TranscriptData: transcriptData,
+			}
+			bestModTime = modTime
+		}
+	}
+
+	return best, nil
+}
+
+// sessionDiffMatchesProject checks whether a session_diff JSON file belongs to the given project.
+// It checks both projectID (root commit hash) and path fields for compatibility.
+func sessionDiffMatchesProject(data []byte, projectID, projectPath string) bool {
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return false
+	}
+
+	// Check project ID fields (root commit hash)
+	for _, field := range []string{"projectID", "project_id"} {
+		if raw, ok := obj[field]; ok {
+			var val string
+			if json.Unmarshal(raw, &val) == nil && val == projectID {
+				return true
+			}
+		}
+	}
+
+	// Check path/directory fields
+	for _, field := range []string{"path", "directory", "workdir", "cwd", "projectPath"} {
+		if raw, ok := obj[field]; ok {
+			var val string
+			if json.Unmarshal(raw, &val) == nil && agent.PathsEqual(val, projectPath) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// extractSessionDiffTranscript extracts the message array from a session_diff file.
+// OpenCode v1.15+ stores the full session in a flat JSON file; this function
+// extracts the messages array for use as transcript data.
+func extractSessionDiffTranscript(data []byte) []byte {
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return data
+	}
+
+	// Try common message array field names used by opencode
+	for _, field := range []string{"messages", "parts", "history", "conversation"} {
+		if raw, ok := obj[field]; ok {
+			var arr []json.RawMessage
+			if json.Unmarshal(raw, &arr) == nil && len(arr) > 0 {
+				encoded, err := json.Marshal(arr)
+				if err == nil {
+					return encoded
+				}
+			}
+		}
+	}
+
+	// Return raw data; ParseTranscript will handle unknown formats gracefully
+	return data
+}
+
+// parseUnixMillis parses a Unix timestamp in milliseconds from a string.
+func parseUnixMillis(s string) (time.Time, error) {
+	var ms int64
+	_, err := fmt.Sscanf(s, "%d", &ms)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if ms <= 0 {
+		return time.Time{}, fmt.Errorf("invalid timestamp: %d", ms)
+	}
+	return time.Unix(ms/1000, (ms%1000)*int64(time.Millisecond)), nil
 }
 
 // RestoreSession writes a session to OpenCode's storage location.
@@ -454,7 +602,6 @@ func parseOpenCodeEntry(raw map[string]json.RawMessage, fullData []byte) agent.T
 	return entry
 }
 
-
 // parseOpenCodeMessage parses message content from an OpenCode entry.
 func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageType) *agent.Message {
 	if msgType == "" {
@@ -497,4 +644,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
