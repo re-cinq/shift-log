@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -96,12 +97,12 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 func (a *Agent) IsCommitCommand(toolName, command string) bool {
 	// OpenCode tool names for shell execution
 	shellTools := map[string]bool{
-		"bash":               true,
-		"shell":              true,
-		"terminal":           true,
-		"execute":            true,
-		"run":                true,
-		"command":            true,
+		"bash":     true,
+		"shell":    true,
+		"terminal": true,
+		"execute":  true,
+		"run":      true,
+		"command":  true,
 	}
 
 	if !shellTools[toolName] {
@@ -337,15 +338,20 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 	timeOutput, err := cmd.Output()
 	if err == nil {
 		timeStr := strings.TrimSpace(string(timeOutput))
-		if t, err := time.Parse(time.RFC3339Nano, timeStr); err == nil {
+		// Try Unix milliseconds (opencode v1.2+ stores timestamps as INTEGER ms)
+		if ms, parseErr := strconv.ParseInt(timeStr, 10, 64); parseErr == nil {
+			if time.Since(time.Unix(ms/1000, 0)) > agent.RecentSessionTimeout {
+				return nil, nil
+			}
+		} else if t, parseErr := time.Parse(time.RFC3339Nano, timeStr); parseErr == nil {
 			if time.Since(t) > agent.RecentSessionTimeout {
 				return nil, nil
 			}
-		} else if t, err := time.Parse("2006-01-02T15:04:05.000Z", timeStr); err == nil {
+		} else if t, parseErr := time.Parse("2006-01-02T15:04:05.000Z", timeStr); parseErr == nil {
 			if time.Since(t) > agent.RecentSessionTimeout {
 				return nil, nil
 			}
-		} else if t, err := time.Parse("2006-01-02 15:04:05", timeStr); err == nil {
+		} else if t, parseErr := time.Parse("2006-01-02 15:04:05", timeStr); parseErr == nil {
 			if time.Since(t) > agent.RecentSessionTimeout {
 				return nil, nil
 			}
@@ -353,7 +359,9 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		// If we can't parse the time, proceed anyway — better to try than skip
 	}
 
-	// Get messages for this session as a JSON array
+	// Get messages for this session as a JSON array.
+	// Try old schema (data column) first for backward compatibility with pre-v1.15 opencode,
+	// then fall back to new schema using role + parts columns (opencode v1.15+).
 	msgQuery := fmt.Sprintf(
 		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
 		sessionID,
@@ -361,7 +369,16 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 	cmd = exec.Command("sqlite3", dbPath, msgQuery)
 	msgOutput, err := cmd.Output()
 	if err != nil {
-		return nil, nil
+		// data column not present — use role + parts columns (opencode v1.15+)
+		msgQuery = fmt.Sprintf(
+			`SELECT json_group_array(json_object('id', id, 'role', role, 'content', json(parts))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
+			sessionID,
+		)
+		cmd = exec.Command("sqlite3", dbPath, msgQuery)
+		msgOutput, err = cmd.Output()
+		if err != nil {
+			return nil, nil
+		}
 	}
 
 	transcriptData := []byte(strings.TrimSpace(string(msgOutput)))
@@ -497,4 +514,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
