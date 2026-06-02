@@ -1,6 +1,8 @@
 package opencode
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -50,6 +52,18 @@ func GetProjectID(projectPath string) string {
 		return strings.TrimSpace(lines[0])
 	}
 	return "global"
+}
+
+// GetProjectIDFromPath returns a SHA256-based project identifier derived from the
+// absolute project path. OpenCode v1.15+ may use this instead of the git root
+// commit hash.
+func GetProjectIDFromPath(projectPath string) string {
+	absPath, err := filepath.Abs(projectPath)
+	if err != nil {
+		absPath = projectPath
+	}
+	sum := sha256.Sum256([]byte(absPath))
+	return hex.EncodeToString(sum[:])
 }
 
 // GetSessionDir returns the session storage directory for a project.
