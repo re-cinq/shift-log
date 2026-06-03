@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -96,12 +97,12 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 func (a *Agent) IsCommitCommand(toolName, command string) bool {
 	// OpenCode tool names for shell execution
 	shellTools := map[string]bool{
-		"bash":               true,
-		"shell":              true,
-		"terminal":           true,
-		"execute":            true,
-		"run":                true,
-		"command":            true,
+		"bash":     true,
+		"shell":    true,
+		"terminal": true,
+		"execute":  true,
+		"run":      true,
+		"command":  true,
 	}
 
 	if !shellTools[toolName] {
@@ -305,6 +306,8 @@ func (a *Agent) discoverFromFlatFiles(projectPath string) (*agent.SessionInfo, e
 }
 
 // discoverFromSQLite queries the OpenCode SQLite database for the most recent session.
+// Handles schema evolution between versions (snake_case vs camelCase column names,
+// ISO vs Unix-ms timestamps, data-blob vs column-per-field message storage).
 func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionInfo, error) {
 	dbPath := filepath.Join(dataDir, "opencode.db")
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
@@ -316,10 +319,14 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		return nil, nil
 	}
 
+	// Discover actual column names — OpenCode changed from snake_case to camelCase in v1.15+
+	projectIDCol := resolveColumn(dbPath, "session", "project_id", "projectId")
+	timeUpdatedCol := resolveColumn(dbPath, "session", "time_updated", "timeUpdated", "updated_at", "updatedAt")
+
 	// Find most recent session for this project
 	sessionQuery := fmt.Sprintf(
-		`SELECT id FROM session WHERE project_id='%s' ORDER BY time_updated DESC LIMIT 1;`,
-		projectID,
+		`SELECT id FROM session WHERE "%s"='%s' ORDER BY "%s" DESC LIMIT 1;`,
+		projectIDCol, projectID, timeUpdatedCol,
 	)
 	cmd := exec.Command("sqlite3", "-separator", "\t", dbPath, sessionQuery)
 	sessionOutput, err := cmd.Output()
@@ -330,22 +337,14 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 
 	// Check if this session was recent (within timeout)
 	timeQuery := fmt.Sprintf(
-		`SELECT time_updated FROM session WHERE id='%s';`,
-		sessionID,
+		`SELECT "%s" FROM session WHERE id='%s';`,
+		timeUpdatedCol, sessionID,
 	)
 	cmd = exec.Command("sqlite3", dbPath, timeQuery)
 	timeOutput, err := cmd.Output()
 	if err == nil {
 		timeStr := strings.TrimSpace(string(timeOutput))
-		if t, err := time.Parse(time.RFC3339Nano, timeStr); err == nil {
-			if time.Since(t) > agent.RecentSessionTimeout {
-				return nil, nil
-			}
-		} else if t, err := time.Parse("2006-01-02T15:04:05.000Z", timeStr); err == nil {
-			if time.Since(t) > agent.RecentSessionTimeout {
-				return nil, nil
-			}
-		} else if t, err := time.Parse("2006-01-02 15:04:05", timeStr); err == nil {
+		if t, ok := parseOpenCodeTimestamp(timeStr); ok {
 			if time.Since(t) > agent.RecentSessionTimeout {
 				return nil, nil
 			}
@@ -353,22 +352,8 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		// If we can't parse the time, proceed anyway — better to try than skip
 	}
 
-	// Get messages for this session as a JSON array
-	msgQuery := fmt.Sprintf(
-		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
-		sessionID,
-	)
-	cmd = exec.Command("sqlite3", dbPath, msgQuery)
-	msgOutput, err := cmd.Output()
-	if err != nil {
-		return nil, nil
-	}
-
-	transcriptData := []byte(strings.TrimSpace(string(msgOutput)))
-	// sqlite3 returns "[null]" when no rows match
-	if string(transcriptData) == "[null]" || string(transcriptData) == "[]" {
-		return nil, nil
-	}
+	// Get messages for this session
+	transcriptData := fetchOpenCodeMessages(dbPath, sessionID)
 
 	return &agent.SessionInfo{
 		SessionID:      sessionID,
@@ -377,6 +362,95 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		ProjectPath:    projectPath,
 		TranscriptData: transcriptData,
 	}, nil
+}
+
+// resolveColumn returns the actual column name used in the SQLite table.
+// It introspects the schema via PRAGMA table_info and returns the first
+// candidate that matches (case-insensitive). Falls back to candidates[0].
+func resolveColumn(dbPath, table string, candidates ...string) string {
+	cmd := exec.Command("sqlite3", dbPath, fmt.Sprintf("PRAGMA table_info(%s);", table))
+	output, err := cmd.Output()
+	if err != nil {
+		return candidates[0]
+	}
+	// PRAGMA table_info output per line: cid|name|type|notnull|dflt_value|pk
+	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
+		parts := strings.Split(line, "|")
+		if len(parts) < 2 {
+			continue
+		}
+		colName := strings.TrimSpace(parts[1])
+		for _, candidate := range candidates {
+			if strings.EqualFold(colName, candidate) {
+				return colName
+			}
+		}
+	}
+	return candidates[0]
+}
+
+// parseOpenCodeTimestamp parses time values stored by OpenCode.
+// Handles ISO 8601 strings (pre-v1.15) and Unix millisecond integers (v1.15+).
+func parseOpenCodeTimestamp(timeStr string) (time.Time, bool) {
+	for _, format := range []string{
+		time.RFC3339Nano,
+		"2006-01-02T15:04:05.000Z",
+		"2006-01-02 15:04:05",
+	} {
+		if t, err := time.Parse(format, timeStr); err == nil {
+			return t, true
+		}
+	}
+	// Try Unix milliseconds (stored as INTEGER in newer OpenCode versions)
+	if ms, err := strconv.ParseInt(timeStr, 10, 64); err == nil {
+		if ms > 1_000_000_000_000 { // > year 2001 in milliseconds
+			return time.UnixMilli(ms), true
+		}
+		if ms > 1_000_000_000 { // might be Unix seconds
+			return time.Unix(ms, 0), true
+		}
+	}
+	return time.Time{}, false
+}
+
+// fetchOpenCodeMessages retrieves messages for an OpenCode session from SQLite.
+// Tries multiple query patterns to handle schema changes across versions.
+// Returns a JSON array (possibly empty) to allow note creation even without transcript.
+func fetchOpenCodeMessages(dbPath, sessionID string) []byte {
+	// Discover actual column names
+	sessionIDCol := resolveColumn(dbPath, "message", "session_id", "sessionId")
+	timeCreatedCol := resolveColumn(dbPath, "message", "time_created", "timeCreated", "created_at", "createdAt")
+
+	// Primary: json_patch with data blob column (pre-v1.15 schema)
+	q1 := fmt.Sprintf(
+		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE "%s"='%s' ORDER BY "%s";`,
+		sessionIDCol, sessionID, timeCreatedCol,
+	)
+	if out := runSQLiteQuery(dbPath, q1); out != "" && out != "[null]" && out != "[]" {
+		return []byte(out)
+	}
+
+	// Fallback: role + content columns (v1.15+ schema without data blob)
+	q2 := fmt.Sprintf(
+		`SELECT json_group_array(json_object('id', id, 'role', role, 'content', content)) FROM message WHERE "%s"='%s' ORDER BY "%s";`,
+		sessionIDCol, sessionID, timeCreatedCol,
+	)
+	if out := runSQLiteQuery(dbPath, q2); out != "" && out != "[null]" && out != "[]" {
+		return []byte(out)
+	}
+
+	// Return empty JSON array so note creation can proceed without transcript content
+	return []byte("[]")
+}
+
+// runSQLiteQuery executes a SQLite query and returns trimmed stdout, or "" on error.
+func runSQLiteQuery(dbPath, query string) string {
+	cmd := exec.Command("sqlite3", dbPath, query)
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(output))
 }
 
 // RestoreSession writes a session to OpenCode's storage location.
@@ -454,7 +528,6 @@ func parseOpenCodeEntry(raw map[string]json.RawMessage, fullData []byte) agent.T
 	return entry
 }
 
-
 // parseOpenCodeMessage parses message content from an OpenCode entry.
 func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageType) *agent.Message {
 	if msgType == "" {
@@ -497,4 +570,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
