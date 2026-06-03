@@ -316,17 +316,33 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		return nil, nil
 	}
 
-	// Find most recent session for this project
+	// Find most recent session for this project.
+	// Try by project_id first (pre-v1.15 OpenCode used git root commit hash).
+	sessionID := ""
 	sessionQuery := fmt.Sprintf(
 		`SELECT id FROM session WHERE project_id='%s' ORDER BY time_updated DESC LIMIT 1;`,
 		projectID,
 	)
 	cmd := exec.Command("sqlite3", "-separator", "\t", dbPath, sessionQuery)
-	sessionOutput, err := cmd.Output()
-	if err != nil || strings.TrimSpace(string(sessionOutput)) == "" {
+	if output, err := cmd.Output(); err == nil {
+		sessionID = strings.TrimSpace(string(output))
+	}
+
+	// Fallback: query by directory path (OpenCode v1.15+ changed project_id computation).
+	if sessionID == "" && projectPath != "" {
+		dirQuery := fmt.Sprintf(
+			`SELECT id FROM session WHERE directory='%s' ORDER BY time_updated DESC LIMIT 1;`,
+			projectPath,
+		)
+		cmd = exec.Command("sqlite3", "-separator", "\t", dbPath, dirQuery)
+		if output, err := cmd.Output(); err == nil {
+			sessionID = strings.TrimSpace(string(output))
+		}
+	}
+
+	if sessionID == "" {
 		return nil, nil
 	}
-	sessionID := strings.TrimSpace(string(sessionOutput))
 
 	// Check if this session was recent (within timeout)
 	timeQuery := fmt.Sprintf(
@@ -497,4 +513,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
