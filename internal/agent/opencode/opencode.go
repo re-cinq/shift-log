@@ -353,30 +353,69 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		// If we can't parse the time, proceed anyway — better to try than skip
 	}
 
-	// Get messages for this session as a JSON array
-	msgQuery := fmt.Sprintf(
-		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
-		sessionID,
-	)
-	cmd = exec.Command("sqlite3", dbPath, msgQuery)
-	msgOutput, err := cmd.Output()
-	if err != nil {
-		return nil, nil
-	}
-
-	transcriptData := []byte(strings.TrimSpace(string(msgOutput)))
-	// sqlite3 returns "[null]" when no rows match
-	if string(transcriptData) == "[null]" || string(transcriptData) == "[]" {
-		return nil, nil
-	}
+	// Read messages from SQLite, trying multiple schema versions.
+	transcriptData := readMessagesFromSQLite(dbPath, sessionID)
 
 	return &agent.SessionInfo{
 		SessionID:      sessionID,
-		TranscriptPath: "", // no file path for SQLite
+		TranscriptPath: "",
 		StartedAt:      time.Now().Format(time.RFC3339),
 		ProjectPath:    projectPath,
 		TranscriptData: transcriptData,
 	}, nil
+}
+
+// readMessagesFromSQLite reads messages from SQLite, trying multiple schema versions.
+// OpenCode 1.15+ stores messages with role/content columns; older versions used a data blob.
+// Returns a JSON array of messages. Falls back to an empty array on all failures so that
+// a git note can still be created for the session.
+func readMessagesFromSQLite(dbPath, sessionID string) []byte {
+	// Try new schema (opencode 1.15+): individual role/content/time_created columns.
+	newQuery := fmt.Sprintf(
+		`SELECT json_group_array(json_object('id', id, 'role', role, 'content', json(content), 'time', json_object('created', time_created))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
+		sessionID,
+	)
+	cmd := exec.Command("sqlite3", dbPath, newQuery)
+	if output, err := cmd.Output(); err == nil {
+		trimmed := strings.TrimSpace(string(output))
+		if isUsableTranscript(trimmed) {
+			return []byte(trimmed)
+		}
+	}
+
+	// Try old schema (opencode pre-1.15): entire message stored as JSON in a data column.
+	oldQuery := fmt.Sprintf(
+		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
+		sessionID,
+	)
+	cmd = exec.Command("sqlite3", dbPath, oldQuery)
+	if output, err := cmd.Output(); err == nil {
+		trimmed := strings.TrimSpace(string(output))
+		if isUsableTranscript(trimmed) {
+			return []byte(trimmed)
+		}
+	}
+
+	// Return an empty JSON array so the caller can still store a minimal note.
+	return []byte("[]")
+}
+
+// isUsableTranscript returns true when s is a non-empty JSON array that contains
+// at least one non-null element. sqlite3 returns "[null]" when there are no
+// matching rows, and the json_patch / json() calls produce nulls for missing columns.
+func isUsableTranscript(s string) bool {
+	if s == "" || s == "[]" || s == "[null]" {
+		return false
+	}
+	if !strings.HasPrefix(s, "[") {
+		return false
+	}
+	// Reject arrays composed entirely of null values (e.g. "[null,null]").
+	inner := strings.TrimSpace(s[1 : len(s)-1])
+	withoutNulls := strings.ReplaceAll(inner, "null", "")
+	withoutNulls = strings.ReplaceAll(withoutNulls, ",", "")
+	withoutNulls = strings.TrimSpace(withoutNulls)
+	return withoutNulls != ""
 }
 
 // RestoreSession writes a session to OpenCode's storage location.
@@ -497,4 +536,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
