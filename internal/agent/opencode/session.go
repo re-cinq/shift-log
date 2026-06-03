@@ -1,6 +1,8 @@
 package opencode
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -50,6 +52,13 @@ func GetProjectID(projectPath string) string {
 		return strings.TrimSpace(lines[0])
 	}
 	return "global"
+}
+
+// sha256ProjectID returns the SHA-256 hex digest of path.
+// OpenCode v1.15+ uses this as an alternative project identifier.
+func sha256ProjectID(path string) string {
+	h := sha256.Sum256([]byte(path))
+	return hex.EncodeToString(h[:])
 }
 
 // GetSessionDir returns the session storage directory for a project.
