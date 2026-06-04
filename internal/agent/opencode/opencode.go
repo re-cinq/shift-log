@@ -316,50 +316,59 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		return nil, nil
 	}
 
-	// Find most recent session for this project
-	sessionQuery := fmt.Sprintf(
-		`SELECT id FROM session WHERE project_id='%s' ORDER BY time_updated DESC LIMIT 1;`,
-		projectID,
-	)
-	cmd := exec.Command("sqlite3", "-separator", "\t", dbPath, sessionQuery)
-	sessionOutput, err := cmd.Output()
-	if err != nil || strings.TrimSpace(string(sessionOutput)) == "" {
+	// Find most recent session for this project.
+	// Try time-based ordering first; fall back to rowid when the column is absent
+	// (schema varies across opencode versions — e.g. time_updated vs updated_at).
+	sessionID := ""
+	for _, orderClause := range []string{"time_updated DESC", "rowid DESC"} {
+		q := fmt.Sprintf(
+			`SELECT id FROM session WHERE project_id='%s' ORDER BY %s LIMIT 1;`,
+			projectID, orderClause,
+		)
+		out, err := exec.Command("sqlite3", "-separator", "\t", dbPath, q).Output()
+		if err != nil {
+			continue
+		}
+		if id := strings.TrimSpace(string(out)); id != "" {
+			sessionID = id
+			break
+		}
+	}
+	if sessionID == "" {
 		return nil, nil
 	}
-	sessionID := strings.TrimSpace(string(sessionOutput))
 
-	// Check if this session was recent (within timeout)
-	timeQuery := fmt.Sprintf(
-		`SELECT time_updated FROM session WHERE id='%s';`,
-		sessionID,
-	)
-	cmd = exec.Command("sqlite3", dbPath, timeQuery)
-	timeOutput, err := cmd.Output()
-	if err == nil {
-		timeStr := strings.TrimSpace(string(timeOutput))
-		if t, err := time.Parse(time.RFC3339Nano, timeStr); err == nil {
-			if time.Since(t) > agent.RecentSessionTimeout {
-				return nil, nil
-			}
-		} else if t, err := time.Parse("2006-01-02T15:04:05.000Z", timeStr); err == nil {
-			if time.Since(t) > agent.RecentSessionTimeout {
-				return nil, nil
-			}
-		} else if t, err := time.Parse("2006-01-02 15:04:05", timeStr); err == nil {
-			if time.Since(t) > agent.RecentSessionTimeout {
-				return nil, nil
-			}
+	// Check if this session was recent (within timeout).
+	// Try multiple timestamp column names — schema varies across opencode versions.
+	for _, col := range []string{"time_updated", "updated_at", "time_created", "created_at"} {
+		out, err := exec.Command("sqlite3", dbPath,
+			fmt.Sprintf(`SELECT %s FROM session WHERE id='%s';`, col, sessionID),
+		).Output()
+		if err != nil {
+			continue // column absent, try next
 		}
-		// If we can't parse the time, proceed anyway — better to try than skip
+		timeStr := strings.TrimSpace(string(out))
+		if timeStr == "" {
+			break
+		}
+		t, parseErr := parseOpenCodeTime(timeStr)
+		if parseErr != nil {
+			break // column exists but format unrecognised; proceed
+		}
+		if time.Since(t) > agent.RecentSessionTimeout {
+			return nil, nil
+		}
+		break
 	}
+	// If no usable timestamp found, proceed — better to try than silently skip.
 
-	// Get messages for this session as a JSON array
+	// Get messages for this session as a JSON array.
+	// ORDER BY rowid avoids dependency on schema-specific time columns.
 	msgQuery := fmt.Sprintf(
-		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
+		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY rowid;`,
 		sessionID,
 	)
-	cmd = exec.Command("sqlite3", dbPath, msgQuery)
-	msgOutput, err := cmd.Output()
+	msgOutput, err := exec.Command("sqlite3", dbPath, msgQuery).Output()
 	if err != nil {
 		return nil, nil
 	}
@@ -377,6 +386,31 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		ProjectPath:    projectPath,
 		TranscriptData: transcriptData,
 	}, nil
+}
+
+// parseOpenCodeTime parses a timestamp string from the OpenCode SQLite database.
+// It handles ISO 8601 strings, space-separated datetime strings, and Unix timestamps
+// stored as integer milliseconds or seconds.
+func parseOpenCodeTime(s string) (time.Time, error) {
+	for _, layout := range []string{
+		time.RFC3339Nano,
+		"2006-01-02T15:04:05.000Z",
+		"2006-01-02 15:04:05",
+		"2006-01-02T15:04:05Z",
+	} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t, nil
+		}
+	}
+	// Try Unix timestamp stored as an integer (milliseconds if > 1e12, else seconds)
+	var ts int64
+	if _, err := fmt.Sscanf(s, "%d", &ts); err == nil {
+		if ts > 1_000_000_000_000 {
+			return time.Unix(0, ts*int64(time.Millisecond)), nil
+		}
+		return time.Unix(ts, 0), nil
+	}
+	return time.Time{}, fmt.Errorf("unrecognised time format: %q", s)
 }
 
 // RestoreSession writes a session to OpenCode's storage location.
@@ -497,4 +531,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
