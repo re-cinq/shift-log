@@ -1,13 +1,18 @@
 package opencode
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
+	"time"
+
+	"github.com/re-cinq/shift-log/internal/agent"
 )
 
 // GetDataDir returns the OpenCode data directory.
@@ -126,4 +131,135 @@ func WriteSessionFile(projectPath, sessionID string, transcriptData []byte) (str
 	_ = os.WriteFile(msgPath, transcriptData, 0600)
 
 	return sessionPath, nil
+}
+
+// discoverFromSQLite queries the OpenCode SQLite database for the most recent session.
+func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionInfo, error) {
+	dbPath := filepath.Join(dataDir, "opencode.db")
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		return nil, nil
+	}
+
+	// Check sqlite3 is available
+	if _, err := exec.LookPath("sqlite3"); err != nil {
+		return nil, nil
+	}
+
+	// Find most recent session for this project.
+	// Use rowid DESC for ordering — always available regardless of OpenCode schema version.
+	sessionQuery := fmt.Sprintf(
+		`SELECT id FROM session WHERE project_id='%s' ORDER BY rowid DESC LIMIT 1;`,
+		projectID,
+	)
+	cmd := exec.Command("sqlite3", "-separator", "\t", dbPath, sessionQuery)
+	sessionOutput, err := cmd.Output()
+	if err != nil || strings.TrimSpace(string(sessionOutput)) == "" {
+		return nil, nil
+	}
+	sessionID := strings.TrimSpace(string(sessionOutput))
+
+	// Check if this session was recent (within timeout).
+	// Try known time column names across OpenCode schema versions (time_updated, updated, etc.).
+	for _, col := range []string{"time_updated", "updated", "updatedAt", "updated_at"} {
+		timeQuery := fmt.Sprintf(`SELECT %s FROM session WHERE id='%s';`, col, sessionID)
+		cmd = exec.Command("sqlite3", dbPath, timeQuery)
+		timeOutput, err2 := cmd.Output()
+		if err2 != nil {
+			continue // column does not exist in this schema version; try next
+		}
+		timeStr := strings.TrimSpace(string(timeOutput))
+		if stale, ok := parseSessionStale(timeStr); ok && stale {
+			return nil, nil
+		}
+		break
+	}
+
+	// Get messages for this session.
+	// Use -json mode and SELECT data (without json_patch which requires SQLite 3.38+).
+	// Order by rowid — works across all SQLite schema versions.
+	msgQuery := fmt.Sprintf(
+		`SELECT data FROM message WHERE session_id='%s' ORDER BY rowid;`,
+		sessionID,
+	)
+	cmd = exec.Command("sqlite3", "-json", dbPath, msgQuery)
+	msgOutput, err := cmd.Output()
+	if err != nil {
+		return nil, nil
+	}
+
+	transcriptData := buildTranscriptFromSQLiteRows(msgOutput)
+	if len(transcriptData) == 0 {
+		return nil, nil
+	}
+
+	return &agent.SessionInfo{
+		SessionID:      sessionID,
+		TranscriptPath: "",
+		StartedAt:      time.Now().Format(time.RFC3339),
+		ProjectPath:    projectPath,
+		TranscriptData: transcriptData,
+	}, nil
+}
+
+// parseSessionStale parses a timestamp string and reports whether the session is stale.
+// Returns (isStale, parsed) — parsed is false when the format is unrecognised.
+func parseSessionStale(timeStr string) (bool, bool) {
+	if timeStr == "" {
+		return false, false
+	}
+	for _, format := range []string{time.RFC3339Nano, "2006-01-02T15:04:05.000Z", "2006-01-02 15:04:05"} {
+		if t, err := time.Parse(format, timeStr); err == nil {
+			return time.Since(t) > agent.RecentSessionTimeout, true
+		}
+	}
+	// Unix milliseconds (integer) — used by newer OpenCode versions
+	if ms, err := strconv.ParseInt(timeStr, 10, 64); err == nil {
+		t := time.UnixMilli(ms)
+		return time.Since(t) > agent.RecentSessionTimeout, true
+	}
+	return false, false
+}
+
+// buildTranscriptFromSQLiteRows converts sqlite3 -json output into a JSON array
+// of message objects suitable for ParseTranscript.
+//
+// sqlite3 -json outputs: [{"data":"<json-string-or-object>"}, ...]
+// Each "data" value may be a JSON-encoded string or a JSON object directly.
+func buildTranscriptFromSQLiteRows(raw []byte) []byte {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 {
+		return nil
+	}
+
+	var rows []map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &rows); err != nil {
+		return nil
+	}
+
+	var messages []json.RawMessage
+	for _, row := range rows {
+		dataRaw, ok := row["data"]
+		if !ok {
+			continue
+		}
+		// data may be stored as a quoted JSON string or an inline JSON object
+		var str string
+		if json.Unmarshal(dataRaw, &str) == nil {
+			if json.Valid([]byte(str)) {
+				messages = append(messages, json.RawMessage(str))
+			}
+		} else if json.Valid(dataRaw) {
+			messages = append(messages, dataRaw)
+		}
+	}
+
+	if len(messages) == 0 {
+		return nil
+	}
+
+	result, err := json.Marshal(messages)
+	if err != nil {
+		return nil
+	}
+	return result
 }
