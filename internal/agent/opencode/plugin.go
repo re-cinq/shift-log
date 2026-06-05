@@ -10,8 +10,9 @@ import (
 // tool execution hooks and calls shiftlog store after git commits.
 //
 // OpenCode plugin hooks:
-//   tool.execute.before(input, output) — input: {tool, sessionID, callID}, output: {args}
-//   tool.execute.after(input, output)  — input: {tool, sessionID, callID}, output: {title, output, metadata}
+//
+//	tool.execute.before(input, output) — input: {tool, sessionID, callID}, output: {args}
+//	tool.execute.after(input, output)  — input: {tool, sessionID, callID}, output: {title, output, metadata}
 //
 // The command string is only available in the "before" hook (via output.args),
 // so we capture it there and act on it in the "after" hook, matching by callID.
@@ -57,9 +58,18 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
         }
       }
 
-      const dataDir = process.platform === "darwin"
-          ? process.env.HOME + "/Library/Application Support/opencode"
-          : (process.env.XDG_DATA_HOME || process.env.HOME + "/.local/share") + "/opencode";
+      // Compute the data directory, checking XDG_STATE_HOME first (OpenCode 1.15+),
+      // then XDG_DATA_HOME (older versions), with platform-specific defaults.
+      let dataDir;
+      if (process.platform === "darwin") {
+        dataDir = process.env.HOME + "/Library/Application Support/opencode";
+      } else {
+        const stateHome = process.env.XDG_STATE_HOME || (process.env.HOME + "/.local/state");
+        const dataHome = process.env.XDG_DATA_HOME || (process.env.HOME + "/.local/share");
+        // Prefer XDG_STATE_HOME if it was explicitly set, otherwise use XDG_DATA_HOME default
+        // (runtime probing of which dir has the db is not feasible in the plugin)
+        dataDir = (process.env.XDG_STATE_HOME ? stateHome : dataHome) + "/opencode";
+      }
 
       const hookData = JSON.stringify({
         session_id: pending.sessionID || "",

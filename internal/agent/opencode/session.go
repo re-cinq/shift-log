@@ -34,6 +34,51 @@ func GetDataDir() (string, error) {
 	return filepath.Join(home, ".local", "share", "opencode"), nil
 }
 
+// getCandidateDataDirs returns all directories where OpenCode might store its database,
+// in order of preference. OpenCode <= 1.14 used XDG_DATA_HOME; 1.15+ uses XDG_STATE_HOME
+// on Linux. Both are probed so that session discovery works across versions.
+func getCandidateDataDirs() []string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		// Fall back to GetDataDir on error
+		if d, err2 := GetDataDir(); err2 == nil {
+			return []string{d}
+		}
+		return nil
+	}
+
+	if runtime.GOOS == "darwin" {
+		return []string{
+			filepath.Join(home, "Library", "Application Support", "opencode"),
+		}
+	}
+
+	seen := make(map[string]bool)
+	var dirs []string
+	add := func(p string) {
+		if p != "" && !seen[p] {
+			seen[p] = true
+			dirs = append(dirs, p)
+		}
+	}
+
+	// XDG_STATE_HOME (OpenCode 1.15+: state/session data, default ~/.local/state)
+	stateBase := os.Getenv("XDG_STATE_HOME")
+	if stateBase == "" {
+		stateBase = filepath.Join(home, ".local", "state")
+	}
+	add(filepath.Join(stateBase, "opencode"))
+
+	// XDG_DATA_HOME (OpenCode <= 1.14, default ~/.local/share)
+	dataBase := os.Getenv("XDG_DATA_HOME")
+	if dataBase == "" {
+		dataBase = filepath.Join(home, ".local", "share")
+	}
+	add(filepath.Join(dataBase, "opencode"))
+
+	return dirs
+}
+
 // GetProjectID returns the project identifier for OpenCode.
 // For git repos, this is the root commit hash. For non-git dirs, it's "global".
 func GetProjectID(projectPath string) string {
