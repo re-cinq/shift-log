@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -96,12 +97,12 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 func (a *Agent) IsCommitCommand(toolName, command string) bool {
 	// OpenCode tool names for shell execution
 	shellTools := map[string]bool{
-		"bash":               true,
-		"shell":              true,
-		"terminal":           true,
-		"execute":            true,
-		"run":                true,
-		"command":            true,
+		"bash":      true,
+		"shell":     true,
+		"terminal":  true,
+		"execute":   true,
+		"run":       true,
+		"command":   true,
 	}
 
 	if !shellTools[toolName] {
@@ -230,10 +231,11 @@ func (a *Agent) parseMessageDir(dir string) (*agent.Transcript, error) {
 }
 
 // DiscoverSession finds an active or recent OpenCode session.
-// It first tries flat file storage (pre-v1.2), then falls back to SQLite (v1.2+).
+// It first tries the project-local SQLite database (v1.16.2+), then flat file
+// storage (pre-v1.2), then falls back to the global SQLite database (v1.2-v1.15).
 func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) {
-	// Try flat file storage first (pre-v1.2 OpenCode)
-	session, err := a.discoverFromFlatFiles(projectPath)
+	// Try project-local SQLite first (OpenCode v1.16.2+)
+	session, err := discoverFromLocalSQLite(projectPath)
 	if err != nil {
 		return nil, err
 	}
@@ -241,7 +243,16 @@ func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) 
 		return session, nil
 	}
 
-	// Fall back to SQLite (OpenCode v1.2+)
+	// Try flat file storage (pre-v1.2 OpenCode)
+	session, err = a.discoverFromFlatFiles(projectPath)
+	if err != nil {
+		return nil, err
+	}
+	if session != nil {
+		return session, nil
+	}
+
+	// Fall back to global SQLite (OpenCode v1.2-v1.15)
 	dataDir, err := GetDataDir()
 	if err != nil {
 		return nil, nil
@@ -249,6 +260,80 @@ func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) 
 
 	projectID := GetProjectID(projectPath)
 	return discoverFromSQLite(dataDir, projectID, projectPath)
+}
+
+// discoverFromLocalSQLite finds a recent session in the project-local database.
+// OpenCode v1.16.2+ stores the database at {projectPath}/.opencode/opencode.db.
+// Schema: sessions(id, title, message_count, updated_at, created_at)
+//         messages(id, session_id, role, parts, model, created_at)
+// Timestamps are Unix milliseconds stored as INTEGER.
+func discoverFromLocalSQLite(projectPath string) (*agent.SessionInfo, error) {
+	dbPath := filepath.Join(projectPath, ".opencode", "opencode.db")
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		return nil, nil
+	}
+
+	if _, err := exec.LookPath("sqlite3"); err != nil {
+		return nil, nil
+	}
+
+	// Find the most recently updated session
+	cmd := exec.Command("sqlite3", dbPath,
+		`SELECT id, updated_at FROM sessions ORDER BY updated_at DESC LIMIT 1;`)
+	output, err := cmd.Output()
+	if err != nil || strings.TrimSpace(string(output)) == "" {
+		return nil, nil
+	}
+
+	line := strings.TrimSpace(string(output))
+	parts := strings.SplitN(line, "|", 2)
+	if len(parts) < 2 {
+		return nil, nil
+	}
+	sessionID := strings.TrimSpace(parts[0])
+	updatedAtStr := strings.TrimSpace(parts[1])
+
+	// updated_at is stored as Unix milliseconds (INTEGER)
+	updatedAtRaw, err := strconv.ParseInt(updatedAtStr, 10, 64)
+	if err != nil {
+		return nil, nil
+	}
+	var updatedAt time.Time
+	// Detect seconds vs milliseconds by magnitude (ms timestamps > 1e12 for dates after 2001)
+	if updatedAtRaw > 1e12 {
+		updatedAt = time.Unix(updatedAtRaw/1000, (updatedAtRaw%1000)*int64(time.Millisecond))
+	} else {
+		updatedAt = time.Unix(updatedAtRaw, 0)
+	}
+
+	if time.Since(updatedAt) > agent.RecentSessionTimeout {
+		return nil, nil
+	}
+
+	// Read messages for this session.
+	// Use json(parts) to inline the parts JSON array rather than escaping it as a string.
+	msgQuery := fmt.Sprintf(
+		`SELECT json_group_array(json_object('id', id, 'role', role, 'parts', json(parts))) FROM messages WHERE session_id='%s' ORDER BY created_at;`,
+		sessionID,
+	)
+	msgCmd := exec.Command("sqlite3", dbPath, msgQuery)
+	msgOutput, err := msgCmd.Output()
+	if err != nil {
+		return nil, nil
+	}
+
+	transcriptData := strings.TrimSpace(string(msgOutput))
+	if transcriptData == "[null]" || transcriptData == "[]" || transcriptData == "" {
+		return nil, nil
+	}
+
+	return &agent.SessionInfo{
+		SessionID:      sessionID,
+		TranscriptPath: "",
+		StartedAt:      updatedAt.Format(time.RFC3339),
+		ProjectPath:    projectPath,
+		TranscriptData: []byte(transcriptData),
+	}, nil
 }
 
 // discoverFromFlatFiles tries the legacy flat file session discovery.
@@ -304,7 +389,8 @@ func (a *Agent) discoverFromFlatFiles(projectPath string) (*agent.SessionInfo, e
 	}, nil
 }
 
-// discoverFromSQLite queries the OpenCode SQLite database for the most recent session.
+// discoverFromSQLite queries the OpenCode global SQLite database for the most recent session.
+// Used for OpenCode v1.2-v1.15 which stored a global database at ~/.local/share/opencode/opencode.db.
 func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionInfo, error) {
 	dbPath := filepath.Join(dataDir, "opencode.db")
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
@@ -454,8 +540,8 @@ func parseOpenCodeEntry(raw map[string]json.RawMessage, fullData []byte) agent.T
 	return entry
 }
 
-
 // parseOpenCodeMessage parses message content from an OpenCode entry.
+// Handles both the legacy format (content field) and v1.16.2+ format (parts array).
 func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageType) *agent.Message {
 	if msgType == "" {
 		return nil
@@ -471,7 +557,49 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 		msg.Role = "system"
 	}
 
-	// Try "content" as string
+	// Handle "parts" field (OpenCode v1.16.2+ format)
+	// parts is a JSON array of typed entries: [{"type":"text","data":{"text":"..."}}, ...]
+	if partsRaw, ok := raw["parts"]; ok {
+		var partsList []struct {
+			Type string          `json:"type"`
+			Data json.RawMessage `json:"data"`
+		}
+		if err := json.Unmarshal(partsRaw, &partsList); err == nil && len(partsList) > 0 {
+			var contentBlocks []agent.ContentBlock
+			for _, part := range partsList {
+				switch part.Type {
+				case "text":
+					var textData struct {
+						Text string `json:"text"`
+					}
+					if err := json.Unmarshal(part.Data, &textData); err == nil && textData.Text != "" {
+						contentBlocks = append(contentBlocks, agent.ContentBlock{Type: "text", Text: textData.Text})
+					}
+				case "tool_call":
+					var toolData struct {
+						ID    string `json:"id"`
+						Name  string `json:"name"`
+						Input string `json:"input"`
+					}
+					if err := json.Unmarshal(part.Data, &toolData); err == nil {
+						contentBlocks = append(contentBlocks, agent.ContentBlock{
+							Type: "tool_use",
+							ID:   toolData.ID,
+							Name: toolData.Name,
+						})
+					}
+				}
+			}
+			if len(contentBlocks) > 0 {
+				msg.Content = contentBlocks
+				return msg
+			}
+			// parts existed but had no extractable content — return msg with empty content
+			return msg
+		}
+	}
+
+	// Try "content" as string (legacy format)
 	if contentRaw, ok := raw["content"]; ok {
 		var text string
 		if err := json.Unmarshal(contentRaw, &text); err == nil && text != "" {
@@ -497,4 +625,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
