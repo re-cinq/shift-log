@@ -10,8 +10,9 @@ import (
 // tool execution hooks and calls shiftlog store after git commits.
 //
 // OpenCode plugin hooks:
-//   tool.execute.before(input, output) — input: {tool, sessionID, callID}, output: {args}
-//   tool.execute.after(input, output)  — input: {tool, sessionID, callID}, output: {title, output, metadata}
+//
+//	tool.execute.before(input, output) — input: {tool, sessionID, callID}, output: {args}
+//	tool.execute.after(input, output)  — input: {tool, sessionID, callID}, output: {title, output, metadata}
 //
 // The command string is only available in the "before" hook (via output.args),
 // so we capture it there and act on it in the "after" hook, matching by callID.
@@ -22,9 +23,17 @@ const pluginTemplate = `// shiftlog plugin for OpenCode CLI
 export const ShiftlogPlugin = async ({ directory, client }) => {
   const pendingCommits = new Map();
 
+  // Extract the shell command from a tool.execute.before output object.
+  // OpenCode may place the command in different fields across versions.
+  const extractCommand = (output) => {
+    if (!output) return "";
+    const args = output.args || output.input || output.params || {};
+    return args.command || args.cmd || args.input || output.command || output.cmd || "";
+  };
+
   return {
     "tool.execute.before": async (input, output) => {
-      const command = output?.args?.command || output?.args?.cmd || "";
+      const command = extractCommand(output);
       if (command.includes("git commit") || command.includes("git-commit")) {
         pendingCommits.set(input.callID, {
           command,
@@ -49,6 +58,7 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
               role: m.role || "",
               id: m.id || "",
               content: m.content || "",
+              parts: m.parts || [],
               time: m.time || {},
             })));
           }
