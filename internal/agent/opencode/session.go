@@ -7,7 +7,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // GetDataDir returns the OpenCode data directory.
@@ -126,4 +128,134 @@ func WriteSessionFile(projectPath, sessionID string, transcriptData []byte) (str
 	_ = os.WriteFile(msgPath, transcriptData, 0600)
 
 	return sessionPath, nil
+}
+
+// sqliteRun executes a sqlite3 query and returns trimmed stdout.
+// extraArgs are inserted before dbPath (e.g. "-separator", "\t").
+func sqliteRun(dbPath, query string, extraArgs ...string) (string, error) {
+	args := make([]string, 0, len(extraArgs)+2)
+	args = append(args, extraArgs...)
+	args = append(args, dbPath, query)
+	out, err := exec.Command("sqlite3", args...).Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// sqliteSessionID finds the most recent session ID for a project, trying
+// multiple ORDER BY strategies to handle schema variations across versions.
+func sqliteSessionID(dbPath, projectID string) string {
+	for _, orderBy := range []string{"time_updated DESC", "rowid DESC"} {
+		q := fmt.Sprintf(
+			`SELECT id FROM session WHERE project_id='%s' ORDER BY %s LIMIT 1;`,
+			projectID, orderBy,
+		)
+		if id, err := sqliteRun(dbPath, q); err == nil && id != "" {
+			return id
+		}
+	}
+	return ""
+}
+
+// sqliteSessionRecent returns true if the session's timestamp is within timeout,
+// or true when the timestamp cannot be determined (fail-open is safer than skipping).
+func sqliteSessionRecent(dbPath, sessionID string, timeout time.Duration) bool {
+	for _, col := range []string{"time_updated", "time_created"} {
+		q := fmt.Sprintf(`SELECT %s FROM session WHERE id='%s';`, col, sessionID)
+		val, err := sqliteRun(dbPath, q)
+		if err != nil || val == "" {
+			continue
+		}
+		// Unix milliseconds integer (opencode 1.16+)
+		if ms, err := strconv.ParseInt(val, 10, 64); err == nil {
+			t := time.Unix(ms/1000, (ms%1000)*int64(time.Millisecond))
+			return time.Since(t) <= timeout
+		}
+		// String timestamp formats
+		for _, layout := range []string{
+			time.RFC3339Nano,
+			"2006-01-02T15:04:05.000Z",
+			"2006-01-02 15:04:05",
+		} {
+			if t, err := time.Parse(layout, val); err == nil {
+				return time.Since(t) <= timeout
+			}
+		}
+		// Column exists but format is unknown — proceed rather than skip
+		return true
+	}
+	// No timestamp column found — fail-open
+	return true
+}
+
+// sqliteMessages retrieves transcript messages for a session from SQLite.
+// It tries several strategies to handle schema changes across opencode versions:
+//
+//  1. data blob + JSON aggregate (opencode v1.2–v1.15)
+//  2. individual role/content columns + JSON aggregate (opencode v1.16+)
+//  3. row-by-row fetch without JSON aggregate functions (minimal sqlite3 builds)
+//
+// Always returns a valid JSON array. Returns "[]" when messages are unavailable
+// so callers can still write a minimal git note.
+func sqliteMessages(dbPath, sessionID string) []byte {
+	// Strategy 1: data-blob column (v1.2–v1.15)
+	for _, orderBy := range []string{"time_created", "rowid"} {
+		q := fmt.Sprintf(
+			`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY %s;`,
+			sessionID, orderBy,
+		)
+		if out, err := sqliteRun(dbPath, q); err == nil {
+			if out != "[null]" && out != "[]" && out != "" {
+				return []byte(out)
+			}
+		}
+	}
+
+	// Strategy 2: individual role/content columns (v1.16+)
+	for _, orderBy := range []string{"time_created", "rowid"} {
+		q := fmt.Sprintf(
+			`SELECT json_group_array(json_object('id', id, 'role', role, 'content', json(content))) FROM message WHERE session_id='%s' ORDER BY %s;`,
+			sessionID, orderBy,
+		)
+		if out, err := sqliteRun(dbPath, q); err == nil {
+			if out != "[null]" && out != "[]" && out != "" {
+				return []byte(out)
+			}
+		}
+	}
+
+	// Strategy 3: row-by-row fetch — avoids json_group_array for minimal builds
+	for _, col := range []string{"data", "content"} {
+		q := fmt.Sprintf(
+			`SELECT %s FROM message WHERE session_id='%s' ORDER BY rowid;`,
+			col, sessionID,
+		)
+		out, err := sqliteRun(dbPath, q)
+		if err != nil || out == "" {
+			continue
+		}
+		var msgs []json.RawMessage
+		for _, line := range strings.Split(out, "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			if json.Valid([]byte(line)) {
+				msgs = append(msgs, json.RawMessage(line))
+			} else {
+				wrapped, _ := json.Marshal(map[string]string{"content": line})
+				msgs = append(msgs, json.RawMessage(wrapped))
+			}
+		}
+		if len(msgs) > 0 {
+			if encoded, err := json.Marshal(msgs); err == nil {
+				return encoded
+			}
+		}
+	}
+
+	// Session found but messages unavailable — return empty array so
+	// storeConversation can still write a minimal (message_count=0) git note.
+	return []byte("[]")
 }
