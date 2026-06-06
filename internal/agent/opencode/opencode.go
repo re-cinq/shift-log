@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -96,12 +97,12 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 func (a *Agent) IsCommitCommand(toolName, command string) bool {
 	// OpenCode tool names for shell execution
 	shellTools := map[string]bool{
-		"bash":               true,
-		"shell":              true,
-		"terminal":           true,
-		"execute":            true,
-		"run":                true,
-		"command":            true,
+		"bash":     true,
+		"shell":    true,
+		"terminal": true,
+		"execute":  true,
+		"run":      true,
+		"command":  true,
 	}
 
 	if !shellTools[toolName] {
@@ -316,10 +317,13 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		return nil, nil
 	}
 
-	// Find most recent session for this project
+	// opencode pre-v1.16 identifies projects by the git root commit hash (projectID);
+	// opencode v1.16+ identifies projects by the workspace directory path (projectPath).
+	// Try both so we handle either storage format.
+	escapedPath := strings.ReplaceAll(projectPath, "'", "''")
 	sessionQuery := fmt.Sprintf(
-		`SELECT id FROM session WHERE project_id='%s' ORDER BY time_updated DESC LIMIT 1;`,
-		projectID,
+		`SELECT id FROM session WHERE project_id='%s' OR project_id='%s' ORDER BY time_updated DESC LIMIT 1;`,
+		projectID, escapedPath,
 	)
 	cmd := exec.Command("sqlite3", "-separator", "\t", dbPath, sessionQuery)
 	sessionOutput, err := cmd.Output()
@@ -346,6 +350,17 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 				return nil, nil
 			}
 		} else if t, err := time.Parse("2006-01-02 15:04:05", timeStr); err == nil {
+			if time.Since(t) > agent.RecentSessionTimeout {
+				return nil, nil
+			}
+		} else if ms, err := strconv.ParseInt(timeStr, 10, 64); err == nil {
+			// opencode v1.16+ stores timestamps as Unix milliseconds (integers)
+			var t time.Time
+			if ms > 1_000_000_000_000 {
+				t = time.UnixMilli(ms)
+			} else {
+				t = time.Unix(ms, 0)
+			}
 			if time.Since(t) > agent.RecentSessionTimeout {
 				return nil, nil
 			}
@@ -497,4 +512,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
