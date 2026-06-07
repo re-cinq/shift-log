@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -96,12 +97,12 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 func (a *Agent) IsCommitCommand(toolName, command string) bool {
 	// OpenCode tool names for shell execution
 	shellTools := map[string]bool{
-		"bash":               true,
-		"shell":              true,
-		"terminal":           true,
-		"execute":            true,
-		"run":                true,
-		"command":            true,
+		"bash":     true,
+		"shell":    true,
+		"terminal": true,
+		"execute":  true,
+		"run":      true,
+		"command":  true,
 	}
 
 	if !shellTools[toolName] {
@@ -328,7 +329,8 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 	}
 	sessionID := strings.TrimSpace(string(sessionOutput))
 
-	// Check if this session was recent (within timeout)
+	// Check if this session was recent (within timeout).
+	// OpenCode v1.x stores time_updated as Unix milliseconds (integer).
 	timeQuery := fmt.Sprintf(
 		`SELECT time_updated FROM session WHERE id='%s';`,
 		sessionID,
@@ -349,25 +351,26 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 			if time.Since(t) > agent.RecentSessionTimeout {
 				return nil, nil
 			}
+		} else if ms, err := strconv.ParseInt(timeStr, 10, 64); err == nil {
+			// Unix milliseconds (OpenCode v1.x)
+			t := time.Unix(ms/1000, (ms%1000)*int64(time.Millisecond))
+			if time.Since(t) > agent.RecentSessionTimeout {
+				return nil, nil
+			}
 		}
 		// If we can't parse the time, proceed anyway — better to try than skip
 	}
 
-	// Get messages for this session as a JSON array
-	msgQuery := fmt.Sprintf(
-		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
-		sessionID,
-	)
-	cmd = exec.Command("sqlite3", dbPath, msgQuery)
-	msgOutput, err := cmd.Output()
-	if err != nil {
-		return nil, nil
-	}
+	// Get messages for this session as a JSON array.
+	// OpenCode v1.x (>= v1.2) changed the message schema: 'data' column was
+	// replaced by separate 'role' and 'parts' columns. Try the new schema first,
+	// then fall back to the legacy 'data' column schema.
+	transcriptData := fetchSQLiteMessages(dbPath, sessionID)
 
-	transcriptData := []byte(strings.TrimSpace(string(msgOutput)))
-	// sqlite3 returns "[null]" when no rows match
-	if string(transcriptData) == "[null]" || string(transcriptData) == "[]" {
-		return nil, nil
+	// If no messages could be read, return a session with an empty transcript
+	// so the post-commit hook can still create a git note for the manual commit.
+	if len(transcriptData) == 0 {
+		transcriptData = []byte("[]")
 	}
 
 	return &agent.SessionInfo{
@@ -377,6 +380,41 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		ProjectPath:    projectPath,
 		TranscriptData: transcriptData,
 	}, nil
+}
+
+// fetchSQLiteMessages retrieves messages for a session from the SQLite database.
+// It tries the new schema (parts column, OpenCode v1.2+) first, then falls back
+// to the legacy schema (data column).
+func fetchSQLiteMessages(dbPath, sessionID string) []byte {
+	// New schema (OpenCode v1.2+): message table has (id, role, parts) columns.
+	// parts is a JSON array of message parts.
+	newQuery := fmt.Sprintf(
+		`SELECT json_group_array(json_object('id', id, 'role', role, 'parts', json(parts))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
+		sessionID,
+	)
+	cmd := exec.Command("sqlite3", dbPath, newQuery)
+	if out, err := cmd.Output(); err == nil {
+		td := strings.TrimSpace(string(out))
+		if td != "[null]" && td != "[]" && td != "" {
+			return []byte(td)
+		}
+	}
+
+	// Legacy schema (pre-v1.2): message table has a 'data' column containing
+	// the full message JSON. Merge the separate 'id' column into each row.
+	oldQuery := fmt.Sprintf(
+		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
+		sessionID,
+	)
+	cmd = exec.Command("sqlite3", dbPath, oldQuery)
+	if out, err := cmd.Output(); err == nil {
+		td := strings.TrimSpace(string(out))
+		if td != "[null]" && td != "[]" && td != "" {
+			return []byte(td)
+		}
+	}
+
+	return nil
 }
 
 // RestoreSession writes a session to OpenCode's storage location.
@@ -454,7 +492,6 @@ func parseOpenCodeEntry(raw map[string]json.RawMessage, fullData []byte) agent.T
 	return entry
 }
 
-
 // parseOpenCodeMessage parses message content from an OpenCode entry.
 func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageType) *agent.Message {
 	if msgType == "" {
@@ -469,6 +506,27 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 		msg.Role = "assistant"
 	case agent.MessageTypeSystem:
 		msg.Role = "system"
+	}
+
+	// Try "parts" field (OpenCode v1.x format: array of typed message parts)
+	if partsRaw, ok := raw["parts"]; ok {
+		var parts []json.RawMessage
+		if err := json.Unmarshal(partsRaw, &parts); err == nil && len(parts) > 0 {
+			var blocks []agent.ContentBlock
+			for _, part := range parts {
+				var partMap map[string]json.RawMessage
+				if err := json.Unmarshal(part, &partMap); err != nil {
+					continue
+				}
+				if block := convertOpenCodePart(partMap); block.Type != "" {
+					blocks = append(blocks, block)
+				}
+			}
+			if len(blocks) > 0 {
+				msg.Content = blocks
+				return msg
+			}
+		}
 	}
 
 	// Try "content" as string
@@ -498,3 +556,51 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 	return msg
 }
 
+// convertOpenCodePart converts an OpenCode v1.x message part into a ContentBlock.
+// OpenCode parts use types: "text", "tool-call", "tool-result", "reasoning".
+func convertOpenCodePart(part map[string]json.RawMessage) agent.ContentBlock {
+	block := agent.ContentBlock{}
+
+	typeRaw, ok := part["type"]
+	if !ok {
+		return block
+	}
+	var t string
+	if err := json.Unmarshal(typeRaw, &t); err != nil {
+		return block
+	}
+
+	switch t {
+	case "text":
+		block.Type = "text"
+		if textRaw, ok := part["text"]; ok {
+			_ = json.Unmarshal(textRaw, &block.Text)
+		}
+	case "reasoning":
+		block.Type = "thinking"
+		if textRaw, ok := part["text"]; ok {
+			_ = json.Unmarshal(textRaw, &block.Thinking)
+		}
+	case "tool-call":
+		block.Type = "tool_use"
+		if idRaw, ok := part["toolCallId"]; ok {
+			_ = json.Unmarshal(idRaw, &block.ID)
+		}
+		if nameRaw, ok := part["toolName"]; ok {
+			_ = json.Unmarshal(nameRaw, &block.Name)
+		}
+		if argsRaw, ok := part["args"]; ok {
+			block.Input = argsRaw
+		}
+	case "tool-result":
+		block.Type = "tool_result"
+		if idRaw, ok := part["toolCallId"]; ok {
+			_ = json.Unmarshal(idRaw, &block.ToolUseID)
+		}
+		if contentRaw, ok := part["content"]; ok {
+			block.Content = contentRaw
+		}
+	}
+
+	return block
+}
