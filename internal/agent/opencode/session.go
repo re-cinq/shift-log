@@ -1,6 +1,7 @@
 package opencode
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -35,21 +36,27 @@ func GetDataDir() (string, error) {
 }
 
 // GetProjectID returns the project identifier for OpenCode.
-// For git repos, this is the root commit hash. For non-git dirs, it's "global".
+// OpenCode v1.15+ identifies projects by the SHA256 hash of the absolute
+// git root directory path. Falls back to hashing projectPath if not a git repo.
 func GetProjectID(projectPath string) string {
-	cmd := exec.Command("git", "rev-list", "--max-parents=0", "--all")
+	// Resolve to the git root directory
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
 	cmd.Dir = projectPath
 	output, err := cmd.Output()
-	if err != nil {
-		return "global"
+
+	root := projectPath
+	if err == nil {
+		root = strings.TrimSpace(string(output))
 	}
 
-	// Take the first line (first root commit)
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-	if len(lines) > 0 && lines[0] != "" {
-		return strings.TrimSpace(lines[0])
+	// Resolve to absolute path to match OpenCode's computation
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		absRoot = root
 	}
-	return "global"
+
+	h := sha256.Sum256([]byte(absRoot))
+	return fmt.Sprintf("%x", h)
 }
 
 // GetSessionDir returns the session storage directory for a project.

@@ -30,7 +30,10 @@ func (a *Agent) ConfigureHooks(repoRoot string) error {
 	}
 
 	AddShiftlogHook(settings)
-	AddSessionHooks(settings)
+	// SessionStart/SessionEnd hooks are intentionally omitted: in gemini v0.29+
+	// these hooks read from stdin and can block the gemini process if the pipe
+	// is not closed, causing the session to hang. Session discovery uses
+	// ~/.gemini/tmp/ directly and does not require the session-start hook.
 
 	if err := WriteSettings(geminiDir, settings); err != nil {
 		return fmt.Errorf("failed to write Gemini settings: %w", err)
@@ -47,6 +50,7 @@ func (a *Agent) RemoveHooks(repoRoot string) error {
 	}
 
 	RemoveShiftlogHook(settings)
+	// Also clean up any legacy SessionStart/SessionEnd hooks from older installs
 	RemoveSessionHooks(settings)
 
 	// If only shiftlog content was present, remove the file
@@ -344,5 +348,3 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	// (e.g., absent file, path key mismatch, or non-interactive -p mode).
 	return ScanAllProjectDirs(projectPath)
 }
-
-

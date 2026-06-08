@@ -86,6 +86,8 @@ func WriteSettings(geminiDir string, settings *Settings) error {
 }
 
 // AddShiftlogHook adds or updates the shiftlog store hook in Gemini settings.
+// The timeout is set to 5000ms to prevent blocking the gemini process if the
+// hook subprocess does not receive EOF on stdin promptly.
 func AddShiftlogHook(settings *Settings) {
 	shiftlogHook := Hook{
 		Matcher: "run_shell_command",
@@ -93,7 +95,7 @@ func AddShiftlogHook(settings *Settings) {
 			{
 				Type:    "command",
 				Command: "shiftlog store --agent=gemini",
-				Timeout: 30000,
+				Timeout: 5000,
 			},
 		},
 	}
@@ -111,6 +113,8 @@ func AddShiftlogHook(settings *Settings) {
 }
 
 // AddSessionHooks adds SessionStart and SessionEnd hooks for session tracking.
+// Deprecated: these hooks read from stdin and can block in gemini v0.29+.
+// Retained for use in tests that verify hook removal.
 func AddSessionHooks(settings *Settings) {
 	startHook := Hook{
 		Hooks: []HookCmd{
