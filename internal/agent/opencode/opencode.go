@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -96,12 +97,12 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 func (a *Agent) IsCommitCommand(toolName, command string) bool {
 	// OpenCode tool names for shell execution
 	shellTools := map[string]bool{
-		"bash":               true,
-		"shell":              true,
-		"terminal":           true,
-		"execute":            true,
-		"run":                true,
-		"command":            true,
+		"bash":     true,
+		"shell":    true,
+		"terminal": true,
+		"execute":  true,
+		"run":      true,
+		"command":  true,
 	}
 
 	if !shellTools[toolName] {
@@ -316,9 +317,10 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		return nil, nil
 	}
 
-	// Find most recent session for this project
+	// Find most recent session for this project.
+	// Use rowid for ordering since time_updated column name varies across OpenCode versions.
 	sessionQuery := fmt.Sprintf(
-		`SELECT id FROM session WHERE project_id='%s' ORDER BY time_updated DESC LIMIT 1;`,
+		`SELECT id FROM session WHERE project_id='%s' ORDER BY rowid DESC LIMIT 1;`,
 		projectID,
 	)
 	cmd := exec.Command("sqlite3", "-separator", "\t", dbPath, sessionQuery)
@@ -328,45 +330,38 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 	}
 	sessionID := strings.TrimSpace(string(sessionOutput))
 
-	// Check if this session was recent (within timeout)
-	timeQuery := fmt.Sprintf(
-		`SELECT time_updated FROM session WHERE id='%s';`,
-		sessionID,
-	)
-	cmd = exec.Command("sqlite3", dbPath, timeQuery)
-	timeOutput, err := cmd.Output()
-	if err == nil {
+	// Check recency. Try multiple column names since they vary across OpenCode versions.
+	for _, col := range []string{"time_updated", "updated", "updated_at"} {
+		timeQuery := fmt.Sprintf(`SELECT %s FROM session WHERE id='%s';`, col, sessionID)
+		cmd = exec.Command("sqlite3", dbPath, timeQuery)
+		timeOutput, timeErr := cmd.Output()
+		if timeErr != nil {
+			continue // column doesn't exist in this schema, try next
+		}
 		timeStr := strings.TrimSpace(string(timeOutput))
-		if t, err := time.Parse(time.RFC3339Nano, timeStr); err == nil {
-			if time.Since(t) > agent.RecentSessionTimeout {
-				return nil, nil
+		// Try ISO timestamp formats
+		for _, layout := range []string{time.RFC3339Nano, "2006-01-02T15:04:05.000Z", "2006-01-02 15:04:05"} {
+			if t, parseErr := time.Parse(layout, timeStr); parseErr == nil {
+				if time.Since(t) > agent.RecentSessionTimeout {
+					return nil, nil
+				}
+				break
 			}
-		} else if t, err := time.Parse("2006-01-02T15:04:05.000Z", timeStr); err == nil {
-			if time.Since(t) > agent.RecentSessionTimeout {
-				return nil, nil
-			}
-		} else if t, err := time.Parse("2006-01-02 15:04:05", timeStr); err == nil {
+		}
+		// Try Unix millisecond timestamp (integer)
+		if ms, parseErr := strconv.ParseInt(timeStr, 10, 64); parseErr == nil && ms > 0 {
+			t := time.UnixMilli(ms)
 			if time.Since(t) > agent.RecentSessionTimeout {
 				return nil, nil
 			}
 		}
-		// If we can't parse the time, proceed anyway — better to try than skip
+		break // column exists; stop trying alternatives
 	}
+	// If no time column found, proceed — better to try than skip
 
-	// Get messages for this session as a JSON array
-	msgQuery := fmt.Sprintf(
-		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
-		sessionID,
-	)
-	cmd = exec.Command("sqlite3", dbPath, msgQuery)
-	msgOutput, err := cmd.Output()
-	if err != nil {
-		return nil, nil
-	}
-
-	transcriptData := []byte(strings.TrimSpace(string(msgOutput)))
-	// sqlite3 returns "[null]" when no rows match
-	if string(transcriptData) == "[null]" || string(transcriptData) == "[]" {
+	// Get messages for this session. Try multiple query forms for cross-version compatibility.
+	transcriptData := querySQLiteMessages(dbPath, sessionID)
+	if transcriptData == nil {
 		return nil, nil
 	}
 
@@ -377,6 +372,42 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		ProjectPath:    projectPath,
 		TranscriptData: transcriptData,
 	}, nil
+}
+
+// querySQLiteMessages tries multiple SQL query forms to retrieve messages for a session.
+// This handles schema differences across OpenCode versions (column name changes, etc.).
+func querySQLiteMessages(dbPath, sessionID string) []byte {
+	// Form 1: json_patch merges the separate `id` column into the data JSON (older schema).
+	// Form 2: plain data array without json_patch (newer schema where id is in data or absent).
+	// Both forms try session_id first, then sessionId (camelCase used by some versions).
+	queries := []string{
+		fmt.Sprintf(
+			`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY rowid;`,
+			sessionID,
+		),
+		fmt.Sprintf(
+			`SELECT json_group_array(data) FROM message WHERE session_id='%s' ORDER BY rowid;`,
+			sessionID,
+		),
+		fmt.Sprintf(
+			`SELECT json_group_array(data) FROM message WHERE "sessionId"='%s' ORDER BY rowid;`,
+			sessionID,
+		),
+	}
+
+	for _, q := range queries {
+		cmd := exec.Command("sqlite3", dbPath, q)
+		output, err := cmd.Output()
+		if err != nil {
+			continue // query failed (e.g., column doesn't exist), try next form
+		}
+		data := []byte(strings.TrimSpace(string(output)))
+		if string(data) == "[null]" || string(data) == "[]" || string(data) == "" {
+			continue // no rows matched this form, try next
+		}
+		return data
+	}
+	return nil
 }
 
 // RestoreSession writes a session to OpenCode's storage location.
@@ -454,7 +485,6 @@ func parseOpenCodeEntry(raw map[string]json.RawMessage, fullData []byte) agent.T
 	return entry
 }
 
-
 // parseOpenCodeMessage parses message content from an OpenCode entry.
 func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageType) *agent.Message {
 	if msgType == "" {
@@ -497,4 +527,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
