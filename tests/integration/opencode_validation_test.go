@@ -3,6 +3,7 @@ package integration_test
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -289,8 +290,7 @@ var _ = Describe("OpenCode Validation", func() {
 
 		It("should use root commit hash as project ID", func() {
 			// Try flat file storage first
-			sessionDir := filepath.Join(dataDir, "storage", "session")
-			projectSessionDir := filepath.Join(sessionDir, expectedProjectID)
+			projectSessionDir := filepath.Join(dataDir, "storage", "session", expectedProjectID)
 			if _, err := os.Stat(projectSessionDir); err == nil {
 				// Flat file mode: verify session file
 				GinkgoWriter.Printf("Confirmed: session stored under root commit hash %s (flat files)\n", expectedProjectID[:12])
@@ -327,14 +327,22 @@ var _ = Describe("OpenCode Validation", func() {
 					"Expected project ID: " + expectedProjectID[:12])
 			}
 
-			cmd := exec.Command("sqlite3", dbPath,
-				"SELECT project_id FROM session LIMIT 1;")
-			output, err := cmd.Output()
-			Expect(err).NotTo(HaveOccurred(), "Failed to query session from SQLite")
-
-			foundProjectID := strings.TrimSpace(string(output))
+			// Handle both snake_case (OpenCode <1.16) and camelCase (OpenCode 1.16+) column names
+			var foundProjectID string
+			for _, col := range []string{"project_id", "projectId"} {
+				cmd := exec.Command("sqlite3", dbPath,
+					fmt.Sprintf("SELECT %s FROM session LIMIT 1;", col))
+				if out, qErr := cmd.Output(); qErr == nil {
+					if v := strings.TrimSpace(string(out)); v != "" {
+						foundProjectID = v
+						break
+					}
+				}
+			}
+			Expect(foundProjectID).NotTo(BeEmpty(),
+				"Could not read project ID from SQLite session table (tried project_id and projectId)")
 			Expect(foundProjectID).To(Equal(expectedProjectID),
-				"SQLite session project_id does not match root commit hash")
+				"SQLite session project ID does not match root commit hash")
 
 			GinkgoWriter.Printf("Confirmed: session stored with project_id=%s (SQLite)\n", expectedProjectID[:12])
 		})
@@ -379,8 +387,8 @@ var _ = Describe("OpenCode Validation", func() {
 				Skip("Neither flat session dir nor opencode.db found")
 			}
 
-			cmd := exec.Command("sqlite3", "-json", dbPath,
-				"SELECT id, project_id FROM session LIMIT 1;")
+			// Use SELECT * to avoid hardcoding column names that vary across OpenCode versions
+			cmd := exec.Command("sqlite3", "-json", dbPath, "SELECT * FROM session LIMIT 1;")
 			output, err := cmd.Output()
 			Expect(err).NotTo(HaveOccurred(), "Failed to query sessions from SQLite")
 
@@ -471,4 +479,3 @@ var _ = Describe("OpenCode Validation", func() {
 		})
 	})
 })
-

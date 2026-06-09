@@ -341,20 +341,10 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
       if (!pending) return;
       pendingCommits.delete(input.callID);
 
-      let transcriptData = "";
-      if (client && pending.sessionID) {
-        try {
-          const msgs = await client.session.messages({ path: { id: pending.sessionID } });
-          if (msgs && Array.isArray(msgs)) {
-            transcriptData = JSON.stringify(msgs.map(m => ({
-              role: m.role || "",
-              id: m.id || "",
-              content: m.content || "",
-              time: m.time || {},
-            })));
-          }
-        } catch (e) {}
-      }
+      // Do NOT call client.session.messages() here — it deadlocks in OpenCode 1.16+.
+      // OpenCode waits for the hook to finish before processing further requests,
+      // so calling back into the SDK from inside a hook causes a deadlock.
+      // Session data is read directly from the SQLite database by shiftlog.
 
       const dataDir = process.platform === "darwin"
           ? process.env.HOME + "/Library/Application Support/opencode"
@@ -366,7 +356,6 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
         project_dir: directory,
         tool_name: pending.tool || "",
         tool_input: { command: pending.command },
-        ...(transcriptData ? { transcript_data: transcriptData } : {}),
       });
 
       try {
