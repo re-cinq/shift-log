@@ -10,8 +10,9 @@ import (
 // tool execution hooks and calls shiftlog store after git commits.
 //
 // OpenCode plugin hooks:
-//   tool.execute.before(input, output) — input: {tool, sessionID, callID}, output: {args}
-//   tool.execute.after(input, output)  — input: {tool, sessionID, callID}, output: {title, output, metadata}
+//
+//	tool.execute.before(input, output) — input: {tool, sessionID, callID}, output: {args}
+//	tool.execute.after(input, output)  — input: {tool, sessionID, callID}, output: {title, output, metadata}
 //
 // The command string is only available in the "before" hook (via output.args),
 // so we capture it there and act on it in the "after" hook, matching by callID.
@@ -21,9 +22,25 @@ const pluginTemplate = `// shiftlog plugin for OpenCode CLI
 
 export const ShiftlogPlugin = async ({ directory, client }) => {
   const pendingCommits = new Map();
+  const { execSync } = await import("child_process");
+  const { mkdirSync, writeFileSync } = await import("fs");
+
+  const dataDir = process.platform === "darwin"
+      ? process.env.HOME + "/Library/Application Support/opencode"
+      : (process.env.XDG_DATA_HOME || process.env.HOME + "/.local/share") + "/opencode";
 
   return {
     "tool.execute.before": async (input, output) => {
+      // Write session tracking file so manual commits can find this session.
+      try {
+        mkdirSync(directory + "/.shiftlog", { recursive: true });
+        writeFileSync(directory + "/.shiftlog/opencode-session", JSON.stringify({
+          session_id: input.sessionID || "",
+          data_dir: dataDir,
+          project_dir: directory,
+        }));
+      } catch (e) {}
+
       const command = output?.args?.command || output?.args?.cmd || "";
       if (command.includes("git commit") || command.includes("git-commit")) {
         pendingCommits.set(input.callID, {
@@ -39,11 +56,15 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
       if (!pending) return;
       pendingCommits.delete(input.callID);
 
-      // Try to fetch messages via the SDK client API
+      // Try to fetch messages via the SDK client API with a timeout to avoid hangs.
       let transcriptData = "";
       if (client && pending.sessionID) {
         try {
-          const msgs = await client.session.messages({ path: { id: pending.sessionID } });
+          const timeoutMs = 5000;
+          const msgsPromise = client.session.messages({ path: { id: pending.sessionID } });
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("timeout")), timeoutMs));
+          const msgs = await Promise.race([msgsPromise, timeoutPromise]);
           if (msgs && Array.isArray(msgs)) {
             transcriptData = JSON.stringify(msgs.map(m => ({
               role: m.role || "",
@@ -57,10 +78,6 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
         }
       }
 
-      const dataDir = process.platform === "darwin"
-          ? process.env.HOME + "/Library/Application Support/opencode"
-          : (process.env.XDG_DATA_HOME || process.env.HOME + "/.local/share") + "/opencode";
-
       const hookData = JSON.stringify({
         session_id: pending.sessionID || "",
         data_dir: dataDir,
@@ -71,7 +88,6 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
       });
 
       try {
-        const { execSync } = await import("child_process");
         execSync("shiftlog store --agent=opencode", {
           input: hookData,
           cwd: directory,
