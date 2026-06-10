@@ -1,12 +1,14 @@
 package opencode
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -316,50 +318,55 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		return nil, nil
 	}
 
-	// Find most recent session for this project
+	// Use a short timeout so we don't block if OpenCode still holds the DB lock
+	// (e.g., when the post-commit hook fires during an active OpenCode session).
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Find most recent session for this project.
+	// Use rowid for ordering — it is always available and avoids the schema change
+	// in OpenCode v1.16 where time_updated was replaced by a JSON 'time' column.
 	sessionQuery := fmt.Sprintf(
-		`SELECT id FROM session WHERE project_id='%s' ORDER BY time_updated DESC LIMIT 1;`,
+		`SELECT id FROM session WHERE project_id='%s' ORDER BY rowid DESC LIMIT 1;`,
 		projectID,
 	)
-	cmd := exec.Command("sqlite3", "-separator", "\t", dbPath, sessionQuery)
+	cmd := exec.CommandContext(ctx, "sqlite3", "-separator", "\t", dbPath, sessionQuery)
 	sessionOutput, err := cmd.Output()
 	if err != nil || strings.TrimSpace(string(sessionOutput)) == "" {
 		return nil, nil
 	}
 	sessionID := strings.TrimSpace(string(sessionOutput))
 
-	// Check if this session was recent (within timeout)
+	// Check if this session was recent (within timeout).
+	// OpenCode v1.16+ stores timestamps inside a JSON 'time' column as
+	// {"created":"...","updated":"..."}. Older versions used a scalar time_updated column.
+	timeCtx, timeCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer timeCancel()
 	timeQuery := fmt.Sprintf(
-		`SELECT time_updated FROM session WHERE id='%s';`,
+		`SELECT json_extract(time, '$.updated') FROM session WHERE id='%s';`,
 		sessionID,
 	)
-	cmd = exec.Command("sqlite3", dbPath, timeQuery)
-	timeOutput, err := cmd.Output()
-	if err == nil {
+	timeCmd := exec.CommandContext(timeCtx, "sqlite3", dbPath, timeQuery)
+	if timeOutput, err := timeCmd.Output(); err == nil {
 		timeStr := strings.TrimSpace(string(timeOutput))
-		if t, err := time.Parse(time.RFC3339Nano, timeStr); err == nil {
-			if time.Since(t) > agent.RecentSessionTimeout {
-				return nil, nil
-			}
-		} else if t, err := time.Parse("2006-01-02T15:04:05.000Z", timeStr); err == nil {
-			if time.Since(t) > agent.RecentSessionTimeout {
-				return nil, nil
-			}
-		} else if t, err := time.Parse("2006-01-02 15:04:05", timeStr); err == nil {
-			if time.Since(t) > agent.RecentSessionTimeout {
+		if t := parseOpenCodeTime(timeStr); t != nil {
+			if time.Since(*t) > agent.RecentSessionTimeout {
 				return nil, nil
 			}
 		}
 		// If we can't parse the time, proceed anyway — better to try than skip
 	}
 
-	// Get messages for this session as a JSON array
+	// Get messages for this session as a JSON array.
+	// Use rowid for ordering — avoids the time_created column removed in v1.16.
+	msgCtx, msgCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer msgCancel()
 	msgQuery := fmt.Sprintf(
-		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
+		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY rowid;`,
 		sessionID,
 	)
-	cmd = exec.Command("sqlite3", dbPath, msgQuery)
-	msgOutput, err := cmd.Output()
+	msgCmd := exec.CommandContext(msgCtx, "sqlite3", dbPath, msgQuery)
+	msgOutput, err := msgCmd.Output()
 	if err != nil {
 		return nil, nil
 	}
@@ -377,6 +384,25 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		ProjectPath:    projectPath,
 		TranscriptData: transcriptData,
 	}, nil
+}
+
+// parseOpenCodeTime parses a timestamp string from OpenCode's SQLite database.
+// Handles ISO 8601 strings and Unix millisecond integers.
+func parseOpenCodeTime(s string) *time.Time {
+	if s == "" {
+		return nil
+	}
+	for _, f := range []string{time.RFC3339Nano, "2006-01-02T15:04:05.000Z", "2006-01-02 15:04:05"} {
+		if t, err := time.Parse(f, s); err == nil {
+			return &t
+		}
+	}
+	// OpenCode may store timestamps as Unix milliseconds
+	if ms, err := strconv.ParseInt(s, 10, 64); err == nil && ms > 0 {
+		t := time.Unix(ms/1000, (ms%1000)*int64(time.Millisecond))
+		return &t
+	}
+	return nil
 }
 
 // RestoreSession writes a session to OpenCode's storage location.
@@ -497,4 +523,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
