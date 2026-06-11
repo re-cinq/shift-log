@@ -52,6 +52,12 @@ func GetProjectID(projectPath string) string {
 	return "global"
 }
 
+// GetProjectSQLitePath returns the path to the per-project OpenCode SQLite database.
+// OpenCode v1.17.3+ stores the database in .opencode/opencode.db within the project.
+func GetProjectSQLitePath(projectPath string) string {
+	return filepath.Join(projectPath, ".opencode", "opencode.db")
+}
+
 // GetSessionDir returns the session storage directory for a project.
 func GetSessionDir(projectPath string) (string, error) {
 	dataDir, err := GetDataDir()
