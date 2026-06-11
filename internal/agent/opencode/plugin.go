@@ -10,8 +10,9 @@ import (
 // tool execution hooks and calls shiftlog store after git commits.
 //
 // OpenCode plugin hooks:
-//   tool.execute.before(input, output) — input: {tool, sessionID, callID}, output: {args}
-//   tool.execute.after(input, output)  — input: {tool, sessionID, callID}, output: {title, output, metadata}
+//
+//	tool.execute.before(input, output) — input: {tool, sessionID, callID}, output: {args}
+//	tool.execute.after(input, output)  — input: {tool, sessionID, callID}, output: {title, output, metadata}
 //
 // The command string is only available in the "before" hook (via output.args),
 // so we capture it there and act on it in the "after" hook, matching by callID.
@@ -39,11 +40,22 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
       if (!pending) return;
       pendingCommits.delete(input.callID);
 
-      // Try to fetch messages via the SDK client API
+      const dataDir = process.platform === "darwin"
+          ? process.env.HOME + "/Library/Application Support/opencode"
+          : (process.env.XDG_DATA_HOME || process.env.HOME + "/.local/share") + "/opencode";
+
+      // Try to fetch messages via the SDK client API.
+      // Use Promise.race with a 5 s timeout to avoid hanging if the SDK call
+      // blocks indefinitely (observed with opencode-ai >= 1.17).
       let transcriptData = "";
       if (client && pending.sessionID) {
         try {
-          const msgs = await client.session.messages({ path: { id: pending.sessionID } });
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("timeout")), 5000));
+          const msgs = await Promise.race([
+            client.session.messages({ path: { id: pending.sessionID } }),
+            timeoutPromise,
+          ]);
           if (msgs && Array.isArray(msgs)) {
             transcriptData = JSON.stringify(msgs.map(m => ({
               role: m.role || "",
@@ -53,13 +65,31 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
             })));
           }
         } catch (e) {
-          // Fall back to data_dir approach below
+          // Fall through to SQLite approach below
         }
       }
 
-      const dataDir = process.platform === "darwin"
-          ? process.env.HOME + "/Library/Application Support/opencode"
-          : (process.env.XDG_DATA_HOME || process.env.HOME + "/.local/share") + "/opencode";
+      // If the SDK call failed or returned no data, query SQLite directly.
+      // This handles OpenCode >= 1.2 where messages live in opencode.db rather
+      // than individual JSON files under storage/message/<sessionID>/.
+      if (!transcriptData && pending.sessionID) {
+        try {
+          const { execFileSync } = await import("child_process");
+          const dbPath = dataDir + "/opencode.db";
+          const query = "SELECT json_group_array(json_patch(data, json_object('id', id)))" +
+            " FROM message WHERE session_id='" + pending.sessionID + "' ORDER BY rowid;";
+          const result = execFileSync("sqlite3", [dbPath, query], {
+            encoding: "utf8",
+            timeout: 10000,
+          });
+          const trimmed = result.trim();
+          if (trimmed && trimmed !== "[null]" && trimmed !== "[]") {
+            transcriptData = trimmed;
+          }
+        } catch (e) {
+          // sqlite3 not available or schema mismatch — will rely on data_dir path
+        }
+      }
 
       const hookData = JSON.stringify({
         session_id: pending.sessionID || "",
