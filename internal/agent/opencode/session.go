@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
+
+	"github.com/re-cinq/shift-log/internal/agent"
 )
 
 // GetDataDir returns the OpenCode data directory.
@@ -50,6 +53,12 @@ func GetProjectID(projectPath string) string {
 		return strings.TrimSpace(lines[0])
 	}
 	return "global"
+}
+
+// GetProjectDBPath returns the path to the project-local OpenCode SQLite database.
+// OpenCode v1.17+ stores its database at .opencode/opencode.db within the project.
+func GetProjectDBPath(projectPath string) string {
+	return filepath.Join(projectPath, ".opencode", "opencode.db")
 }
 
 // GetSessionDir returns the session storage directory for a project.
@@ -126,4 +135,156 @@ func WriteSessionFile(projectPath, sessionID string, transcriptData []byte) (str
 	_ = os.WriteFile(msgPath, transcriptData, 0600)
 
 	return sessionPath, nil
+}
+
+// discoverFromProjectDB finds a recent session in the project-local SQLite DB.
+// This is the primary approach for OpenCode v1.17+, which stores the database at
+// .opencode/opencode.db within the project directory.
+//
+// Schema: sessions(id, title, message_count, updated_at INTEGER, created_at INTEGER)
+//
+//	messages(id, session_id, role, parts TEXT, model, created_at INTEGER)
+//
+// updated_at and created_at are Unix milliseconds.
+func discoverFromProjectDB(projectPath string) (*agent.SessionInfo, error) {
+	dbPath := GetProjectDBPath(projectPath)
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		return nil, nil
+	}
+	if _, err := exec.LookPath("sqlite3"); err != nil {
+		return nil, nil
+	}
+
+	// Get the most recent session — no project_id filter needed, DB is per-project
+	cmd := exec.Command("sqlite3", dbPath,
+		"SELECT id, updated_at FROM sessions ORDER BY updated_at DESC LIMIT 1;")
+	output, err := cmd.Output()
+	if err != nil || strings.TrimSpace(string(output)) == "" {
+		return nil, nil
+	}
+
+	line := strings.TrimSpace(string(output))
+	parts := strings.SplitN(line, "|", 2)
+	if len(parts) != 2 {
+		return nil, nil
+	}
+
+	sessionID := strings.TrimSpace(parts[0])
+	updatedAtStr := strings.TrimSpace(parts[1])
+
+	// updated_at is stored as Unix milliseconds
+	var updatedAtMs int64
+	if _, err := fmt.Sscanf(updatedAtStr, "%d", &updatedAtMs); err == nil {
+		t := time.UnixMilli(updatedAtMs)
+		if time.Since(t) > agent.RecentSessionTimeout {
+			return nil, nil
+		}
+	}
+
+	// Get transcript from messages table
+	transcriptData, _ := queryProjectMessages(dbPath, sessionID)
+
+	return &agent.SessionInfo{
+		SessionID:      sessionID,
+		TranscriptPath: "",
+		StartedAt:      time.UnixMilli(updatedAtMs).Format(time.RFC3339),
+		ProjectPath:    projectPath,
+		TranscriptData: transcriptData,
+	}, nil
+}
+
+// queryProjectMessages fetches messages for a session from the project-local DB
+// and returns them as a JSON array suitable for ParseTranscript.
+func queryProjectMessages(dbPath, sessionID string) ([]byte, error) {
+	if _, err := exec.LookPath("sqlite3"); err != nil {
+		return nil, err
+	}
+	cmd := exec.Command("sqlite3", "-json", dbPath,
+		fmt.Sprintf("SELECT id, role, parts FROM messages WHERE session_id='%s' ORDER BY created_at;",
+			strings.ReplaceAll(sessionID, "'", "''")))
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	trimmed := strings.TrimSpace(string(output))
+	if trimmed == "" || trimmed == "[]" || trimmed == "null" {
+		return nil, nil
+	}
+	return []byte(trimmed), nil
+}
+
+// discoverFromSQLite queries the OpenCode SQLite database for the most recent session.
+// This is the legacy approach for OpenCode v1.2-v1.16 using the global data directory.
+func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionInfo, error) {
+	dbPath := filepath.Join(dataDir, "opencode.db")
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		return nil, nil
+	}
+
+	// Check sqlite3 is available
+	if _, err := exec.LookPath("sqlite3"); err != nil {
+		return nil, nil
+	}
+
+	// Find most recent session for this project
+	sessionQuery := fmt.Sprintf(
+		`SELECT id FROM session WHERE project_id='%s' ORDER BY time_updated DESC LIMIT 1;`,
+		projectID,
+	)
+	cmd := exec.Command("sqlite3", "-separator", "\t", dbPath, sessionQuery)
+	sessionOutput, err := cmd.Output()
+	if err != nil || strings.TrimSpace(string(sessionOutput)) == "" {
+		return nil, nil
+	}
+	sessionID := strings.TrimSpace(string(sessionOutput))
+
+	// Check if this session was recent (within timeout)
+	timeQuery := fmt.Sprintf(
+		`SELECT time_updated FROM session WHERE id='%s';`,
+		sessionID,
+	)
+	cmd = exec.Command("sqlite3", dbPath, timeQuery)
+	timeOutput, err := cmd.Output()
+	if err == nil {
+		timeStr := strings.TrimSpace(string(timeOutput))
+		if t, err := time.Parse(time.RFC3339Nano, timeStr); err == nil {
+			if time.Since(t) > agent.RecentSessionTimeout {
+				return nil, nil
+			}
+		} else if t, err := time.Parse("2006-01-02T15:04:05.000Z", timeStr); err == nil {
+			if time.Since(t) > agent.RecentSessionTimeout {
+				return nil, nil
+			}
+		} else if t, err := time.Parse("2006-01-02 15:04:05", timeStr); err == nil {
+			if time.Since(t) > agent.RecentSessionTimeout {
+				return nil, nil
+			}
+		}
+		// If we can't parse the time, proceed anyway — better to try than skip
+	}
+
+	// Get messages for this session as a JSON array
+	msgQuery := fmt.Sprintf(
+		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
+		sessionID,
+	)
+	cmd = exec.Command("sqlite3", dbPath, msgQuery)
+	msgOutput, err := cmd.Output()
+	if err != nil {
+		return nil, nil
+	}
+
+	transcriptData := []byte(strings.TrimSpace(string(msgOutput)))
+	// sqlite3 returns "[null]" when no rows match
+	if string(transcriptData) == "[null]" || string(transcriptData) == "[]" {
+		return nil, nil
+	}
+
+	return &agent.SessionInfo{
+		SessionID:      sessionID,
+		TranscriptPath: "", // no file path for SQLite
+		StartedAt:      time.Now().Format(time.RFC3339),
+		ProjectPath:    projectPath,
+		TranscriptData: transcriptData,
+	}, nil
 }
