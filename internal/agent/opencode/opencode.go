@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -305,6 +306,8 @@ func (a *Agent) discoverFromFlatFiles(projectPath string) (*agent.SessionInfo, e
 }
 
 // discoverFromSQLite queries the OpenCode SQLite database for the most recent session.
+// Supports both the old schema (time_updated/time_created flat columns) and the new
+// schema introduced in opencode v1.17+ (time JSON blob with nested created/updated fields).
 func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionInfo, error) {
 	dbPath := filepath.Join(dataDir, "opencode.db")
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
@@ -316,9 +319,13 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		return nil, nil
 	}
 
-	// Find most recent session for this project
+	// Find most recent session for this project.
+	// Use rowid DESC as the ordering key — it is always available in SQLite and
+	// monotonically increases with insertion order, making it schema-independent.
+	// Older schemas had a flat time_updated column; newer schemas (v1.17+) store
+	// timestamps inside a JSON blob column named "time".
 	sessionQuery := fmt.Sprintf(
-		`SELECT id FROM session WHERE project_id='%s' ORDER BY time_updated DESC LIMIT 1;`,
+		`SELECT id FROM session WHERE project_id='%s' ORDER BY rowid DESC LIMIT 1;`,
 		projectID,
 	)
 	cmd := exec.Command("sqlite3", "-separator", "\t", dbPath, sessionQuery)
@@ -328,34 +335,18 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 	}
 	sessionID := strings.TrimSpace(string(sessionOutput))
 
-	// Check if this session was recent (within timeout)
-	timeQuery := fmt.Sprintf(
-		`SELECT time_updated FROM session WHERE id='%s';`,
-		sessionID,
-	)
-	cmd = exec.Command("sqlite3", dbPath, timeQuery)
-	timeOutput, err := cmd.Output()
-	if err == nil {
-		timeStr := strings.TrimSpace(string(timeOutput))
-		if t, err := time.Parse(time.RFC3339Nano, timeStr); err == nil {
-			if time.Since(t) > agent.RecentSessionTimeout {
-				return nil, nil
-			}
-		} else if t, err := time.Parse("2006-01-02T15:04:05.000Z", timeStr); err == nil {
-			if time.Since(t) > agent.RecentSessionTimeout {
-				return nil, nil
-			}
-		} else if t, err := time.Parse("2006-01-02 15:04:05", timeStr); err == nil {
-			if time.Since(t) > agent.RecentSessionTimeout {
-				return nil, nil
-			}
-		}
-		// If we can't parse the time, proceed anyway — better to try than skip
+	// Check if this session was recent (within timeout).
+	// Try the flat time_updated column first (older schema), then fall back to
+	// json_extract on the time JSON blob (newer schema).
+	timeStr := sqliteSessionTime(dbPath, sessionID)
+	if timeStr != "" && sqliteTimeExpired(timeStr) {
+		return nil, nil
 	}
 
-	// Get messages for this session as a JSON array
+	// Get messages for this session as a JSON array.
+	// Use rowid for ordering (schema-independent; see note above).
 	msgQuery := fmt.Sprintf(
-		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
+		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY rowid;`,
 		sessionID,
 	)
 	cmd = exec.Command("sqlite3", dbPath, msgQuery)
@@ -377,6 +368,61 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		ProjectPath:    projectPath,
 		TranscriptData: transcriptData,
 	}, nil
+}
+
+// sqliteSessionTime returns the update-time string for a session from the database.
+// It tries the flat time_updated column first (older opencode schema), then falls
+// back to extracting the nested value from the time JSON blob (newer schema).
+// Returns an empty string if the time cannot be determined.
+func sqliteSessionTime(dbPath, sessionID string) string {
+	// Old schema: flat time_updated TEXT column.
+	cmd := exec.Command("sqlite3", dbPath,
+		fmt.Sprintf(`SELECT time_updated FROM session WHERE id='%s';`, sessionID))
+	if out, err := cmd.Output(); err == nil {
+		if s := strings.TrimSpace(string(out)); s != "" {
+			return s
+		}
+	}
+
+	// New schema (v1.17+): time stored as JSON blob {"created":..., "updated":...}.
+	cmd = exec.Command("sqlite3", dbPath,
+		fmt.Sprintf(`SELECT json_extract(time, '$.updated') FROM session WHERE id='%s';`, sessionID))
+	if out, err := cmd.Output(); err == nil {
+		if s := strings.TrimSpace(string(out)); s != "" {
+			return s
+		}
+	}
+
+	return ""
+}
+
+// sqliteTimeExpired reports whether a time string represents a moment older than
+// RecentSessionTimeout. Returns false (not expired) when the format is unrecognised
+// so that ambiguous values never cause a session to be silently skipped.
+func sqliteTimeExpired(timeStr string) bool {
+	// ISO 8601 / RFC3339 variants
+	for _, layout := range []string{
+		time.RFC3339Nano,
+		"2006-01-02T15:04:05.000Z",
+		"2006-01-02 15:04:05",
+	} {
+		if t, err := time.Parse(layout, timeStr); err == nil {
+			return time.Since(t) > agent.RecentSessionTimeout
+		}
+	}
+
+	// Unix timestamp: milliseconds (>1e12) or seconds.
+	if ms, err := strconv.ParseInt(timeStr, 10, 64); err == nil {
+		var t time.Time
+		if ms > 1_000_000_000_000 {
+			t = time.Unix(ms/1000, (ms%1000)*int64(time.Millisecond))
+		} else {
+			t = time.Unix(ms, 0)
+		}
+		return time.Since(t) > agent.RecentSessionTimeout
+	}
+
+	return false // unknown format — assume not expired
 }
 
 // RestoreSession writes a session to OpenCode's storage location.
@@ -497,4 +543,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
