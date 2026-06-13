@@ -316,9 +316,12 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		return nil, nil
 	}
 
-	// Find most recent session for this project
+	// Find most recent session for this project.
+	// Use rowid DESC rather than time_updated to remain compatible across schema
+	// versions where time-tracking columns may be renamed or restructured (e.g.,
+	// v1.17+ merged time_created/time_updated into a single JSON "time" column).
 	sessionQuery := fmt.Sprintf(
-		`SELECT id FROM session WHERE project_id='%s' ORDER BY time_updated DESC LIMIT 1;`,
+		`SELECT id FROM session WHERE project_id='%s' ORDER BY rowid DESC LIMIT 1;`,
 		projectID,
 	)
 	cmd := exec.Command("sqlite3", "-separator", "\t", dbPath, sessionQuery)
@@ -328,15 +331,23 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 	}
 	sessionID := strings.TrimSpace(string(sessionOutput))
 
-	// Check if this session was recent (within timeout)
-	timeQuery := fmt.Sprintf(
-		`SELECT time_updated FROM session WHERE id='%s';`,
-		sessionID,
-	)
-	cmd = exec.Command("sqlite3", dbPath, timeQuery)
-	timeOutput, err := cmd.Output()
-	if err == nil {
-		timeStr := strings.TrimSpace(string(timeOutput))
+	// Check if this session was recent (within timeout).
+	// Try the legacy time_updated column first, then the v1.17+ JSON time column.
+	timeStr := ""
+	for _, timeQ := range []string{
+		fmt.Sprintf(`SELECT time_updated FROM session WHERE id='%s';`, sessionID),
+		fmt.Sprintf(`SELECT json_extract(time, '$.updated') FROM session WHERE id='%s';`, sessionID),
+	} {
+		cmd = exec.Command("sqlite3", dbPath, timeQ)
+		timeOutput, err := cmd.Output()
+		if err == nil {
+			if s := strings.TrimSpace(string(timeOutput)); s != "" {
+				timeStr = s
+				break
+			}
+		}
+	}
+	if timeStr != "" {
 		if t, err := time.Parse(time.RFC3339Nano, timeStr); err == nil {
 			if time.Since(t) > agent.RecentSessionTimeout {
 				return nil, nil
@@ -350,29 +361,50 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 				return nil, nil
 			}
 		}
-		// If we can't parse the time, proceed anyway — better to try than skip
+		// If we can't parse the time format, proceed anyway — better to try than skip
 	}
 
-	// Get messages for this session as a JSON array
-	msgQuery := fmt.Sprintf(
-		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
-		sessionID,
-	)
-	cmd = exec.Command("sqlite3", dbPath, msgQuery)
-	msgOutput, err := cmd.Output()
-	if err != nil {
-		return nil, nil
+	// Get messages for this session as a JSON array.
+	// Use rowid rather than time_created for ordering to remain compatible across
+	// schema versions where time-tracking columns may be renamed or restructured.
+	// Try the primary data-column format first, then fall back to role/content columns.
+	var transcriptData []byte
+	queriedMessages := false
+	for _, msgQ := range []string{
+		fmt.Sprintf(
+			`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY rowid;`,
+			sessionID,
+		),
+		fmt.Sprintf(
+			`SELECT json_group_array(json_object('id', id, 'role', role, 'content', content)) FROM message WHERE session_id='%s' ORDER BY rowid;`,
+			sessionID,
+		),
+	} {
+		cmd = exec.Command("sqlite3", dbPath, msgQ)
+		out, err := cmd.Output()
+		if err != nil {
+			continue
+		}
+		queriedMessages = true
+		td := strings.TrimSpace(string(out))
+		if td != "[null]" && td != "[]" {
+			transcriptData = []byte(td)
+		}
+		break
 	}
 
-	transcriptData := []byte(strings.TrimSpace(string(msgOutput)))
-	// sqlite3 returns "[null]" when no rows match
-	if string(transcriptData) == "[null]" || string(transcriptData) == "[]" {
+	// If all message queries failed (likely due to schema version mismatch), return
+	// the session with an empty transcript so a note can still be recorded.
+	if !queriedMessages {
+		transcriptData = []byte("[]")
+	} else if transcriptData == nil {
+		// Query succeeded but no messages — skip to avoid storing empty notes.
 		return nil, nil
 	}
 
 	return &agent.SessionInfo{
 		SessionID:      sessionID,
-		TranscriptPath: "", // no file path for SQLite
+		TranscriptPath: "",
 		StartedAt:      time.Now().Format(time.RFC3339),
 		ProjectPath:    projectPath,
 		TranscriptData: transcriptData,
@@ -497,4 +529,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
