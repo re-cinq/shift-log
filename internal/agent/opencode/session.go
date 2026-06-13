@@ -1,3 +1,4 @@
+```go
 package opencode
 
 import (
@@ -9,6 +10,13 @@ import (
 	"runtime"
 	"strings"
 )
+
+// GetLocalDBPath returns the path to the local OpenCode database.
+// OpenCode v1.17+ stores its database in the project directory at
+// {projectPath}/.opencode/opencode.db instead of the XDG data home.
+func GetLocalDBPath(projectPath string) string {
+	return filepath.Join(projectPath, ".opencode", "opencode.db")
+}
 
 // GetDataDir returns the OpenCode data directory.
 // OpenCode follows XDG conventions: it uses $XDG_DATA_HOME/opencode on Linux
@@ -127,3 +135,4 @@ func WriteSessionFile(projectPath, sessionID string, transcriptData []byte) (str
 
 	return sessionPath, nil
 }
+```
