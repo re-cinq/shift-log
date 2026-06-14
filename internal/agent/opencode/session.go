@@ -1,3 +1,4 @@
+```go
 package opencode
 
 import (
@@ -32,6 +33,43 @@ func GetDataDir() (string, error) {
 		return "", fmt.Errorf("could not determine home directory: %w", err)
 	}
 	return filepath.Join(home, ".local", "share", "opencode"), nil
+}
+
+// GetConfigDir returns the OpenCode config directory.
+// On Linux, this is $XDG_CONFIG_HOME/opencode (default: ~/.config/opencode).
+// On macOS, this is the same as GetDataDir() since both use ~/Library/Application Support.
+func GetConfigDir() (string, error) {
+	if runtime.GOOS == "darwin" {
+		return GetDataDir()
+	}
+
+	// Linux/other: respect XDG_CONFIG_HOME, default to ~/.config
+	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+		return filepath.Join(xdg, "opencode"), nil
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("could not determine home directory: %w", err)
+	}
+	return filepath.Join(home, ".config", "opencode"), nil
+}
+
+// CandidateDataDirs returns all directories to search for the OpenCode database.
+// OpenCode stores its SQLite database in the data dir (XDG_DATA_HOME) on older versions
+// and may use the config dir (XDG_CONFIG_HOME) on newer versions.
+func CandidateDataDirs() []string {
+	seen := make(map[string]bool)
+	var dirs []string
+	if dir, err := GetDataDir(); err == nil && !seen[dir] {
+		seen[dir] = true
+		dirs = append(dirs, dir)
+	}
+	if dir, err := GetConfigDir(); err == nil && !seen[dir] {
+		seen[dir] = true
+		dirs = append(dirs, dir)
+	}
+	return dirs
 }
 
 // GetProjectID returns the project identifier for OpenCode.
@@ -127,3 +165,4 @@ func WriteSessionFile(projectPath, sessionID string, transcriptData []byte) (str
 
 	return sessionPath, nil
 }
+```
