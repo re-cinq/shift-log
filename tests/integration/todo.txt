@@ -1,0 +1,2 @@
+- Configure git user and email
+- Add todo.txt to git and commit
