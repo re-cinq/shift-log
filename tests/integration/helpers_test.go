@@ -288,15 +288,19 @@ func readCaptureEvents(captureFilePath string) captureEvents {
 	return events
 }
 
-// capturePluginJS is a modified version of the shiftlog plugin that also
-// captures the raw data OpenCode provides to plugin hooks for validation.
-// It reads the capture file path from CLAUDIT_HOOK_CAPTURE_FILE env var.
+// capturePluginJS is a modified version of the shiftlog plugin that captures
+// the raw hook data OpenCode provides to plugin hooks, for API validation.
+// It writes events to CLAUDIT_HOOK_CAPTURE_FILE as JSONL.
+//
+// Note: this plugin intentionally does NOT call client.session.messages() or
+// execSync("shiftlog store") — those calls can deadlock in opencode 1.17.x
+// because the plugin hook runs on the same event loop that processes SDK
+// responses, so an SDK call from within a hook never resolves.
 const capturePluginJS = `// Capture plugin for shiftlog integration testing
 // Logs raw hook data to validate OpenCode's plugin API
-export const ShiftlogPlugin = async ({ directory, client }) => {
+export const ShiftlogPlugin = async ({ directory }) => {
   const fs = await import("fs");
   const captureFile = process.env.CLAUDIT_HOOK_CAPTURE_FILE;
-  const pendingCommits = new Map();
 
   const capture = (data) => {
     if (!captureFile) return;
@@ -316,15 +320,6 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
         args_keys: output?.args ? Object.keys(output.args) : [],
         command: output?.args?.command || output?.args?.cmd || "",
       });
-
-      const command = output?.args?.command || output?.args?.cmd || "";
-      if (command.includes("git commit") || command.includes("git-commit")) {
-        pendingCommits.set(input.callID, {
-          command,
-          tool: input.tool,
-          sessionID: input.sessionID,
-        });
-      }
     },
 
     "tool.execute.after": async (input, output) => {
@@ -336,48 +331,6 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
         input_tool: input?.tool || "",
         output_keys: Object.keys(output || {}),
       });
-
-      const pending = pendingCommits.get(input.callID);
-      if (!pending) return;
-      pendingCommits.delete(input.callID);
-
-      let transcriptData = "";
-      if (client && pending.sessionID) {
-        try {
-          const msgs = await client.session.messages({ path: { id: pending.sessionID } });
-          if (msgs && Array.isArray(msgs)) {
-            transcriptData = JSON.stringify(msgs.map(m => ({
-              role: m.role || "",
-              id: m.id || "",
-              content: m.content || "",
-              time: m.time || {},
-            })));
-          }
-        } catch (e) {}
-      }
-
-      const dataDir = process.platform === "darwin"
-          ? process.env.HOME + "/Library/Application Support/opencode"
-          : (process.env.XDG_DATA_HOME || process.env.HOME + "/.local/share") + "/opencode";
-
-      const hookData = JSON.stringify({
-        session_id: pending.sessionID || "",
-        data_dir: dataDir,
-        project_dir: directory,
-        tool_name: pending.tool || "",
-        tool_input: { command: pending.command },
-        ...(transcriptData ? { transcript_data: transcriptData } : {}),
-      });
-
-      try {
-        const { execSync } = await import("child_process");
-        execSync("shiftlog store --agent=opencode", {
-          input: hookData,
-          cwd: directory,
-          timeout: 30000,
-          stdio: ["pipe", "pipe", "pipe"],
-        });
-      } catch (e) {}
     },
   };
 };
