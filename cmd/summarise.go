@@ -163,8 +163,18 @@ func runSummarise(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("%s", errMsg)
 	}
 
-	// Print summary
-	summary := strings.TrimSpace(stdout.String())
+	// Extract summary from agent output.
+	// Agents that implement SummariseOutputParser (e.g. Claude Code JSON mode)
+	// parse the raw output themselves; others fall back to plain text.
+	rawOutput := stdout.Bytes()
+	summary := strings.TrimSpace(string(rawOutput))
+
+	if parser, ok := ag.(agent.SummariseOutputParser); ok {
+		if parsed, err := parser.ParseSummariseOutput(rawOutput); err == nil && parsed != "" {
+			summary = parsed
+		}
+	}
+
 	if summary == "" {
 		return fmt.Errorf("agent returned empty summary")
 	}

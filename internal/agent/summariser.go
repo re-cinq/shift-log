@@ -14,6 +14,13 @@ type Summariser interface {
 	SummariseCommand() (binary string, args []string)
 }
 
+// SummariseOutputParser is an optional interface for agents whose summarise
+// output requires custom parsing (e.g. JSON envelope formats).
+// If an agent implements this, summarise.go calls it to extract the text.
+type SummariseOutputParser interface {
+	ParseSummariseOutput(raw []byte) (string, error)
+}
+
 const (
 	// DefaultMaxPromptChars is the default character budget for summary prompts.
 	DefaultMaxPromptChars = 50000

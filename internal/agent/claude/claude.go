@@ -2,6 +2,7 @@ package claude
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -299,8 +300,39 @@ func (a *Agent) ResumeCommand(sessionID string) (string, []string) {
 }
 
 // SummariseCommand returns the command to run Claude Code in non-interactive mode.
+// Uses --output-format json so that ParseSummariseOutput can extract the LLM
+// response from the JSON envelope, bypassing framework status messages (e.g.
+// "Memory saved…") that Claude Code 2.1+ may emit to stdout in text mode.
 func (a *Agent) SummariseCommand() (string, []string) {
-	return "claude", []string{"-p", "--output-format", "text"}
+	return "claude", []string{"--print", "--output-format", "json"}
+}
+
+// ParseSummariseOutput extracts the LLM response text from Claude Code's JSON
+// output format.  Claude Code 2.x with --output-format json emits a single
+// JSON object:
+//
+//	{"type":"result","subtype":"success","is_error":false,"result":"<text>", ...}
+//
+// If the JSON cannot be parsed (e.g. older Claude Code version), the raw output
+// is returned as-is so the caller can still display something useful.
+func (a *Agent) ParseSummariseOutput(raw []byte) (string, error) {
+	var result struct {
+		Type    string `json:"type"`
+		Result  string `json:"result"`
+		IsError bool   `json:"is_error"`
+	}
+
+	// Locate the first '{' — there may be status lines before the JSON object.
+	start := bytes.IndexByte(raw, '{')
+	if start >= 0 {
+		dec := json.NewDecoder(bytes.NewReader(raw[start:]))
+		if err := dec.Decode(&result); err == nil && result.Result != "" {
+			return strings.TrimSpace(result.Result), nil
+		}
+	}
+
+	// Fall back to raw text so the caller always has something to work with.
+	return strings.TrimSpace(string(raw)), nil
 }
 
 // ToolAliases returns Claude Code's tool name mappings.
@@ -452,5 +484,3 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	}
 	return agent.ScanDirForRecentSession(sessionDir, ".jsonl", nil, projectPath)
 }
-
-
