@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -96,12 +97,12 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 func (a *Agent) IsCommitCommand(toolName, command string) bool {
 	// OpenCode tool names for shell execution
 	shellTools := map[string]bool{
-		"bash":               true,
-		"shell":              true,
-		"terminal":           true,
-		"execute":            true,
-		"run":                true,
-		"command":            true,
+		"bash":     true,
+		"shell":    true,
+		"terminal": true,
+		"execute":  true,
+		"run":      true,
+		"command":  true,
 	}
 
 	if !shellTools[toolName] {
@@ -305,6 +306,8 @@ func (a *Agent) discoverFromFlatFiles(projectPath string) (*agent.SessionInfo, e
 }
 
 // discoverFromSQLite queries the OpenCode SQLite database for the most recent session.
+// It supports both the pre-1.17 schema (time_updated column, data column on message)
+// and the 1.17+ schema (time JSON column, role+content columns on message).
 func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionInfo, error) {
 	dbPath := filepath.Join(dataDir, "opencode.db")
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
@@ -316,9 +319,11 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		return nil, nil
 	}
 
-	// Find most recent session for this project
+	// Find most recent session for this project.
+	// Use rowid for ordering so the query works for both old schema (time_updated
+	// INTEGER column) and new schema (time JSON column {"created":ms,"updated":ms}).
 	sessionQuery := fmt.Sprintf(
-		`SELECT id FROM session WHERE project_id='%s' ORDER BY time_updated DESC LIMIT 1;`,
+		`SELECT id FROM session WHERE project_id='%s' ORDER BY rowid DESC LIMIT 1;`,
 		projectID,
 	)
 	cmd := exec.Command("sqlite3", "-separator", "\t", dbPath, sessionQuery)
@@ -328,45 +333,23 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 	}
 	sessionID := strings.TrimSpace(string(sessionOutput))
 
-	// Check if this session was recent (within timeout)
-	timeQuery := fmt.Sprintf(
-		`SELECT time_updated FROM session WHERE id='%s';`,
-		sessionID,
-	)
-	cmd = exec.Command("sqlite3", dbPath, timeQuery)
-	timeOutput, err := cmd.Output()
-	if err == nil {
-		timeStr := strings.TrimSpace(string(timeOutput))
-		if t, err := time.Parse(time.RFC3339Nano, timeStr); err == nil {
-			if time.Since(t) > agent.RecentSessionTimeout {
-				return nil, nil
-			}
-		} else if t, err := time.Parse("2006-01-02T15:04:05.000Z", timeStr); err == nil {
-			if time.Since(t) > agent.RecentSessionTimeout {
-				return nil, nil
-			}
-		} else if t, err := time.Parse("2006-01-02 15:04:05", timeStr); err == nil {
-			if time.Since(t) > agent.RecentSessionTimeout {
-				return nil, nil
-			}
-		}
-		// If we can't parse the time, proceed anyway — better to try than skip
-	}
-
-	// Get messages for this session as a JSON array
-	msgQuery := fmt.Sprintf(
-		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
-		sessionID,
-	)
-	cmd = exec.Command("sqlite3", dbPath, msgQuery)
-	msgOutput, err := cmd.Output()
-	if err != nil {
+	// Check if this session was recent (within timeout).
+	// Try new schema first (time JSON), then fall back to old schema (time_updated column).
+	if tooOld := isSessionTooOld(dbPath, sessionID); tooOld {
 		return nil, nil
 	}
 
-	transcriptData := []byte(strings.TrimSpace(string(msgOutput)))
+	// Get messages for this session as a JSON array.
+	// Try new schema (opencode 1.17+: role + content columns, time as JSON object)
+	// before falling back to old schema (data column, time_created column).
+	transcriptData := querySessionMessages(dbPath, sessionID)
+	if transcriptData == nil {
+		return nil, nil
+	}
+
+	trimmed := strings.TrimSpace(string(transcriptData))
 	// sqlite3 returns "[null]" when no rows match
-	if string(transcriptData) == "[null]" || string(transcriptData) == "[]" {
+	if trimmed == "[null]" || trimmed == "[]" {
 		return nil, nil
 	}
 
@@ -375,8 +358,78 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		TranscriptPath: "", // no file path for SQLite
 		StartedAt:      time.Now().Format(time.RFC3339),
 		ProjectPath:    projectPath,
-		TranscriptData: transcriptData,
+		TranscriptData: []byte(trimmed),
 	}, nil
+}
+
+// isSessionTooOld returns true if the session's last-updated timestamp is older
+// than RecentSessionTimeout. Returns false when the timestamp cannot be determined
+// (prefer attempting over skipping).
+func isSessionTooOld(dbPath, sessionID string) bool {
+	// New schema (opencode 1.17+): time is a JSON object {"created":ms,"updated":ms}
+	q := fmt.Sprintf(`SELECT json_extract(time, '$.updated') FROM session WHERE id='%s';`, sessionID)
+	cmd := exec.Command("sqlite3", dbPath, q)
+	out, err := cmd.Output()
+	if err != nil {
+		// Old schema: discrete time_updated INTEGER column
+		q = fmt.Sprintf(`SELECT time_updated FROM session WHERE id='%s';`, sessionID)
+		cmd = exec.Command("sqlite3", dbPath, q)
+		out, err = cmd.Output()
+		if err != nil {
+			return false // cannot determine — assume recent
+		}
+	}
+
+	timeStr := strings.TrimSpace(string(out))
+	if timeStr == "" || timeStr == "NULL" || timeStr == "null" {
+		return false
+	}
+
+	// Integer Unix millisecond timestamp (opencode 1.17+ stores ms since epoch)
+	if ms, err := strconv.ParseInt(timeStr, 10, 64); err == nil {
+		return time.Since(time.UnixMilli(ms)) > agent.RecentSessionTimeout
+	}
+
+	// ISO 8601 / RFC3339 string formats used by older opencode versions
+	for _, layout := range []string{time.RFC3339Nano, "2006-01-02T15:04:05.000Z", "2006-01-02 15:04:05"} {
+		if t, err := time.Parse(layout, timeStr); err == nil {
+			return time.Since(t) > agent.RecentSessionTimeout
+		}
+	}
+
+	return false // unknown format — assume recent
+}
+
+// querySessionMessages returns messages for the given session as a JSON array.
+// It tries the opencode 1.17+ schema (role + content columns, time JSON) first,
+// then falls back to the pre-1.17 schema (data column, time_created column).
+func querySessionMessages(dbPath, sessionID string) []byte {
+	// New schema (opencode 1.17+): messages have separate role, content, and time columns.
+	// content holds a JSON array of content blocks; time is {"created":ms,"updated":ms}.
+	newSchemaQuery := fmt.Sprintf(
+		`SELECT json_group_array(json_object('id', id, 'role', role, 'content', json(content)))
+		 FROM message WHERE session_id='%s' ORDER BY json_extract(time, '$.created');`,
+		sessionID,
+	)
+	cmd := exec.Command("sqlite3", dbPath, newSchemaQuery)
+	out, err := cmd.Output()
+	if err == nil {
+		return out
+	}
+
+	// Old schema (opencode <1.17): messages stored as a full JSON blob in 'data',
+	// ordered by the discrete time_created INTEGER column.
+	oldSchemaQuery := fmt.Sprintf(
+		`SELECT json_group_array(json_patch(data, json_object('id', id)))
+		 FROM message WHERE session_id='%s' ORDER BY time_created;`,
+		sessionID,
+	)
+	cmd = exec.Command("sqlite3", dbPath, oldSchemaQuery)
+	out, err = cmd.Output()
+	if err != nil {
+		return nil
+	}
+	return out
 }
 
 // RestoreSession writes a session to OpenCode's storage location.
@@ -497,4 +550,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
