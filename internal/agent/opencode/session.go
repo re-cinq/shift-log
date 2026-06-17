@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
+
+	"github.com/re-cinq/shift-log/internal/agent"
 )
 
 // GetDataDir returns the OpenCode data directory.
@@ -126,4 +129,74 @@ func WriteSessionFile(projectPath, sessionID string, transcriptData []byte) (str
 	_ = os.WriteFile(msgPath, transcriptData, 0600)
 
 	return sessionPath, nil
+}
+
+// discoverFromLocalSQLite queries the project-local OpenCode SQLite database (v1.17+).
+// OpenCode 1.17+ stores sessions in <projectPath>/.opencode/opencode.db using a
+// "sessions" table with "updated_at" (Unix epoch integer) and no project_id column
+// (the database is project-scoped by its location).
+func discoverFromLocalSQLite(projectPath string) (*agent.SessionInfo, error) {
+	dbPath := filepath.Join(projectPath, ".opencode", "opencode.db")
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		return nil, nil
+	}
+
+	if _, err := exec.LookPath("sqlite3"); err != nil {
+		return nil, nil
+	}
+
+	// Find most recent session ordered by updated_at (Unix timestamp integer)
+	sessionQuery := `SELECT id, updated_at FROM sessions ORDER BY updated_at DESC LIMIT 1;`
+	cmd := exec.Command("sqlite3", "-separator", "\t", dbPath, sessionQuery)
+	sessionOutput, err := cmd.Output()
+	if err != nil || strings.TrimSpace(string(sessionOutput)) == "" {
+		return nil, nil
+	}
+
+	fields := strings.SplitN(strings.TrimSpace(string(sessionOutput)), "\t", 2)
+	if len(fields) < 1 || fields[0] == "" {
+		return nil, nil
+	}
+	sessionID := fields[0]
+
+	// Check recency using updated_at (Unix epoch, may be seconds or milliseconds)
+	if len(fields) >= 2 && fields[1] != "" {
+		var updatedAt int64
+		if n, _ := fmt.Sscanf(fields[1], "%d", &updatedAt); n == 1 {
+			var t time.Time
+			if updatedAt > 1e12 {
+				t = time.UnixMilli(updatedAt)
+			} else {
+				t = time.Unix(updatedAt, 0)
+			}
+			if time.Since(t) > agent.RecentSessionTimeout {
+				return nil, nil
+			}
+		}
+	}
+
+	// Get messages for this session as a JSON array.
+	// The "parts" column is a JSON text field; json(parts) embeds it as JSON.
+	msgQuery := fmt.Sprintf(
+		`SELECT json_group_array(json_object('id', id, 'role', role, 'parts', json(COALESCE(parts, '[]')), 'model', model)) FROM messages WHERE session_id='%s' ORDER BY created_at;`,
+		sessionID,
+	)
+	cmd = exec.Command("sqlite3", dbPath, msgQuery)
+	msgOutput, err := cmd.Output()
+
+	transcriptData := []byte("[]")
+	if err == nil {
+		trimmed := strings.TrimSpace(string(msgOutput))
+		if trimmed != "" && trimmed != "[null]" && trimmed != "[]" {
+			transcriptData = []byte(trimmed)
+		}
+	}
+
+	return &agent.SessionInfo{
+		SessionID:      sessionID,
+		TranscriptPath: "",
+		StartedAt:      time.Now().Format(time.RFC3339),
+		ProjectPath:    projectPath,
+		TranscriptData: transcriptData,
+	}, nil
 }
