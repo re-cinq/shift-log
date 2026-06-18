@@ -1,3 +1,4 @@
+```go
 package opencode
 
 import (
@@ -154,6 +155,48 @@ func TestParseTranscriptWithContentBlocks(t *testing.T) {
 	}
 }
 
+// TestParseTranscriptPartsFormat verifies parsing of OpenCode v1.17+ messages
+// using the typed "parts" array (instead of a "content" field) and integer
+// created_at timestamps.
+func TestParseTranscriptPartsFormat(t *testing.T) {
+	a := &Agent{}
+	// JSON array matching what discoverFromProjectSQLite returns via SQLite query
+	jsonArray := `[
+		{"id":"m1","role":"user","parts":[{"type":"text","data":{"text":"Hello"}}],"model":"","created_at":1750000000000},
+		{"id":"m2","role":"assistant","parts":[{"type":"text","data":{"text":"Hi there"}},{"type":"finish","data":{"reason":"end_turn"}}],"model":"gemini-2.5-flash","created_at":1750000001000}
+	]`
+
+	transcript, err := a.ParseTranscript(strings.NewReader(jsonArray))
+	if err != nil {
+		t.Fatalf("ParseTranscript() error: %v", err)
+	}
+	if len(transcript.Entries) != 2 {
+		t.Fatalf("Expected 2 entries, got %d", len(transcript.Entries))
+	}
+
+	e0 := transcript.Entries[0]
+	if e0.Type != agent.MessageTypeUser {
+		t.Errorf("Entry 0 type = %q, want user", e0.Type)
+	}
+	if e0.UUID != "m1" {
+		t.Errorf("Entry 0 UUID = %q, want m1", e0.UUID)
+	}
+	if e0.Timestamp == "" {
+		t.Error("Entry 0 Timestamp should be non-empty (from created_at)")
+	}
+	if e0.Message == nil || len(e0.Message.Content) == 0 || e0.Message.Content[0].Text != "Hello" {
+		t.Errorf("Entry 0 content = %v, want [{text Hello}]", e0.Message)
+	}
+
+	e1 := transcript.Entries[1]
+	if e1.Type != agent.MessageTypeAssistant {
+		t.Errorf("Entry 1 type = %q, want assistant", e1.Type)
+	}
+	if e1.Message == nil || len(e1.Message.Content) == 0 || e1.Message.Content[0].Text != "Hi there" {
+		t.Errorf("Entry 1 content = %v, want [{text Hi there}]", e1.Message)
+	}
+}
+
 func TestParseTranscriptFile(t *testing.T) {
 	a := &Agent{}
 
@@ -233,8 +276,8 @@ func TestConfigureHooks(t *testing.T) {
 	}
 
 	content := string(data)
-	if !strings.Contains(content, "shiftlog store --agent=opencode") {
-		t.Error("Plugin should contain 'shiftlog store --agent=opencode'")
+	if !strings.Contains(content, "shiftlog store --manual --agent=opencode") {
+		t.Error("Plugin should contain 'shiftlog store --manual --agent=opencode'")
 	}
 	if !strings.Contains(content, "tool.execute.after") {
 		t.Error("Plugin should contain 'tool.execute.after'")
@@ -448,3 +491,28 @@ func TestNormalizeOpenCodeRole(t *testing.T) {
 		}
 	}
 }
+
+func TestParseUnixOrISO(t *testing.T) {
+	tests := []struct {
+		input   string
+		wantErr bool
+	}{
+		{"1750000000000", false}, // Unix milliseconds
+		{"1750000000", false},    // Unix seconds
+		{"2026-06-15T10:00:00Z", false},
+		{"2026-06-15T10:00:00.000Z", false},
+		{"2026-06-15 10:00:00", false},
+		{"not-a-time", true},
+		{"", true},
+	}
+	for _, tc := range tests {
+		got, err := parseUnixOrISO(tc.input)
+		if (err != nil) != tc.wantErr {
+			t.Errorf("parseUnixOrISO(%q): err=%v, wantErr=%v", tc.input, err, tc.wantErr)
+		}
+		if err == nil && got.IsZero() {
+			t.Errorf("parseUnixOrISO(%q) returned zero time", tc.input)
+		}
+	}
+}
+```

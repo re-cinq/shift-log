@@ -1,3 +1,4 @@
+```go
 package opencode
 
 import (
@@ -7,7 +8,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
+	"time"
+
+	"github.com/re-cinq/shift-log/internal/agent"
 )
 
 // GetDataDir returns the OpenCode data directory.
@@ -127,3 +132,108 @@ func WriteSessionFile(projectPath, sessionID string, transcriptData []byte) (str
 
 	return sessionPath, nil
 }
+
+// discoverFromProjectSQLite queries the project-local SQLite database used by
+// OpenCode v1.17+, located at <projectPath>/.opencode/opencode.db.
+//
+// Schema (v1.17+):
+//
+//	sessions(id TEXT, title TEXT, message_count INTEGER, updated_at INTEGER, created_at INTEGER)
+//	messages(id TEXT, session_id TEXT, role TEXT, parts TEXT, model TEXT, created_at INTEGER)
+//
+// Unlike pre-v1.17, the sessions table has no project_id column, so we simply
+// return the most recently updated session within the recency window.
+func discoverFromProjectSQLite(dbPath, projectPath string) (*agent.SessionInfo, error) {
+	if _, err := exec.LookPath("sqlite3"); err != nil {
+		return nil, nil
+	}
+
+	// Get the most recently updated session
+	cmd := exec.Command("sqlite3", "-separator", "\t", dbPath,
+		`SELECT id, updated_at FROM sessions ORDER BY updated_at DESC LIMIT 1;`)
+	out, err := cmd.Output()
+	if err != nil || strings.TrimSpace(string(out)) == "" {
+		return nil, nil
+	}
+
+	fields := strings.SplitN(strings.TrimSpace(string(out)), "\t", 2)
+	if len(fields) < 2 {
+		return nil, nil
+	}
+	sessionID := strings.TrimSpace(fields[0])
+	timeStr := strings.TrimSpace(fields[1])
+
+	// Reject stale sessions outside the recency window
+	if t, err := parseUnixOrISO(timeStr); err == nil {
+		if time.Since(t) > agent.RecentSessionTimeout {
+			return nil, nil
+		}
+	}
+
+	// Fetch messages as a JSON array
+	msgQuery := fmt.Sprintf(
+		`SELECT json_group_array(json_object(`+
+			`'id', id, 'role', role, 'parts', json(parts), `+
+			`'model', COALESCE(model, ''), 'created_at', created_at`+
+			`)) FROM messages WHERE session_id='%s' ORDER BY created_at;`,
+		sessionID,
+	)
+	cmd = exec.Command("sqlite3", dbPath, msgQuery)
+	msgOut, err := cmd.Output()
+	if err != nil {
+		// Session found but messages query failed — still return session info
+		return &agent.SessionInfo{
+			SessionID:   sessionID,
+			ProjectPath: projectPath,
+			StartedAt:   time.Now().Format(time.RFC3339),
+		}, nil
+	}
+
+	transcriptData := []byte(strings.TrimSpace(string(msgOut)))
+	if string(transcriptData) == "[null]" || string(transcriptData) == "[]" || len(transcriptData) == 0 {
+		return &agent.SessionInfo{
+			SessionID:   sessionID,
+			ProjectPath: projectPath,
+			StartedAt:   time.Now().Format(time.RFC3339),
+		}, nil
+	}
+
+	return &agent.SessionInfo{
+		SessionID:      sessionID,
+		TranscriptPath: "",
+		StartedAt:      time.Now().Format(time.RFC3339),
+		ProjectPath:    projectPath,
+		TranscriptData: transcriptData,
+	}, nil
+}
+
+// parseUnixOrISO parses a timestamp that may be a Unix integer (seconds or
+// milliseconds) or an ISO 8601 / RFC 3339 string.
+func parseUnixOrISO(s string) (time.Time, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return time.Time{}, fmt.Errorf("empty timestamp")
+	}
+
+	// Integer timestamps — Unix seconds or milliseconds
+	if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+		if n > 1_000_000_000_000 { // threshold: year 33658 in seconds → must be ms
+			return time.UnixMilli(n), nil
+		}
+		return time.Unix(n, 0), nil
+	}
+
+	// String formats
+	for _, layout := range []string{
+		time.RFC3339Nano,
+		"2006-01-02T15:04:05.000Z",
+		"2006-01-02 15:04:05",
+	} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t, nil
+		}
+	}
+
+	return time.Time{}, fmt.Errorf("cannot parse time %q", s)
+}
+```
