@@ -1,1 +1,3 @@
 - Buy milk
+- Write tests
+- Refactor code
