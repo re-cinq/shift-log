@@ -10,8 +10,9 @@ import (
 // tool execution hooks and calls shiftlog store after git commits.
 //
 // OpenCode plugin hooks:
-//   tool.execute.before(input, output) — input: {tool, sessionID, callID}, output: {args}
-//   tool.execute.after(input, output)  — input: {tool, sessionID, callID}, output: {title, output, metadata}
+//
+//	tool.execute.before(input, output) — input: {tool, sessionID, callID}, output: {args}
+//	tool.execute.after(input, output)  — input: {tool, sessionID, callID}, output: {title, output, metadata}
 //
 // The command string is only available in the "before" hook (via output.args),
 // so we capture it there and act on it in the "after" hook, matching by callID.
@@ -39,11 +40,16 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
       if (!pending) return;
       pendingCommits.delete(input.callID);
 
-      // Try to fetch messages via the SDK client API
+      // Try to fetch messages via the SDK client API with a 3s timeout to avoid
+      // hanging on API changes between OpenCode versions.
       let transcriptData = "";
       if (client && pending.sessionID) {
         try {
-          const msgs = await client.session.messages({ path: { id: pending.sessionID } });
+          const msgsPromise = client.session.messages({ path: { id: pending.sessionID } });
+          const msgs = await Promise.race([
+            msgsPromise,
+            new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 3000)),
+          ]);
           if (msgs && Array.isArray(msgs)) {
             transcriptData = JSON.stringify(msgs.map(m => ({
               role: m.role || "",
