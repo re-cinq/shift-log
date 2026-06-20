@@ -105,9 +105,10 @@ var _ = Describe("Manual Commit", func() {
 			setupCmd: func(tmpDir, shiftlogPath, apiKey string) *exec.Cmd {
 				// Write opencode.json config
 				opencodeConfig := map[string]interface{}{
-					"$schema":    "https://opencode.ai/config.json",
-					"model":      "google/gemini-2.5-flash",
-					"permission": "allow",
+					"$schema":     "https://opencode.ai/config.json",
+					"model":       "google/gemini-2.5-flash",
+					"permission":  "allow",
+					"autoapprove": true,
 				}
 				configData, err := json.MarshalIndent(opencodeConfig, "", "  ")
 				Expect(err).NotTo(HaveOccurred())

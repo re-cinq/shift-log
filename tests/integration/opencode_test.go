@@ -33,9 +33,10 @@ var _ = Describe("OpenCode CLI Integration", func() {
 
 		// Write opencode.json
 		opencodeConfig := map[string]interface{}{
-			"$schema":    "https://opencode.ai/config.json",
-			"model":      "google/gemini-2.5-flash",
-			"permission": "allow",
+			"$schema":     "https://opencode.ai/config.json",
+			"model":       "google/gemini-2.5-flash",
+			"permission":  "allow",
+			"autoapprove": true,
 		}
 		configData, err := json.MarshalIndent(opencodeConfig, "", "  ")
 		Expect(err).NotTo(HaveOccurred())

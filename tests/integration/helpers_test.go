@@ -293,7 +293,8 @@ func readCaptureEvents(captureFilePath string) captureEvents {
 // It reads the capture file path from CLAUDIT_HOOK_CAPTURE_FILE env var.
 const capturePluginJS = `// Capture plugin for shiftlog integration testing
 // Logs raw hook data to validate OpenCode's plugin API
-export const ShiftlogPlugin = async ({ directory, client }) => {
+export const ShiftlogPlugin = async ({ directory, cwd, client }) => {
+  const projectDir = directory || cwd || process.cwd();
   const fs = await import("fs");
   const captureFile = process.env.CLAUDIT_HOOK_CAPTURE_FILE;
   const pendingCommits = new Map();
@@ -314,10 +315,10 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
         output_keys: Object.keys(output || {}),
         has_args: !!(output?.args),
         args_keys: output?.args ? Object.keys(output.args) : [],
-        command: output?.args?.command || output?.args?.cmd || "",
+        command: output?.args?.command || output?.args?.cmd || output?.command || output?.cmd || "",
       });
 
-      const command = output?.args?.command || output?.args?.cmd || "";
+      const command = output?.args?.command || output?.args?.cmd || output?.command || output?.cmd || "";
       if (command.includes("git commit") || command.includes("git-commit")) {
         pendingCommits.set(input.callID, {
           command,
@@ -344,7 +345,12 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
       let transcriptData = "";
       if (client && pending.sessionID) {
         try {
-          const msgs = await client.session.messages({ path: { id: pending.sessionID } });
+          let msgs;
+          try {
+            msgs = await client.session.messages({ path: { id: pending.sessionID } });
+          } catch (e) {
+            msgs = await client.session.messages(pending.sessionID);
+          }
           if (msgs && Array.isArray(msgs)) {
             transcriptData = JSON.stringify(msgs.map(m => ({
               role: m.role || "",
@@ -363,7 +369,7 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
       const hookData = JSON.stringify({
         session_id: pending.sessionID || "",
         data_dir: dataDir,
-        project_dir: directory,
+        project_dir: projectDir,
         tool_name: pending.tool || "",
         tool_input: { command: pending.command },
         ...(transcriptData ? { transcript_data: transcriptData } : {}),
@@ -373,7 +379,7 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
         const { execSync } = await import("child_process");
         execSync("shiftlog store --agent=opencode", {
           input: hookData,
-          cwd: directory,
+          cwd: projectDir || undefined,
           timeout: 30000,
           stdio: ["pipe", "pipe", "pipe"],
         });
