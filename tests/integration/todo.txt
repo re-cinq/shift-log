@@ -1,1 +1,2 @@
-- Buy milk
+1. Add todo.txt to the git repository.
+2. Commit the changes.
