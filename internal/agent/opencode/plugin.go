@@ -10,8 +10,9 @@ import (
 // tool execution hooks and calls shiftlog store after git commits.
 //
 // OpenCode plugin hooks:
-//   tool.execute.before(input, output) — input: {tool, sessionID, callID}, output: {args}
-//   tool.execute.after(input, output)  — input: {tool, sessionID, callID}, output: {title, output, metadata}
+//
+//	tool.execute.before(input, output) — input: {tool, sessionID, callID}, output: {args}
+//	tool.execute.after(input, output)  — input: {tool, sessionID, callID}, output: {title, output, metadata}
 //
 // The command string is only available in the "before" hook (via output.args),
 // so we capture it there and act on it in the "after" hook, matching by callID.
@@ -57,9 +58,22 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
         }
       }
 
-      const dataDir = process.platform === "darwin"
-          ? process.env.HOME + "/Library/Application Support/opencode"
-          : (process.env.XDG_DATA_HOME || process.env.HOME + "/.local/share") + "/opencode";
+      // Resolve the data directory: opencode v1.16+ uses XDG_STATE_HOME,
+      // older versions used XDG_DATA_HOME.  Check both; prefer state.
+      const home = process.env.HOME || "";
+      let dataDir = "";
+      if (process.platform === "darwin") {
+        dataDir = home + "/Library/Application Support/opencode";
+      } else {
+        const xdgData = process.env.XDG_DATA_HOME;
+        if (xdgData) {
+          // Explicit XDG_DATA_HOME (e.g. isolation tests) — honour it.
+          dataDir = xdgData + "/opencode";
+        } else {
+          const xdgState = process.env.XDG_STATE_HOME || (home + "/.local/state");
+          dataDir = xdgState + "/opencode";
+        }
+      }
 
       const hookData = JSON.stringify({
         session_id: pending.sessionID || "",
