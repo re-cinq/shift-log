@@ -291,6 +291,10 @@ func readCaptureEvents(captureFilePath string) captureEvents {
 // capturePluginJS is a modified version of the shiftlog plugin that also
 // captures the raw data OpenCode provides to plugin hooks for validation.
 // It reads the capture file path from CLAUDIT_HOOK_CAPTURE_FILE env var.
+//
+// The client.session.messages() call is wrapped in Promise.race with a 5-second
+// timeout because OpenCode 1.17+ changed the underlying API and the call can
+// hang indefinitely, which would stall the hook and prevent opencode from exiting.
 const capturePluginJS = `// Capture plugin for shiftlog integration testing
 // Logs raw hook data to validate OpenCode's plugin API
 export const ShiftlogPlugin = async ({ directory, client }) => {
@@ -344,7 +348,13 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
       let transcriptData = "";
       if (client && pending.sessionID) {
         try {
-          const msgs = await client.session.messages({ path: { id: pending.sessionID } });
+          const deadline = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("client timeout")), 5000)
+          );
+          const msgs = await Promise.race([
+            client.session.messages({ path: { id: pending.sessionID } }),
+            deadline,
+          ]);
           if (msgs && Array.isArray(msgs)) {
             transcriptData = JSON.stringify(msgs.map(m => ({
               role: m.role || "",
