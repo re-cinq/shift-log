@@ -1,6 +1,7 @@
 package opencode
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,8 +11,9 @@ import (
 // tool execution hooks and calls shiftlog store after git commits.
 //
 // OpenCode plugin hooks:
-//   tool.execute.before(input, output) — input: {tool, sessionID, callID}, output: {args}
-//   tool.execute.after(input, output)  — input: {tool, sessionID, callID}, output: {title, output, metadata}
+//
+//	tool.execute.before(input, output) — input: {tool, sessionID, callID}, output: {args}
+//	tool.execute.after(input, output)  — input: {tool, sessionID, callID}, output: {title, output, metadata}
 //
 // The command string is only available in the "before" hook (via output.args),
 // so we capture it there and act on it in the "after" hook, matching by callID.
@@ -39,11 +41,14 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
       if (!pending) return;
       pendingCommits.delete(input.callID);
 
-      // Try to fetch messages via the SDK client API
+      // Try to fetch messages via the SDK client API with a timeout
       let transcriptData = "";
       if (client && pending.sessionID) {
         try {
-          const msgs = await client.session.messages({ path: { id: pending.sessionID } });
+          const msgs = await Promise.race([
+            Promise.resolve(client.session.messages({ path: { id: pending.sessionID } })),
+            new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 5000)),
+          ]);
           if (msgs && Array.isArray(msgs)) {
             transcriptData = JSON.stringify(msgs.map(m => ({
               role: m.role || "",
@@ -75,7 +80,7 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
         execSync("shiftlog store --agent=opencode", {
           input: hookData,
           cwd: directory,
-          timeout: 30000,
+          timeout: 10000,
           stdio: ["pipe", "pipe", "pipe"],
         });
       } catch (e) {
@@ -86,7 +91,9 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
 };
 `
 
-// InstallPlugin writes the shiftlog plugin to .opencode/plugins/shiftlog.js.
+// InstallPlugin writes the shiftlog plugin to .opencode/plugins/shiftlog.js
+// and installs a local config at .opencode/opencode.json with auto-approve
+// settings required for non-interactive operation in OpenCode v1.15+.
 func InstallPlugin(repoRoot string) error {
 	pluginDir := filepath.Join(repoRoot, ".opencode", "plugins")
 	if err := os.MkdirAll(pluginDir, 0755); err != nil {
@@ -98,10 +105,46 @@ func InstallPlugin(repoRoot string) error {
 		return fmt.Errorf("could not write plugin file: %w", err)
 	}
 
+	// Write local config override for auto-approve (non-fatal if it fails).
+	// OpenCode v1.15+ uses "autoapprove" instead of "permission": "allow".
+	// Writing to .opencode/opencode.json ensures this setting persists even
+	// if the project-root opencode.json is modified after shiftlog init.
+	opencodeDir := filepath.Join(repoRoot, ".opencode")
+	_ = mergeConfig(filepath.Join(opencodeDir, "opencode.json"), map[string]interface{}{
+		"autoapprove": "all",
+	})
+
 	return nil
 }
 
-// RemovePlugin removes the shiftlog plugin file.
+// mergeConfig reads an existing JSON config file, merges in the given keys,
+// and writes it back. Creates the file if it does not exist.
+func mergeConfig(path string, additions map[string]interface{}) error {
+	config := make(map[string]json.RawMessage)
+
+	if data, err := os.ReadFile(path); err == nil {
+		if err := json.Unmarshal(data, &config); err != nil {
+			config = make(map[string]json.RawMessage)
+		}
+	}
+
+	for k, v := range additions {
+		encoded, err := json.Marshal(v)
+		if err != nil {
+			return fmt.Errorf("could not marshal config key %q: %w", k, err)
+		}
+		config[k] = json.RawMessage(encoded)
+	}
+
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return fmt.Errorf("could not marshal config: %w", err)
+	}
+
+	return os.WriteFile(path, data, 0644)
+}
+
+// RemovePlugin removes the shiftlog plugin file and local config.
 // Also removes the plugins directory if it's empty afterward.
 func RemovePlugin(repoRoot string) error {
 	pluginPath := filepath.Join(repoRoot, ".opencode", "plugins", "shiftlog.js")
@@ -114,6 +157,12 @@ func RemovePlugin(repoRoot string) error {
 	entries, err := os.ReadDir(pluginDir)
 	if err == nil && len(entries) == 0 {
 		_ = os.Remove(pluginDir)
+	}
+
+	// Remove the local config written by InstallPlugin
+	localConfig := filepath.Join(repoRoot, ".opencode", "opencode.json")
+	if err := os.Remove(localConfig); err != nil && !os.IsNotExist(err) {
+		return err
 	}
 
 	return nil

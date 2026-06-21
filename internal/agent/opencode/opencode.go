@@ -20,12 +20,26 @@ func init() {
 // Agent implements the agent.Agent interface for OpenCode CLI.
 type Agent struct{}
 
-func (a *Agent) Name() agent.Name   { return agent.OpenCode }
+func (a *Agent) Name() agent.Name    { return agent.OpenCode }
 func (a *Agent) DisplayName() string { return "OpenCode CLI" }
 
-// ConfigureHooks installs the shiftlog plugin for OpenCode.
+// ConfigureHooks installs the shiftlog plugin for OpenCode and ensures
+// the project's opencode.json has autoapprove set for non-interactive use.
 func (a *Agent) ConfigureHooks(repoRoot string) error {
-	return InstallPlugin(repoRoot)
+	if err := InstallPlugin(repoRoot); err != nil {
+		return err
+	}
+	// Also merge autoapprove into the project-root opencode.json if it exists.
+	// This covers the case where opencode.json is written before shiftlog init.
+	// Non-fatal: InstallPlugin already wrote .opencode/opencode.json as a
+	// secondary config that OpenCode v1.15+ picks up regardless.
+	rootConfig := filepath.Join(repoRoot, "opencode.json")
+	if _, err := os.Stat(rootConfig); err == nil {
+		_ = mergeConfig(rootConfig, map[string]interface{}{
+			"autoapprove": "all",
+		})
+	}
+	return nil
 }
 
 // RemoveHooks removes the shiftlog plugin for OpenCode.
@@ -96,12 +110,12 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 func (a *Agent) IsCommitCommand(toolName, command string) bool {
 	// OpenCode tool names for shell execution
 	shellTools := map[string]bool{
-		"bash":               true,
-		"shell":              true,
-		"terminal":           true,
-		"execute":            true,
-		"run":                true,
-		"command":            true,
+		"bash":     true,
+		"shell":    true,
+		"terminal": true,
+		"execute":  true,
+		"run":      true,
+		"command":  true,
 	}
 
 	if !shellTools[toolName] {
@@ -454,7 +468,6 @@ func parseOpenCodeEntry(raw map[string]json.RawMessage, fullData []byte) agent.T
 	return entry
 }
 
-
 // parseOpenCodeMessage parses message content from an OpenCode entry.
 func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageType) *agent.Message {
 	if msgType == "" {
@@ -497,4 +510,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
