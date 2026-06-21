@@ -1,1 +1,1 @@
-- [ ] Add todo list
+- [ ] Add git commands
