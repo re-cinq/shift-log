@@ -24,26 +24,32 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
 
   return {
     "tool.execute.before": async (input, output) => {
-      const command = output?.args?.command || output?.args?.cmd || "";
+      const command = output?.args?.command || output?.args?.cmd || output?.args?.input || "";
       if (command.includes("git commit") || command.includes("git-commit")) {
-        pendingCommits.set(input.callID, {
+        pendingCommits.set(input.callID ?? input.callId ?? null, {
           command,
           tool: input.tool,
-          sessionID: input.sessionID,
+          sessionID: input.sessionID ?? input.sessionId ?? "",
         });
       }
     },
 
     "tool.execute.after": async (input, output) => {
-      const pending = pendingCommits.get(input.callID);
+      const callKey = input.callID ?? input.callId ?? null;
+      const pending = pendingCommits.get(callKey);
       if (!pending) return;
-      pendingCommits.delete(input.callID);
+      pendingCommits.delete(callKey);
 
-      // Try to fetch messages via the SDK client API
+      // Try to fetch messages via the SDK client API with a timeout to guard
+      // against API changes in newer OpenCode versions that may cause hangs.
       let transcriptData = "";
       if (client && pending.sessionID) {
         try {
-          const msgs = await client.session.messages({ path: { id: pending.sessionID } });
+          const msgsPromise = client.session.messages({ path: { id: pending.sessionID } });
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("client.session.messages timeout")), 5000)
+          );
+          const msgs = await Promise.race([msgsPromise, timeoutPromise]);
           if (msgs && Array.isArray(msgs)) {
             transcriptData = JSON.stringify(msgs.map(m => ({
               role: m.role || "",
