@@ -1,3 +1,4 @@
+```go
 package gemini
 
 import (
@@ -30,7 +31,14 @@ func (a *Agent) ConfigureHooks(repoRoot string) error {
 	}
 
 	AddShiftlogHook(settings)
-	AddSessionHooks(settings)
+	// Session hooks (SessionStart/SessionEnd) are intentionally omitted: in
+	// gemini-cli v0.29+, the hook runner does not close the subprocess stdin
+	// for session events, which causes shiftlog session-start to block on
+	// io.ReadAll indefinitely.  Gemini session discovery uses filesystem
+	// scanning (ScanAllProjectDirs) instead of the active-session file, so
+	// session hooks are not needed.  Remove any previously installed session
+	// hooks so that upgrades clean up stale configuration.
+	RemoveSessionHooks(settings)
 
 	if err := WriteSettings(geminiDir, settings); err != nil {
 		return fmt.Errorf("failed to write Gemini settings: %w", err)
@@ -344,5 +352,4 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	// (e.g., absent file, path key mismatch, or non-interactive -p mode).
 	return ScanAllProjectDirs(projectPath)
 }
-
-
+```
