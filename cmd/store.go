@@ -86,7 +86,9 @@ func runHookStore() error {
 
 	hookData, err := ag.ParseHookInput(raw)
 	if err != nil {
-		cli.LogWarning("failed to parse hook JSON: %v", err)
+		// Demoted to debug: hook mode should never disrupt the agent's workflow.
+		// Malformed JSON can occur when the agent's plugin API changes between versions.
+		cli.LogDebug("store: failed to parse hook JSON: %v", err)
 		return nil
 	}
 
@@ -98,10 +100,20 @@ func runHookStore() error {
 		return nil
 	}
 
-	// Verify we're in a git repository
+	// Verify we're in a git repository. If the agent's plugin runs shiftlog from
+	// a directory that is not a git repo (e.g. when the agent's 'directory'
+	// parameter no longer points to the project root in newer versions), try the
+	// project_dir reported in the hook data before giving up.
 	if !git.IsInsideWorkTree() {
-		cli.LogWarning("not inside a git repository")
-		return nil
+		if hookData.ProjectDir != "" {
+			if err := os.Chdir(hookData.ProjectDir); err != nil {
+				cli.LogDebug("store: failed to chdir to project_dir %s: %v", hookData.ProjectDir, err)
+			}
+		}
+		if !git.IsInsideWorkTree() {
+			cli.LogDebug("store: not inside a git repository, skipping")
+			return nil
+		}
 	}
 
 	return storeConversation(ag, hookData.SessionID, hookData.TranscriptPath, hookData.TranscriptData)

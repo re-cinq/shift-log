@@ -192,6 +192,7 @@ type HookData struct {
 	TranscriptPath string
 	ToolName       string
 	Command        string
+	ProjectDir     string // project directory reported by the agent (may differ from process CWD)
 	TranscriptData []byte // inline transcript data (e.g. from OpenCode plugin SDK)
 }
 
