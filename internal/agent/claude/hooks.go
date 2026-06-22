@@ -8,7 +8,7 @@ import (
 
 // Hook defines a Claude Code hook configuration.
 type Hook struct {
-	Matcher string    `json:"matcher"`
+	Matcher string    `json:"matcher,omitempty"`
 	Hooks   []HookCmd `json:"hooks"`
 }
 
@@ -87,6 +87,7 @@ func WriteSettings(claudeDir string, settings *Settings) error {
 }
 
 // AddShiftlogHook adds or updates the shiftlog store hook in settings.
+// Timeout is in milliseconds (Claude Code 2.x).
 func AddShiftlogHook(settings *Settings) {
 	shiftlogHook := Hook{
 		Matcher: "Bash",
@@ -94,7 +95,7 @@ func AddShiftlogHook(settings *Settings) {
 			{
 				Type:    "command",
 				Command: "shiftlog store",
-				Timeout: 30,
+				Timeout: 30000,
 			},
 		},
 	}
@@ -114,25 +115,24 @@ func AddShiftlogHook(settings *Settings) {
 }
 
 // AddSessionHooks adds or updates the SessionStart and SessionEnd hooks.
+// Timeouts are in milliseconds (Claude Code 2.x).
 func AddSessionHooks(settings *Settings) {
 	sessionStartHook := Hook{
-		Matcher: "",
 		Hooks: []HookCmd{
 			{
 				Type:    "command",
 				Command: "shiftlog session-start",
-				Timeout: 5,
+				Timeout: 5000,
 			},
 		},
 	}
 
 	sessionEndHook := Hook{
-		Matcher: "",
 		Hooks: []HookCmd{
 			{
 				Type:    "command",
 				Command: "shiftlog session-end",
-				Timeout: 5,
+				Timeout: 5000,
 			},
 		},
 	}
