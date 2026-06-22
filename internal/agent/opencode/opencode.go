@@ -1,3 +1,4 @@
+```go
 package opencode
 
 import (
@@ -230,9 +231,17 @@ func (a *Agent) parseMessageDir(dir string) (*agent.Transcript, error) {
 }
 
 // DiscoverSession finds an active or recent OpenCode session.
-// It first tries flat file storage (pre-v1.2), then falls back to SQLite (v1.2+).
+// It first checks the session marker file written by the plugin on every tool
+// invocation, then falls back to flat file storage (pre-v1.2) and SQLite (v1.2+).
 func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) {
-	// Try flat file storage first (pre-v1.2 OpenCode)
+	// Check the session marker file first (written by plugin on every tool invocation).
+	// This is the most reliable method: it captures the exact session ID regardless
+	// of how OpenCode stores its project association internally.
+	if info, _ := discoverFromMarkerFile(projectPath); info != nil {
+		return info, nil
+	}
+
+	// Try flat file storage (pre-v1.2 OpenCode)
 	session, err := a.discoverFromFlatFiles(projectPath)
 	if err != nil {
 		return nil, err
@@ -249,6 +258,106 @@ func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) 
 
 	projectID := GetProjectID(projectPath)
 	return discoverFromSQLite(dataDir, projectID, projectPath)
+}
+
+// discoverFromMarkerFile reads the session marker written by the OpenCode plugin's
+// tool.execute.before hook. Returns nil if the marker is absent, stale, or has no
+// retrievable transcript.
+func discoverFromMarkerFile(projectPath string) (*agent.SessionInfo, error) {
+	markerPath := filepath.Join(projectPath, ".shiftlog", "opencode-session.json")
+
+	fi, err := os.Stat(markerPath)
+	if err != nil {
+		return nil, nil
+	}
+
+	if time.Since(fi.ModTime()) > agent.RecentSessionTimeout {
+		return nil, nil
+	}
+
+	data, err := os.ReadFile(markerPath)
+	if err != nil {
+		return nil, nil
+	}
+
+	var marker struct {
+		SessionID  string `json:"session_id"`
+		ProjectDir string `json:"project_dir"`
+		Timestamp  string `json:"timestamp"`
+	}
+	if err := json.Unmarshal(data, &marker); err != nil {
+		return nil, nil
+	}
+
+	if marker.SessionID == "" {
+		return nil, nil
+	}
+
+	startedAt := fi.ModTime().Format(time.RFC3339)
+
+	dataDir, err := GetDataDir()
+	if err != nil {
+		return nil, nil
+	}
+
+	// Query SQLite by the known session ID, bypassing project_id matching.
+	transcriptData, _ := transcriptFromSQLiteBySessionID(dataDir, marker.SessionID)
+	if len(transcriptData) > 0 {
+		return &agent.SessionInfo{
+			SessionID:      marker.SessionID,
+			TranscriptPath: "",
+			StartedAt:      startedAt,
+			ProjectPath:    projectPath,
+			TranscriptData: transcriptData,
+		}, nil
+	}
+
+	// Fall back to flat file message directory.
+	msgDir := filepath.Join(dataDir, "storage", "message", marker.SessionID)
+	if _, err := os.Stat(msgDir); err == nil {
+		return &agent.SessionInfo{
+			SessionID:      marker.SessionID,
+			TranscriptPath: msgDir,
+			StartedAt:      startedAt,
+			ProjectPath:    projectPath,
+		}, nil
+	}
+
+	// Marker exists but no transcript found — let other discovery methods try.
+	return nil, nil
+}
+
+// transcriptFromSQLiteBySessionID retrieves transcript data from OpenCode's SQLite
+// database using a known session ID, bypassing the project_id lookup.
+func transcriptFromSQLiteBySessionID(dataDir, sessionID string) ([]byte, error) {
+	// Basic sanitization: session IDs should never contain quotes or semicolons.
+	if strings.ContainsAny(sessionID, "'\";\n\r") {
+		return nil, nil
+	}
+
+	dbPath := filepath.Join(dataDir, "opencode.db")
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		return nil, nil
+	}
+	if _, err := exec.LookPath("sqlite3"); err != nil {
+		return nil, nil
+	}
+
+	msgQuery := fmt.Sprintf(
+		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
+		sessionID,
+	)
+	cmd := exec.Command("sqlite3", dbPath, msgQuery)
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, nil
+	}
+
+	result := []byte(strings.TrimSpace(string(output)))
+	if string(result) == "[null]" || string(result) == "[]" || string(result) == "" {
+		return nil, nil
+	}
+	return result, nil
 }
 
 // discoverFromFlatFiles tries the legacy flat file session discovery.
@@ -497,4 +606,4 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
+```
