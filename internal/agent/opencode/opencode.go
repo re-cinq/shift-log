@@ -96,12 +96,12 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 func (a *Agent) IsCommitCommand(toolName, command string) bool {
 	// OpenCode tool names for shell execution
 	shellTools := map[string]bool{
-		"bash":               true,
-		"shell":              true,
-		"terminal":           true,
-		"execute":            true,
-		"run":                true,
-		"command":            true,
+		"bash":      true,
+		"shell":     true,
+		"terminal":  true,
+		"execute":   true,
+		"run":       true,
+		"command":   true,
 	}
 
 	if !shellTools[toolName] {
@@ -230,7 +230,10 @@ func (a *Agent) parseMessageDir(dir string) (*agent.Transcript, error) {
 }
 
 // DiscoverSession finds an active or recent OpenCode session.
-// It first tries flat file storage (pre-v1.2), then falls back to SQLite (v1.2+).
+// It tries storage locations in order:
+// 1. Flat files (pre-v1.2, legacy)
+// 2. Project-local SQLite at <project>/.opencode/opencode.db (opencode-ai Go binary)
+// 3. User-level SQLite at ~/.local/share/opencode/opencode.db (sst/opencode variant)
 func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) {
 	// Try flat file storage first (pre-v1.2 OpenCode)
 	session, err := a.discoverFromFlatFiles(projectPath)
@@ -241,7 +244,15 @@ func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) 
 		return session, nil
 	}
 
-	// Fall back to SQLite (OpenCode v1.2+)
+	// Try project-local SQLite (opencode-ai Go binary stores DB in the project dir)
+	localDBPath := filepath.Join(projectPath, ".opencode", "opencode.db")
+	if _, statErr := os.Stat(localDBPath); statErr == nil {
+		if s := discoverFromLocalDB(localDBPath, projectPath); s != nil {
+			return s, nil
+		}
+	}
+
+	// Fall back to user-level SQLite (sst/opencode variant)
 	dataDir, err := GetDataDir()
 	if err != nil {
 		return nil, nil
@@ -304,7 +315,131 @@ func (a *Agent) discoverFromFlatFiles(projectPath string) (*agent.SessionInfo, e
 	}, nil
 }
 
+// discoverFromLocalDB queries a project-local opencode SQLite database.
+// The opencode-ai Go binary stores sessions in <project>/.opencode/opencode.db
+// with schema: sessions(id, title, message_count, updated_at, created_at) and
+// messages(id, session_id, role, parts, model, created_at).
+func discoverFromLocalDB(dbPath, projectPath string) *agent.SessionInfo {
+	if _, err := exec.LookPath("sqlite3"); err != nil {
+		return nil
+	}
+
+	// Find the most recently updated session
+	cmd := exec.Command("sqlite3", "-json", dbPath,
+		`SELECT id, updated_at FROM sessions ORDER BY updated_at DESC LIMIT 1;`)
+	out, err := cmd.Output()
+	if err != nil || strings.TrimSpace(string(out)) == "" {
+		return nil
+	}
+
+	var rows []struct {
+		ID        string `json:"id"`
+		UpdatedAt int64  `json:"updated_at"`
+	}
+	if err := json.Unmarshal(out, &rows); err != nil || len(rows) == 0 {
+		return nil
+	}
+
+	sessionID := rows[0].ID
+	if sessionID == "" {
+		return nil
+	}
+
+	// Check session recency using the integer timestamp
+	updatedAt := rows[0].UpdatedAt
+	if updatedAt > 0 {
+		var t time.Time
+		if updatedAt > 1e12 {
+			// milliseconds
+			t = time.Unix(updatedAt/1000, (updatedAt%1000)*int64(time.Millisecond))
+		} else {
+			// seconds
+			t = time.Unix(updatedAt, 0)
+		}
+		if time.Since(t) > agent.RecentSessionTimeout {
+			return nil
+		}
+	}
+
+	transcriptData := buildTranscriptFromLocalDB(dbPath, sessionID)
+
+	return &agent.SessionInfo{
+		SessionID:      sessionID,
+		TranscriptPath: "",
+		StartedAt:      time.Now().Format(time.RFC3339),
+		ProjectPath:    projectPath,
+		TranscriptData: transcriptData,
+	}
+}
+
+// buildTranscriptFromLocalDB reads messages from the project-local opencode DB
+// and returns them as a JSON array compatible with ParseTranscript.
+func buildTranscriptFromLocalDB(dbPath, sessionID string) []byte {
+	if _, err := exec.LookPath("sqlite3"); err != nil {
+		return []byte("[]")
+	}
+
+	cmd := exec.Command("sqlite3", "-json", dbPath, fmt.Sprintf(
+		`SELECT id, role, parts FROM messages WHERE session_id='%s' ORDER BY created_at;`,
+		sessionID,
+	))
+	out, err := cmd.Output()
+	if err != nil || strings.TrimSpace(string(out)) == "" {
+		return []byte("[]")
+	}
+
+	var dbRows []struct {
+		ID    string `json:"id"`
+		Role  string `json:"role"`
+		Parts string `json:"parts"`
+	}
+	if err := json.Unmarshal(out, &dbRows); err != nil {
+		return []byte("[]")
+	}
+
+	type msgEntry struct {
+		ID      string      `json:"id"`
+		Role    string      `json:"role"`
+		Content interface{} `json:"content,omitempty"`
+	}
+
+	var entries []msgEntry
+	for _, row := range dbRows {
+		entry := msgEntry{ID: row.ID, Role: row.Role}
+
+		// Extract text content from the parts JSON array
+		if row.Parts != "" && row.Parts != "[]" {
+			var parts []struct {
+				Type string `json:"type"`
+				Data struct {
+					Text string `json:"text"`
+				} `json:"data"`
+			}
+			if err := json.Unmarshal([]byte(row.Parts), &parts); err == nil {
+				var texts []map[string]string
+				for _, p := range parts {
+					if p.Type == "text" && p.Data.Text != "" {
+						texts = append(texts, map[string]string{"type": "text", "text": p.Data.Text})
+					}
+				}
+				if len(texts) > 0 {
+					entry.Content = texts
+				}
+			}
+		}
+
+		entries = append(entries, entry)
+	}
+
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return []byte("[]")
+	}
+	return data
+}
+
 // discoverFromSQLite queries the OpenCode SQLite database for the most recent session.
+// This handles the sst/opencode variant which uses a user-level database with project_id.
 func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionInfo, error) {
 	dbPath := filepath.Join(dataDir, "opencode.db")
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
@@ -454,7 +589,6 @@ func parseOpenCodeEntry(raw map[string]json.RawMessage, fullData []byte) agent.T
 	return entry
 }
 
-
 // parseOpenCodeMessage parses message content from an OpenCode entry.
 func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageType) *agent.Message {
 	if msgType == "" {
@@ -497,4 +631,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
