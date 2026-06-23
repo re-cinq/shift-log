@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/re-cinq/shift-log/internal/agent"
 	_ "github.com/re-cinq/shift-log/internal/agent/claude"   // register Claude agent
@@ -77,10 +78,18 @@ func runHookStore() error {
 		return nil
 	}
 
-	// Read raw stdin
-	raw, err := io.ReadAll(os.Stdin)
+	// Read raw stdin with a timeout. Some agent versions (e.g. Gemini CLI ≥ v0.29.7)
+	// do not close the write-end of the hook command's stdin pipe, which would cause
+	// io.ReadAll to block indefinitely. The git post-commit hook handles note creation
+	// as a reliable fallback, so it is safe to bail out here on timeout.
+	raw, err := readHookStdin(3 * time.Second)
 	if err != nil {
-		cli.LogDebug("store: failed to read stdin: %v", err)
+		cli.LogDebug("store: stdin read failed or timed out: %v", err)
+		return nil
+	}
+
+	if len(raw) == 0 {
+		cli.LogDebug("store: empty stdin, skipping")
 		return nil
 	}
 
@@ -105,6 +114,26 @@ func runHookStore() error {
 	}
 
 	return storeConversation(ag, hookData.SessionID, hookData.TranscriptPath, hookData.TranscriptData)
+}
+
+// readHookStdin reads all of stdin, returning an error if EOF is not reached
+// within d. This prevents blocking when the agent does not close stdin.
+func readHookStdin(d time.Duration) ([]byte, error) {
+	type result struct {
+		data []byte
+		err  error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		data, err := io.ReadAll(os.Stdin)
+		ch <- result{data, err}
+	}()
+	select {
+	case res := <-ch:
+		return res.data, res.err
+	case <-time.After(d):
+		return nil, fmt.Errorf("stdin read timeout after %v", d)
+	}
 }
 
 // runManualStore handles the manual (post-commit hook) mode.
