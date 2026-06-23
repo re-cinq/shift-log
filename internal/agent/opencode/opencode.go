@@ -316,13 +316,24 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		return nil, nil
 	}
 
-	// Find most recent session for this project
+	// Find most recent session for this project.
+	// Try ordering by time_updated first; fall back to time_created if that column
+	// doesn't exist (schema varies across opencode versions).
 	sessionQuery := fmt.Sprintf(
 		`SELECT id FROM session WHERE project_id='%s' ORDER BY time_updated DESC LIMIT 1;`,
 		projectID,
 	)
 	cmd := exec.Command("sqlite3", "-separator", "\t", dbPath, sessionQuery)
 	sessionOutput, err := cmd.Output()
+	if err != nil {
+		// time_updated may not exist in this schema version; try time_created
+		sessionQuery = fmt.Sprintf(
+			`SELECT id FROM session WHERE project_id='%s' ORDER BY time_created DESC LIMIT 1;`,
+			projectID,
+		)
+		cmd = exec.Command("sqlite3", "-separator", "\t", dbPath, sessionQuery)
+		sessionOutput, err = cmd.Output()
+	}
 	if err != nil || strings.TrimSpace(string(sessionOutput)) == "" {
 		return nil, nil
 	}
@@ -349,24 +360,19 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 			if time.Since(t) > agent.RecentSessionTimeout {
 				return nil, nil
 			}
+		} else if ms, err := parseUnixMillis(timeStr); err == nil {
+			if time.Since(ms) > agent.RecentSessionTimeout {
+				return nil, nil
+			}
 		}
 		// If we can't parse the time, proceed anyway — better to try than skip
 	}
 
-	// Get messages for this session as a JSON array
-	msgQuery := fmt.Sprintf(
-		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
-		sessionID,
-	)
-	cmd = exec.Command("sqlite3", dbPath, msgQuery)
-	msgOutput, err := cmd.Output()
-	if err != nil {
-		return nil, nil
-	}
-
-	transcriptData := []byte(strings.TrimSpace(string(msgOutput)))
-	// sqlite3 returns "[null]" when no rows match
-	if string(transcriptData) == "[null]" || string(transcriptData) == "[]" {
+	// Get messages for this session as a JSON array.
+	// OpenCode v1.17+ stores message content in a 'parts' column (Vercel AI SDK format).
+	// Older versions used a 'data' column with a full JSON message blob.
+	transcriptData := fetchMessageData(dbPath, sessionID)
+	if len(transcriptData) == 0 {
 		return nil, nil
 	}
 
@@ -377,6 +383,60 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		ProjectPath:    projectPath,
 		TranscriptData: transcriptData,
 	}, nil
+}
+
+// fetchMessageData retrieves messages for a session from the SQLite database,
+// trying the v1.17+ schema (parts column) first and falling back to the older
+// schema (data column) if needed.
+func fetchMessageData(dbPath, sessionID string) []byte {
+	// v1.17+ schema: messages stored as 'parts' (Vercel AI SDK CoreMessage format)
+	q := fmt.Sprintf(
+		`SELECT json_group_array(json_object('id', id, 'role', role, 'content', json(parts))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
+		sessionID,
+	)
+	cmd := exec.Command("sqlite3", dbPath, q)
+	out, err := cmd.Output()
+	if err == nil {
+		data := []byte(strings.TrimSpace(string(out)))
+		if isValidTranscriptData(data) {
+			return data
+		}
+	}
+
+	// Pre-v1.17 schema: messages stored as a full JSON blob in 'data' column
+	q = fmt.Sprintf(
+		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
+		sessionID,
+	)
+	cmd = exec.Command("sqlite3", dbPath, q)
+	out, err = cmd.Output()
+	if err == nil {
+		data := []byte(strings.TrimSpace(string(out)))
+		if isValidTranscriptData(data) {
+			return data
+		}
+	}
+
+	return nil
+}
+
+// isValidTranscriptData returns true if data is a non-empty JSON array with at least one element.
+func isValidTranscriptData(data []byte) bool {
+	s := string(data)
+	return s != "" && s != "NULL" && s != "[null]" && s != "[]"
+}
+
+// parseUnixMillis parses a Unix timestamp in milliseconds from a string.
+func parseUnixMillis(s string) (time.Time, error) {
+	var ms int64
+	_, err := fmt.Sscanf(s, "%d", &ms)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if ms <= 0 {
+		return time.Time{}, fmt.Errorf("non-positive timestamp")
+	}
+	return time.UnixMilli(ms), nil
 }
 
 // RestoreSession writes a session to OpenCode's storage location.
@@ -497,4 +557,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
