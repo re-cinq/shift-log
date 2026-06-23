@@ -20,7 +20,7 @@ func init() {
 // Agent implements the agent.Agent interface for OpenCode CLI.
 type Agent struct{}
 
-func (a *Agent) Name() agent.Name   { return agent.OpenCode }
+func (a *Agent) Name() agent.Name    { return agent.OpenCode }
 func (a *Agent) DisplayName() string { return "OpenCode CLI" }
 
 // ConfigureHooks installs the shiftlog plugin for OpenCode.
@@ -94,14 +94,15 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 
 // IsCommitCommand checks if a tool invocation represents a git commit.
 func (a *Agent) IsCommitCommand(toolName, command string) bool {
-	// OpenCode tool names for shell execution
+	// OpenCode v1.17+ uses only "bash" as the shell tool name.
+	// Keep legacy names for backward compatibility with older versions.
 	shellTools := map[string]bool{
-		"bash":               true,
-		"shell":              true,
-		"terminal":           true,
-		"execute":            true,
-		"run":                true,
-		"command":            true,
+		"bash":     true,
+		"shell":    true,
+		"terminal": true,
+		"execute":  true,
+		"run":      true,
+		"command":  true,
 	}
 
 	if !shellTools[toolName] {
@@ -230,9 +231,16 @@ func (a *Agent) parseMessageDir(dir string) (*agent.Transcript, error) {
 }
 
 // DiscoverSession finds an active or recent OpenCode session.
-// It first tries flat file storage (pre-v1.2), then falls back to SQLite (v1.2+).
+// It checks the local project database first (v1.17+), then falls back to
+// flat file storage (pre-v1.2) and global SQLite (v1.2-v1.16).
 func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) {
-	// Try flat file storage first (pre-v1.2 OpenCode)
+	// OpenCode v1.17+ stores sessions in a local SQLite database in the project dir
+	localDbPath := filepath.Join(projectPath, ".opencode", "opencode.db")
+	if _, err := os.Stat(localDbPath); err == nil {
+		return discoverFromLocalSQLite(localDbPath, projectPath)
+	}
+
+	// Fall back to flat file storage (pre-v1.2 OpenCode)
 	session, err := a.discoverFromFlatFiles(projectPath)
 	if err != nil {
 		return nil, err
@@ -241,7 +249,7 @@ func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) 
 		return session, nil
 	}
 
-	// Fall back to SQLite (OpenCode v1.2+)
+	// Fall back to global SQLite (OpenCode v1.2-v1.16)
 	dataDir, err := GetDataDir()
 	if err != nil {
 		return nil, nil
@@ -304,7 +312,8 @@ func (a *Agent) discoverFromFlatFiles(projectPath string) (*agent.SessionInfo, e
 	}, nil
 }
 
-// discoverFromSQLite queries the OpenCode SQLite database for the most recent session.
+// discoverFromSQLite queries the OpenCode global SQLite database for the most recent session.
+// Used for OpenCode v1.2-v1.16 which stored sessions in the XDG data directory.
 func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionInfo, error) {
 	dbPath := filepath.Join(dataDir, "opencode.db")
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
@@ -438,7 +447,7 @@ func parseOpenCodeEntry(raw map[string]json.RawMessage, fullData []byte) agent.T
 		}
 	}
 
-	// Parse timestamp
+	// Parse timestamp: try "time.created" (legacy), then "created_at" (v1.17+ integer ms)
 	if timeRaw, ok := raw["time"]; ok {
 		var timeObj struct {
 			Created string `json:"created"`
@@ -447,13 +456,21 @@ func parseOpenCodeEntry(raw map[string]json.RawMessage, fullData []byte) agent.T
 			entry.Timestamp = timeObj.Created
 		}
 	}
+	if entry.Timestamp == "" {
+		if createdAtRaw, ok := raw["created_at"]; ok {
+			var ms int64
+			if err := json.Unmarshal(createdAtRaw, &ms); err == nil {
+				t := time.Unix(ms/1000, (ms%1000)*int64(time.Millisecond))
+				entry.Timestamp = t.Format(time.RFC3339)
+			}
+		}
+	}
 
 	// Parse content
 	entry.Message = parseOpenCodeMessage(raw, entry.Type)
 
 	return entry
 }
-
 
 // parseOpenCodeMessage parses message content from an OpenCode entry.
 func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageType) *agent.Message {
@@ -471,7 +488,53 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 		msg.Role = "system"
 	}
 
-	// Try "content" as string
+	// Try "parts" field (OpenCode v1.17+ format)
+	// parts is a JSON array of typed objects: [{type, data}, ...]
+	if partsRaw, ok := raw["parts"]; ok {
+		var parts []struct {
+			Type string          `json:"type"`
+			Data json.RawMessage `json:"data"`
+		}
+		// parts may be a JSON array directly, or a double-encoded JSON string
+		if err := json.Unmarshal(partsRaw, &parts); err != nil {
+			var partsStr string
+			if err2 := json.Unmarshal(partsRaw, &partsStr); err2 == nil {
+				_ = json.Unmarshal([]byte(partsStr), &parts)
+			}
+		}
+		if len(parts) > 0 {
+			var blocks []agent.ContentBlock
+			for _, p := range parts {
+				switch p.Type {
+				case "text":
+					var textData struct {
+						Text string `json:"text"`
+					}
+					if err := json.Unmarshal(p.Data, &textData); err == nil && textData.Text != "" {
+						blocks = append(blocks, agent.ContentBlock{Type: "text", Text: textData.Text})
+					}
+				case "tool_call":
+					var toolData struct {
+						ID    string          `json:"id"`
+						Name  string          `json:"name"`
+						Input json.RawMessage `json:"input"`
+					}
+					if err := json.Unmarshal(p.Data, &toolData); err == nil {
+						blocks = append(blocks, agent.ContentBlock{
+							Type:  "tool_use",
+							ID:    toolData.ID,
+							Name:  toolData.Name,
+							Input: toolData.Input,
+						})
+					}
+				}
+			}
+			msg.Content = blocks
+			return msg
+		}
+	}
+
+	// Try "content" as string (legacy format)
 	if contentRaw, ok := raw["content"]; ok {
 		var text string
 		if err := json.Unmarshal(contentRaw, &text); err == nil && text != "" {
@@ -487,7 +550,7 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 		}
 	}
 
-	// Try "message" field
+	// Try "message" field (legacy nested format)
 	if msgRaw, ok := raw["message"]; ok {
 		var innerMsg agent.Message
 		if err := json.Unmarshal(msgRaw, &innerMsg); err == nil {
@@ -497,4 +560,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
