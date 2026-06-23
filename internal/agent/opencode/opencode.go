@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -349,24 +350,49 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 			if time.Since(t) > agent.RecentSessionTimeout {
 				return nil, nil
 			}
+		} else if n, err := strconv.ParseInt(timeStr, 10, 64); err == nil {
+			// Handle INTEGER timestamps (Unix milliseconds or seconds)
+			var t time.Time
+			if n > 1_000_000_000_000 {
+				t = time.UnixMilli(n)
+			} else {
+				t = time.Unix(n, 0)
+			}
+			if time.Since(t) > agent.RecentSessionTimeout {
+				return nil, nil
+			}
 		}
 		// If we can't parse the time, proceed anyway — better to try than skip
 	}
 
-	// Get messages for this session as a JSON array
-	msgQuery := fmt.Sprintf(
-		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
-		sessionID,
-	)
-	cmd = exec.Command("sqlite3", dbPath, msgQuery)
-	msgOutput, err := cmd.Output()
-	if err != nil {
-		return nil, nil
+	// Get messages for this session as a JSON array.
+	// Try multiple queries in order of preference for broad SQLite compatibility:
+	//   1. json_set(data, '$.id', id)  — SQLite 3.9.0+, 'data' column (v1.2–v1.16)
+	//   2. json_set(parts, '$.id', id) — SQLite 3.9.0+, 'parts' column (v1.17+)
+	//   3. json_object('id',id,'role',role) — minimal fallback, any column layout
+	// json_patch requires SQLite 3.38.0+, so we avoid it for compatibility.
+	msgQueries := []string{
+		fmt.Sprintf(`SELECT json_group_array(json_set(data, '$.id', id)) FROM message WHERE session_id='%s' ORDER BY time_created;`, sessionID),
+		fmt.Sprintf(`SELECT json_group_array(json_set(parts, '$.id', id)) FROM message WHERE session_id='%s' ORDER BY time_created;`, sessionID),
+		fmt.Sprintf(`SELECT json_group_array(json_object('id', id, 'role', role)) FROM message WHERE session_id='%s' ORDER BY time_created;`, sessionID),
 	}
 
-	transcriptData := []byte(strings.TrimSpace(string(msgOutput)))
-	// sqlite3 returns "[null]" when no rows match
-	if string(transcriptData) == "[null]" || string(transcriptData) == "[]" {
+	var transcriptData []byte
+	for _, q := range msgQueries {
+		cmd = exec.Command("sqlite3", dbPath, q)
+		out, err := cmd.Output()
+		if err != nil {
+			continue
+		}
+		data := strings.TrimSpace(string(out))
+		if data == "[null]" || data == "[]" {
+			continue
+		}
+		transcriptData = []byte(data)
+		break
+	}
+
+	if transcriptData == nil {
 		return nil, nil
 	}
 
@@ -497,4 +523,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
