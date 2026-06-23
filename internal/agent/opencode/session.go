@@ -7,7 +7,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
+	"time"
+
+	"github.com/re-cinq/shift-log/internal/agent"
 )
 
 // GetDataDir returns the OpenCode data directory.
@@ -126,4 +130,132 @@ func WriteSessionFile(projectPath, sessionID string, transcriptData []byte) (str
 	_ = os.WriteFile(msgPath, transcriptData, 0600)
 
 	return sessionPath, nil
+}
+
+// discoverFromSQLite queries the OpenCode SQLite database for the most recent session.
+// Checks the project-local .opencode/opencode.db first (current opencode schema),
+// then falls back to the user data directory.
+func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionInfo, error) {
+	if _, err := exec.LookPath("sqlite3"); err != nil {
+		return nil, nil
+	}
+
+	// Try project-local database first (current opencode stores DB at .opencode/opencode.db).
+	localDB := filepath.Join(projectPath, ".opencode", "opencode.db")
+	if _, err := os.Stat(localDB); err == nil {
+		return discoverFromDB(localDB, projectPath)
+	}
+
+	// Fall back to user data directory (XDG-based path used by older or global installs).
+	dbPath := filepath.Join(dataDir, "opencode.db")
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		return nil, nil
+	}
+
+	return discoverFromDB(dbPath, projectPath)
+}
+
+// discoverFromDB finds the most recent session in an opencode SQLite database.
+// Tries the current schema (sessions/updated_at/messages/parts) first,
+// then falls back to the legacy schema (session/time_updated/message/data).
+func discoverFromDB(dbPath, projectPath string) (*agent.SessionInfo, error) {
+	// Try current schema: plural table names, Unix ms timestamps, parts column.
+	cmd := exec.Command("sqlite3", dbPath, `SELECT id FROM sessions ORDER BY updated_at DESC LIMIT 1;`)
+	out, err := cmd.Output()
+	if err == nil && strings.TrimSpace(string(out)) != "" {
+		return discoverFromDBCurrentSchema(dbPath, strings.TrimSpace(string(out)), projectPath)
+	}
+
+	// Fall back to legacy schema: singular table names, ISO timestamps, data column.
+	cmd = exec.Command("sqlite3", dbPath, `SELECT id FROM session ORDER BY time_updated DESC LIMIT 1;`)
+	out, err = cmd.Output()
+	if err != nil || strings.TrimSpace(string(out)) == "" {
+		return nil, nil
+	}
+	return discoverFromDBLegacySchema(dbPath, strings.TrimSpace(string(out)), projectPath)
+}
+
+// discoverFromDBCurrentSchema handles the current opencode schema
+// (tables: sessions, messages; updated_at/created_at as Unix ms; message data in parts).
+func discoverFromDBCurrentSchema(dbPath, sessionID, projectPath string) (*agent.SessionInfo, error) {
+	// Check recency: updated_at is stored as Unix milliseconds.
+	cmd := exec.Command("sqlite3", dbPath, fmt.Sprintf(`SELECT updated_at FROM sessions WHERE id='%s';`, sessionID))
+	out, err := cmd.Output()
+	if err == nil {
+		if ms, err := strconv.ParseInt(strings.TrimSpace(string(out)), 10, 64); err == nil {
+			t := time.Unix(ms/1000, (ms%1000)*int64(time.Millisecond))
+			if time.Since(t) > agent.RecentSessionTimeout {
+				return nil, nil
+			}
+		}
+		// If we can't parse (e.g. ISO string stored instead), proceed anyway.
+	}
+
+	// Get messages as a JSON array using the parts column.
+	msgQuery := fmt.Sprintf(
+		`SELECT json_group_array(json_object('id', id, 'role', role, 'parts', json(parts), 'model', COALESCE(model, ''))) FROM messages WHERE session_id='%s' ORDER BY created_at;`,
+		sessionID,
+	)
+	cmd = exec.Command("sqlite3", dbPath, msgQuery)
+	out, err = cmd.Output()
+	if err != nil {
+		return nil, nil
+	}
+
+	transcriptData := []byte(strings.TrimSpace(string(out)))
+	if string(transcriptData) == "[null]" || string(transcriptData) == "[]" {
+		return nil, nil
+	}
+
+	return &agent.SessionInfo{
+		SessionID:      sessionID,
+		TranscriptPath: "",
+		StartedAt:      time.Now().Format(time.RFC3339),
+		ProjectPath:    projectPath,
+		TranscriptData: transcriptData,
+	}, nil
+}
+
+// discoverFromDBLegacySchema handles the legacy opencode schema
+// (tables: session, message; timestamps as ISO strings; message data in data column).
+func discoverFromDBLegacySchema(dbPath, sessionID, projectPath string) (*agent.SessionInfo, error) {
+	// Check recency using ISO timestamp.
+	cmd := exec.Command("sqlite3", dbPath, fmt.Sprintf(`SELECT time_updated FROM session WHERE id='%s';`, sessionID))
+	out, err := cmd.Output()
+	if err == nil {
+		timeStr := strings.TrimSpace(string(out))
+		for _, layout := range []string{time.RFC3339Nano, "2006-01-02T15:04:05.000Z", "2006-01-02 15:04:05"} {
+			if t, err := time.Parse(layout, timeStr); err == nil {
+				if time.Since(t) > agent.RecentSessionTimeout {
+					return nil, nil
+				}
+				break
+			}
+		}
+		// If we can't parse the time, proceed anyway — better to try than skip.
+	}
+
+	// Get messages using the data column.
+	msgQuery := fmt.Sprintf(
+		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
+		sessionID,
+	)
+	cmd = exec.Command("sqlite3", dbPath, msgQuery)
+	out, err = cmd.Output()
+	if err != nil {
+		return nil, nil
+	}
+
+	transcriptData := []byte(strings.TrimSpace(string(out)))
+	if string(transcriptData) == "[null]" || string(transcriptData) == "[]" {
+		return nil, nil
+	}
+
+	return &agent.SessionInfo{
+		SessionID:      sessionID,
+		TranscriptPath: "",
+		StartedAt:      time.Now().Format(time.RFC3339),
+		ProjectPath:    projectPath,
+		TranscriptData: transcriptData,
+	}, nil
 }
