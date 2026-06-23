@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -96,12 +97,12 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 func (a *Agent) IsCommitCommand(toolName, command string) bool {
 	// OpenCode tool names for shell execution
 	shellTools := map[string]bool{
-		"bash":               true,
-		"shell":              true,
-		"terminal":           true,
-		"execute":            true,
-		"run":                true,
-		"command":            true,
+		"bash":      true,
+		"shell":     true,
+		"terminal":  true,
+		"execute":   true,
+		"run":       true,
+		"command":   true,
 	}
 
 	if !shellTools[toolName] {
@@ -230,7 +231,7 @@ func (a *Agent) parseMessageDir(dir string) (*agent.Transcript, error) {
 }
 
 // DiscoverSession finds an active or recent OpenCode session.
-// It first tries flat file storage (pre-v1.2), then falls back to SQLite (v1.2+).
+// It first tries flat file storage (pre-v1.2), then SQLite (v1.2+).
 func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) {
 	// Try flat file storage first (pre-v1.2 OpenCode)
 	session, err := a.discoverFromFlatFiles(projectPath)
@@ -305,6 +306,8 @@ func (a *Agent) discoverFromFlatFiles(projectPath string) (*agent.SessionInfo, e
 }
 
 // discoverFromSQLite queries the OpenCode SQLite database for the most recent session.
+// It tries the v1.17+ schema (sessions/messages tables with integer timestamps) first,
+// then falls back to the legacy schema (session/message tables with text timestamps).
 func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionInfo, error) {
 	dbPath := filepath.Join(dataDir, "opencode.db")
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
@@ -316,6 +319,84 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		return nil, nil
 	}
 
+	// Try new schema first (opencode v1.17+): 'sessions' table, INTEGER timestamps, no project_id.
+	if session := discoverFromSQLiteNewSchema(dbPath, projectPath); session != nil {
+		return session, nil
+	}
+
+	// Fall back to legacy schema: 'session' table with project_id and TEXT timestamps.
+	return discoverFromSQLiteLegacy(dbPath, projectID, projectPath)
+}
+
+// discoverFromSQLiteNewSchema queries the opencode v1.17+ schema.
+// Tables: sessions (id, title, message_count, updated_at INTEGER, created_at INTEGER)
+//         messages (id, session_id, role, parts TEXT, model, created_at INTEGER)
+func discoverFromSQLiteNewSchema(dbPath, projectPath string) *agent.SessionInfo {
+	// Get most recent session; no project_id filter exists in this schema.
+	cmd := exec.Command("sqlite3", "-separator", "\t", dbPath,
+		"SELECT id, updated_at FROM sessions ORDER BY updated_at DESC LIMIT 1;")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+
+	line := strings.TrimSpace(string(output))
+	if line == "" {
+		return nil
+	}
+
+	fields := strings.SplitN(line, "\t", 2)
+	if len(fields) == 0 || fields[0] == "" {
+		return nil
+	}
+	sessionID := fields[0]
+
+	// Check if session is recent. updated_at is a Unix timestamp (ms or s).
+	if len(fields) > 1 {
+		if ms, err := strconv.ParseInt(strings.TrimSpace(fields[1]), 10, 64); err == nil {
+			var t time.Time
+			if ms > 1_000_000_000_000 { // > 1e12 → milliseconds
+				t = time.UnixMilli(ms)
+			} else {
+				t = time.Unix(ms, 0)
+			}
+			if time.Since(t) > agent.RecentSessionTimeout {
+				return nil
+			}
+		}
+		// If timestamp can't be parsed, proceed anyway.
+	}
+
+	// Get messages using the 'parts' column.
+	msgQuery := fmt.Sprintf(
+		"SELECT json_group_array(json_object('id', id, 'role', role, 'parts', json(parts))) FROM messages WHERE session_id='%s' ORDER BY created_at;",
+		sessionID,
+	)
+	cmd = exec.Command("sqlite3", dbPath, msgQuery)
+	msgOutput, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+
+	transcriptData := []byte(strings.TrimSpace(string(msgOutput)))
+	if string(transcriptData) == "[null]" || string(transcriptData) == "[]" || string(transcriptData) == "" {
+		// Session exists but no messages yet — return session with empty transcript.
+		transcriptData = []byte("[]")
+	}
+
+	return &agent.SessionInfo{
+		SessionID:      sessionID,
+		TranscriptPath: "",
+		StartedAt:      time.Now().Format(time.RFC3339),
+		ProjectPath:    projectPath,
+		TranscriptData: transcriptData,
+	}
+}
+
+// discoverFromSQLiteLegacy queries the legacy opencode schema (pre-v1.17).
+// Tables: session (id, project_id, time_updated TEXT, ...)
+//         message (id, session_id, data JSON, time_created TEXT)
+func discoverFromSQLiteLegacy(dbPath, projectID, projectPath string) (*agent.SessionInfo, error) {
 	// Find most recent session for this project
 	sessionQuery := fmt.Sprintf(
 		`SELECT id FROM session WHERE project_id='%s' ORDER BY time_updated DESC LIMIT 1;`,
@@ -454,7 +535,6 @@ func parseOpenCodeEntry(raw map[string]json.RawMessage, fullData []byte) agent.T
 	return entry
 }
 
-
 // parseOpenCodeMessage parses message content from an OpenCode entry.
 func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageType) *agent.Message {
 	if msgType == "" {
@@ -469,6 +549,29 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 		msg.Role = "assistant"
 	case agent.MessageTypeSystem:
 		msg.Role = "system"
+	}
+
+	// Try "parts" field (opencode v1.17+ schema: array of typed part objects)
+	if partsRaw, ok := raw["parts"]; ok {
+		var partsArr []struct {
+			Type string          `json:"type"`
+			Data json.RawMessage `json:"data"`
+		}
+		if err := json.Unmarshal(partsRaw, &partsArr); err == nil {
+			for _, part := range partsArr {
+				if part.Type == "text" {
+					var textData struct {
+						Text string `json:"text"`
+					}
+					if err := json.Unmarshal(part.Data, &textData); err == nil && textData.Text != "" {
+						msg.Content = append(msg.Content, agent.ContentBlock{Type: "text", Text: textData.Text})
+					}
+				}
+			}
+			if len(msg.Content) > 0 {
+				return msg
+			}
+		}
 	}
 
 	// Try "content" as string
@@ -497,4 +600,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
