@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -304,11 +305,89 @@ func (a *Agent) discoverFromFlatFiles(projectPath string) (*agent.SessionInfo, e
 	}, nil
 }
 
+// sqliteTableColumns returns the set of column names for a SQLite table.
+// Uses PRAGMA table_info to introspect the schema at runtime, handling
+// both snake_case (older OpenCode) and camelCase (newer OpenCode) conventions.
+func sqliteTableColumns(dbPath, table string) map[string]bool {
+	cmd := exec.Command("sqlite3", dbPath, fmt.Sprintf("PRAGMA table_info(%s);", table))
+	out, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+	cols := make(map[string]bool)
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		// PRAGMA table_info output: cid|name|type|notnull|dflt_value|pk
+		parts := strings.SplitN(strings.TrimSpace(line), "|", 3)
+		if len(parts) >= 2 && parts[1] != "" {
+			cols[parts[1]] = true
+		}
+	}
+	return cols
+}
+
+// resolveCol returns the first candidate column that exists in the schema,
+// or the first candidate if the schema is nil/empty (safe default).
+func resolveCol(schema map[string]bool, candidates ...string) string {
+	for _, c := range candidates {
+		if schema[c] {
+			return c
+		}
+	}
+	return candidates[0]
+}
+
+// findOpenCodeDB searches for the OpenCode SQLite database in alternative
+// locations when not found at the primary path. OpenCode has changed its
+// default data directory across versions (XDG_DATA_HOME → XDG_CONFIG_HOME).
+func findOpenCodeDB() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+
+	var candidates []string
+	if runtime.GOOS == "darwin" {
+		candidates = []string{
+			filepath.Join(home, "Library", "Application Support", "opencode", "opencode.db"),
+			filepath.Join(home, ".config", "opencode", "opencode.db"),
+			filepath.Join(home, ".opencode", "opencode.db"),
+		}
+	} else {
+		// Linux/other: check XDG_CONFIG_HOME first (newer opencode), then XDG_DATA_HOME
+		if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+			candidates = append(candidates, filepath.Join(xdg, "opencode", "opencode.db"))
+		} else {
+			candidates = append(candidates, filepath.Join(home, ".config", "opencode", "opencode.db"))
+		}
+		if xdg := os.Getenv("XDG_DATA_HOME"); xdg != "" {
+			candidates = append(candidates, filepath.Join(xdg, "opencode", "opencode.db"))
+		} else {
+			candidates = append(candidates, filepath.Join(home, ".local", "share", "opencode", "opencode.db"))
+		}
+		candidates = append(candidates, filepath.Join(home, ".opencode", "opencode.db"))
+	}
+
+	for _, p := range candidates {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return ""
+}
+
 // discoverFromSQLite queries the OpenCode SQLite database for the most recent session.
+// It handles schema evolution across OpenCode versions by detecting actual column
+// names at runtime via PRAGMA table_info rather than assuming fixed names.
 func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionInfo, error) {
+	// Try primary location first, then search alternative directories.
+	// OpenCode has moved its data dir between versions (XDG_DATA_HOME → XDG_CONFIG_HOME).
 	dbPath := filepath.Join(dataDir, "opencode.db")
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
-		return nil, nil
+		if alt := findOpenCodeDB(); alt != "" {
+			dbPath = alt
+		} else {
+			return nil, nil
+		}
 	}
 
 	// Check sqlite3 is available
@@ -316,10 +395,16 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		return nil, nil
 	}
 
+	// Detect session table schema to handle snake_case (pre-v1.15) and
+	// camelCase (v1.15+) column naming conventions.
+	sessionCols := sqliteTableColumns(dbPath, "session")
+	projectIDCol := resolveCol(sessionCols, "project_id", "projectId")
+	timeUpdatedCol := resolveCol(sessionCols, "time_updated", "timeUpdated", "updatedAt", "updated_at")
+
 	// Find most recent session for this project
 	sessionQuery := fmt.Sprintf(
-		`SELECT id FROM session WHERE project_id='%s' ORDER BY time_updated DESC LIMIT 1;`,
-		projectID,
+		`SELECT id FROM session WHERE %s='%s' ORDER BY %s DESC LIMIT 1;`,
+		projectIDCol, projectID, timeUpdatedCol,
 	)
 	cmd := exec.Command("sqlite3", "-separator", "\t", dbPath, sessionQuery)
 	sessionOutput, err := cmd.Output()
@@ -330,8 +415,8 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 
 	// Check if this session was recent (within timeout)
 	timeQuery := fmt.Sprintf(
-		`SELECT time_updated FROM session WHERE id='%s';`,
-		sessionID,
+		`SELECT %s FROM session WHERE id='%s';`,
+		timeUpdatedCol, sessionID,
 	)
 	cmd = exec.Command("sqlite3", dbPath, timeQuery)
 	timeOutput, err := cmd.Output()
@@ -353,20 +438,14 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		// If we can't parse the time, proceed anyway — better to try than skip
 	}
 
-	// Get messages for this session as a JSON array
-	msgQuery := fmt.Sprintf(
-		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
-		sessionID,
-	)
-	cmd = exec.Command("sqlite3", dbPath, msgQuery)
-	msgOutput, err := cmd.Output()
-	if err != nil {
-		return nil, nil
-	}
+	// Detect message table schema for the same snake_case/camelCase reason.
+	msgCols := sqliteTableColumns(dbPath, "message")
+	msgSessionIDCol := resolveCol(msgCols, "session_id", "sessionId")
+	msgTimeCreatedCol := resolveCol(msgCols, "time_created", "timeCreated", "createdAt", "created_at")
 
-	transcriptData := []byte(strings.TrimSpace(string(msgOutput)))
+	transcriptData := buildSQLiteTranscript(dbPath, sessionID, msgSessionIDCol, msgTimeCreatedCol, msgCols)
 	// sqlite3 returns "[null]" when no rows match
-	if string(transcriptData) == "[null]" || string(transcriptData) == "[]" {
+	if len(transcriptData) == 0 || string(transcriptData) == "[null]" || string(transcriptData) == "[]" {
 		return nil, nil
 	}
 
@@ -377,6 +456,46 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		ProjectPath:    projectPath,
 		TranscriptData: transcriptData,
 	}, nil
+}
+
+// buildSQLiteTranscript constructs a JSON array of messages from the SQLite database.
+// It adapts to both the old schema (data JSON blob) and newer schemas (individual columns).
+func buildSQLiteTranscript(dbPath, sessionID, sessionIDCol, timeCreatedCol string, msgCols map[string]bool) []byte {
+	var msgQuery string
+	switch {
+	case msgCols["data"] && msgCols["id"]:
+		// Old schema: full message JSON in 'data' column, id stored separately
+		msgQuery = fmt.Sprintf(
+			`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE %s='%s' ORDER BY %s;`,
+			sessionIDCol, sessionID, timeCreatedCol,
+		)
+	case msgCols["data"]:
+		// Old schema variant: data column includes id
+		msgQuery = fmt.Sprintf(
+			`SELECT json_group_array(data) FROM message WHERE %s='%s' ORDER BY %s;`,
+			sessionIDCol, sessionID, timeCreatedCol,
+		)
+	case msgCols["role"]:
+		// Newer schema: individual columns for role and content
+		contentCol := resolveCol(msgCols, "content", "parts", "text", "body")
+		msgQuery = fmt.Sprintf(
+			`SELECT json_group_array(json_object('id', id, 'role', role, 'content', %s)) FROM message WHERE %s='%s' ORDER BY %s;`,
+			contentCol, sessionIDCol, sessionID, timeCreatedCol,
+		)
+	default:
+		// Fallback: build minimal JSON objects from whatever is available
+		msgQuery = fmt.Sprintf(
+			`SELECT json_group_array(json_object('id', id)) FROM message WHERE %s='%s' ORDER BY rowid;`,
+			sessionIDCol, sessionID,
+		)
+	}
+
+	cmd := exec.Command("sqlite3", dbPath, msgQuery)
+	out, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+	return []byte(strings.TrimSpace(string(out)))
 }
 
 // RestoreSession writes a session to OpenCode's storage location.
@@ -497,4 +616,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
