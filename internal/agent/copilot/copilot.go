@@ -20,7 +20,7 @@ func init() {
 // Agent implements the agent.Agent interface for GitHub Copilot CLI.
 type Agent struct{}
 
-func (a *Agent) Name() agent.Name   { return agent.Copilot }
+func (a *Agent) Name() agent.Name    { return agent.Copilot }
 func (a *Agent) DisplayName() string { return "Copilot CLI" }
 
 // ConfigureHooks sets up Copilot CLI hooks in .github/hooks/shiftlog.json.
@@ -119,10 +119,10 @@ func (a *Agent) DiagnoseHooks(repoRoot string) []agent.DiagnosticCheck {
 func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 	var hook struct {
 		// Generic format fields
-		SessionID      string `json:"session_id"`
-		TranscriptPath string `json:"transcript_path"`
+		SessionID       string `json:"session_id"`
+		TranscriptPath  string `json:"transcript_path"`
 		GenericToolName string `json:"tool_name"`
-		ToolInput      struct {
+		ToolInput       struct {
 			Command string `json:"command"`
 		} `json:"tool_input"`
 
@@ -409,17 +409,9 @@ func extractCommand(toolName string, toolArgs json.RawMessage) string {
 	return ""
 }
 
-// scanForRecentSession scans Copilot's session state directory for recent session directories.
+// scanForRecentSession scans all known Copilot session state directories for a recent session.
 func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
-	sessionDir, err := GetSessionStateDir()
-	if err != nil {
-		return nil, nil
-	}
-
-	entries, err := os.ReadDir(sessionDir)
-	if err != nil {
-		return nil, nil
-	}
+	dirs := getSessionStateDirs()
 
 	now := time.Now()
 	recentTimeout := agent.RecentSessionTimeout
@@ -427,36 +419,47 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	var bestSessionID string
 	var bestModTime time.Time
 
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-
-		info, err := entry.Info()
+	for _, sessionDir := range dirs {
+		entries, err := os.ReadDir(sessionDir)
 		if err != nil {
 			continue
 		}
 
-		modTime := info.ModTime()
-		if now.Sub(modTime) > recentTimeout {
-			continue
-		}
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
 
-		// Check if this session directory has a workspace.yaml
-		entryPath := filepath.Join(sessionDir, entry.Name())
-		meta, err := parseSessionMeta(entryPath)
-		if err != nil || meta == nil {
-			continue
-		}
+			info, err := entry.Info()
+			if err != nil {
+				continue
+			}
 
-		if !agent.PathsEqual(meta.CWD, projectPath) {
-			continue
-		}
+			modTime := info.ModTime()
+			if now.Sub(modTime) > recentTimeout {
+				continue
+			}
 
-		if bestDir == "" || modTime.After(bestModTime) {
-			bestDir = entryPath
-			bestSessionID = meta.ID
-			bestModTime = modTime
+			entryPath := filepath.Join(sessionDir, entry.Name())
+			meta, err := parseSessionMeta(entryPath)
+			if err != nil || meta == nil {
+				continue
+			}
+
+			// Check any of the path fields against the project path
+			effectivePath := meta.effectiveCWD()
+			if effectivePath == "" {
+				continue
+			}
+			if !agent.PathsEqual(effectivePath, projectPath) && !agent.PathsEqual(meta.GitRoot, projectPath) {
+				continue
+			}
+
+			if bestDir == "" || modTime.After(bestModTime) {
+				bestDir = entryPath
+				bestSessionID = meta.ID
+				bestModTime = modTime
+			}
 		}
 	}
 
@@ -471,5 +474,3 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 		ProjectPath:    projectPath,
 	}, nil
 }
-
-

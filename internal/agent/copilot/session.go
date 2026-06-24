@@ -9,10 +9,28 @@ import (
 )
 
 // sessionMeta represents lightweight metadata from a Copilot session workspace.yaml.
+// Field tags cover both the legacy format (v<=1.0.44) and the new format (v1.0.64+).
 type sessionMeta struct {
-	ID      string `yaml:"id"`
-	CWD     string `yaml:"cwd"`
-	GitRoot string `yaml:"git_root,omitempty"`
+	ID        string `yaml:"id"`
+	CWD       string `yaml:"cwd"`
+	Directory string `yaml:"directory"` // v1.0.64+: replaces cwd
+	GitRoot   string `yaml:"git_root,omitempty"`
+	Path      string `yaml:"path,omitempty"` // v1.0.64+: alternative to cwd
+}
+
+// effectiveCWD returns the best available working directory from the session metadata,
+// checking multiple field names used across copilot CLI versions.
+func (m *sessionMeta) effectiveCWD() string {
+	if m.CWD != "" {
+		return m.CWD
+	}
+	if m.Directory != "" {
+		return m.Directory
+	}
+	if m.Path != "" {
+		return m.Path
+	}
+	return m.GitRoot
 }
 
 // GetCopilotDir returns the path to Copilot's config/data directory.
@@ -31,6 +49,28 @@ func GetSessionStateDir() (string, error) {
 		return "", err
 	}
 	return filepath.Join(copilotDir, "session-state"), nil
+}
+
+// getSessionStateDirs returns all known session state directory paths for
+// different copilot CLI versions. Tried in order; first directory that exists wins.
+func getSessionStateDirs() []string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+
+	xdgState := os.Getenv("XDG_STATE_HOME")
+	if xdgState == "" {
+		xdgState = filepath.Join(home, ".local", "state")
+	}
+
+	return []string{
+		filepath.Join(home, ".copilot", "session-state"),          // <= v1.0.44
+		filepath.Join(home, ".copilot", "sessions"),                // v1.0.64+: renamed dir
+		filepath.Join(xdgState, "copilot", "sessions"),             // v1.0.64+: XDG state
+		filepath.Join(home, ".config", "github-copilot", "sessions"), // v1.0.64+: XDG config variant
+		filepath.Join(home, ".local", "share", "copilot", "sessions"), // XDG data variant
+	}
 }
 
 // parseSessionMeta reads a workspace.yaml from a Copilot session directory.
@@ -81,4 +121,3 @@ func WriteSessionFile(sessionID string, data []byte) (string, error) {
 	eventsPath := GetTranscriptPath(sessionDir)
 	return eventsPath, os.WriteFile(eventsPath, data, 0600)
 }
-
