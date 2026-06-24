@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
+
+	"github.com/re-cinq/shift-log/internal/agent"
 )
 
 // GetDataDir returns the OpenCode data directory.
@@ -126,4 +129,92 @@ func WriteSessionFile(projectPath, sessionID string, transcriptData []byte) (str
 	_ = os.WriteFile(msgPath, transcriptData, 0600)
 
 	return sessionPath, nil
+}
+
+// discoverFromSQLite queries the OpenCode SQLite database for the most recent session.
+func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionInfo, error) {
+	dbPath := filepath.Join(dataDir, "opencode.db")
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		return nil, nil
+	}
+
+	// Check sqlite3 is available
+	if _, err := exec.LookPath("sqlite3"); err != nil {
+		return nil, nil
+	}
+
+	// Find most recent session for this project.
+	// Use rowid for ordering — always available regardless of schema version,
+	// avoiding a hard dependency on the time_updated column name (renamed in v1.17+).
+	sessionQuery := fmt.Sprintf(
+		`SELECT id FROM session WHERE project_id='%s' ORDER BY rowid DESC LIMIT 1;`,
+		projectID,
+	)
+	cmd := exec.Command("sqlite3", "-separator", "\t", dbPath, sessionQuery)
+	sessionOutput, err := cmd.Output()
+	if err != nil || strings.TrimSpace(string(sessionOutput)) == "" {
+		return nil, nil
+	}
+	sessionID := strings.TrimSpace(string(sessionOutput))
+
+	// Check if this session was recent (within timeout).
+	// Try time_updated first; fall back to time_created for schemas that renamed the column.
+	recentChecked := false
+	for _, col := range []string{"time_updated", "time_created"} {
+		timeQuery := fmt.Sprintf(`SELECT %s FROM session WHERE id='%s';`, col, sessionID)
+		cmd = exec.Command("sqlite3", dbPath, timeQuery)
+		timeOutput, qErr := cmd.Output()
+		if qErr != nil {
+			continue
+		}
+		timeStr := strings.TrimSpace(string(timeOutput))
+		if timeStr == "" {
+			continue
+		}
+		recentChecked = true
+		for _, layout := range []string{time.RFC3339Nano, "2006-01-02T15:04:05.000Z", "2006-01-02 15:04:05"} {
+			if t, pErr := time.Parse(layout, timeStr); pErr == nil {
+				if time.Since(t) > agent.RecentSessionTimeout {
+					return nil, nil
+				}
+				goto timeCheckDone
+			}
+		}
+		// Unparseable time string — proceed rather than discard the session.
+		break
+	}
+timeCheckDone:
+	_ = recentChecked // If we couldn't read any time column, proceed anyway.
+
+	// Get messages for this session as a JSON array.
+	msgQuery := fmt.Sprintf(
+		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
+		sessionID,
+	)
+	cmd = exec.Command("sqlite3", dbPath, msgQuery)
+	msgOutput, err := cmd.Output()
+
+	var transcriptData []byte
+	if err != nil {
+		// Message query failed (schema may differ in this version).
+		// Return the session with an empty transcript so the commit is still attributed.
+		transcriptData = []byte("[]")
+	} else {
+		raw := strings.TrimSpace(string(msgOutput))
+		// sqlite3 returns "[null]" when no rows match; normalise to empty array.
+		if raw == "[null]" || raw == "" {
+			raw = "[]"
+		}
+		transcriptData = []byte(raw)
+		// An empty transcript ("[]") is still useful for session attribution —
+		// don't discard it; allow a note with message_count=0 to be stored.
+	}
+
+	return &agent.SessionInfo{
+		SessionID:      sessionID,
+		TranscriptPath: "", // no file path for SQLite
+		StartedAt:      time.Now().Format(time.RFC3339),
+		ProjectPath:    projectPath,
+		TranscriptData: transcriptData,
+	}, nil
 }

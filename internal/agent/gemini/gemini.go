@@ -18,7 +18,7 @@ func init() {
 // Agent implements the agent.Agent interface for Gemini CLI.
 type Agent struct{}
 
-func (a *Agent) Name() agent.Name   { return agent.Gemini }
+func (a *Agent) Name() agent.Name    { return agent.Gemini }
 func (a *Agent) DisplayName() string { return "Gemini CLI" }
 
 // ConfigureHooks sets up Gemini CLI hooks in .gemini/settings.json.
@@ -118,8 +118,47 @@ func (a *Agent) DiagnoseHooks(repoRoot string) []agent.DiagnosticCheck {
 }
 
 // ParseHookInput parses Gemini CLI's AfterTool hook JSON.
+// In gemini-cli v0.29.7+, the hook data no longer includes transcript_path
+// because sessions use slug-based directories. When transcript_path is absent,
+// we search for the session file by session ID across all project directories.
 func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
-	return agent.ParseStandardHookInput(raw)
+	hookData, err := agent.ParseStandardHookInput(raw)
+	if err != nil {
+		return nil, err
+	}
+	// Fallback: if transcript_path was not provided (v0.29.7+ slug-based sessions),
+	// search for the session file by session ID.
+	if hookData.TranscriptPath == "" && hookData.SessionID != "" {
+		if path := findTranscriptBySessionID(hookData.SessionID); path != "" {
+			hookData.TranscriptPath = path
+		}
+	}
+	return hookData, nil
+}
+
+// findTranscriptBySessionID searches ~/.gemini/tmp/*/chats/<sessionID>.json
+// for a session transcript file. Used when transcript_path is not provided
+// in the hook data (gemini-cli v0.29.7+).
+func findTranscriptBySessionID(sessionID string) string {
+	geminiDir, err := GetGeminiDir()
+	if err != nil {
+		return ""
+	}
+	tmpDir := filepath.Join(geminiDir, "tmp")
+	dirs, err := os.ReadDir(tmpDir)
+	if err != nil {
+		return ""
+	}
+	for _, dir := range dirs {
+		if !dir.IsDir() {
+			continue
+		}
+		candidate := filepath.Join(tmpDir, dir.Name(), "chats", sessionID+".json")
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	return ""
 }
 
 // shellToolNames are the known tool names Gemini CLI uses for shell execution.
@@ -196,13 +235,13 @@ func (a *Agent) ResumeCommand(sessionID string) (string, []string) {
 // ToolAliases returns Gemini CLI's tool name mappings to canonical names.
 func (a *Agent) ToolAliases() map[string]string {
 	return map[string]string{
-		"run_shell_command": "Bash",
-		"replace":          "Edit",
-		"grep_search":      "Grep",
-		"glob":             "Glob",
-		"list_directory":   "Glob",
-		"google_web_search": "WebSearch",
-		"web_fetch":        "WebFetch",
+		"run_shell_command":  "Bash",
+		"replace":            "Edit",
+		"grep_search":        "Grep",
+		"glob":               "Glob",
+		"list_directory":     "Glob",
+		"google_web_search":  "WebSearch",
+		"web_fetch":          "WebFetch",
 	}
 }
 
@@ -313,7 +352,6 @@ func ParseGeminiTranscript(r io.Reader) (*agent.Transcript, error) {
 	return t, nil
 }
 
-
 // scanForRecentSession scans Gemini's session directory for recent files.
 // It tries the primary directory (slug-based for v0.29+, hash-based otherwise),
 // falls back to the legacy hash directory, and finally does a broad scan of all
@@ -344,5 +382,3 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	// (e.g., absent file, path key mismatch, or non-interactive -p mode).
 	return ScanAllProjectDirs(projectPath)
 }
-
-
