@@ -3,7 +3,6 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -77,10 +76,15 @@ func runHookStore() error {
 		return nil
 	}
 
-	// Read raw stdin
-	raw, err := io.ReadAll(os.Stdin)
+	// Read stdin with a timeout to avoid blocking if the agent CLI doesn't close
+	// the pipe write-end after writing hook data (observed in some agent versions).
+	raw, err := cli.ReadStdin()
 	if err != nil {
 		cli.LogDebug("store: failed to read stdin: %v", err)
+		return nil
+	}
+	if len(raw) == 0 {
+		cli.LogDebug("store: no data on stdin, skipping")
 		return nil
 	}
 
