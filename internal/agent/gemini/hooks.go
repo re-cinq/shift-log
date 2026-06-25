@@ -20,10 +20,11 @@ type HookCmd struct {
 }
 
 // HooksConfig represents the hooks section of Gemini settings.
+// Gemini CLI 0.29+ uses camelCase keys.
 type HooksConfig struct {
-	AfterTool    []Hook `json:"AfterTool,omitempty"`
-	SessionStart []Hook `json:"SessionStart,omitempty"`
-	SessionEnd   []Hook `json:"SessionEnd,omitempty"`
+	AfterTool    []Hook `json:"afterTool,omitempty"`
+	SessionStart []Hook `json:"sessionStart,omitempty"`
+	SessionEnd   []Hook `json:"sessionEnd,omitempty"`
 }
 
 // Settings represents Gemini CLI's settings.json structure.
@@ -53,7 +54,26 @@ func ReadSettings(geminiDir string) (*Settings, error) {
 
 	if hooks, ok := raw["hooks"]; ok {
 		hookBytes, _ := json.Marshal(hooks)
-		_ = json.Unmarshal(hookBytes, &settings.Hooks)
+		// Migrate old PascalCase keys to camelCase before unmarshaling
+		var hookMap map[string]json.RawMessage
+		if err := json.Unmarshal(hookBytes, &hookMap); err == nil {
+			if v, ok := hookMap["AfterTool"]; ok && hookMap["afterTool"] == nil {
+				hookMap["afterTool"] = v
+				delete(hookMap, "AfterTool")
+			}
+			if v, ok := hookMap["SessionStart"]; ok && hookMap["sessionStart"] == nil {
+				hookMap["sessionStart"] = v
+				delete(hookMap, "SessionStart")
+			}
+			if v, ok := hookMap["SessionEnd"]; ok && hookMap["sessionEnd"] == nil {
+				hookMap["sessionEnd"] = v
+				delete(hookMap, "SessionEnd")
+			}
+			migratedBytes, _ := json.Marshal(hookMap)
+			_ = json.Unmarshal(migratedBytes, &settings.Hooks)
+		} else {
+			_ = json.Unmarshal(hookBytes, &settings.Hooks)
+		}
 		delete(raw, "hooks")
 	}
 

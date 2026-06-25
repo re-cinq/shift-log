@@ -99,7 +99,11 @@ func (a *Agent) DiagnoseHooks(repoRoot string) []agent.DiagnosticCheck {
 		return checks
 	}
 
-	afterTool, hasAfterTool := hooks["AfterTool"]
+	// Check both camelCase (0.29+) and PascalCase (pre-0.29) key names
+	afterTool, hasAfterTool := hooks["afterTool"]
+	if !hasAfterTool {
+		afterTool, hasAfterTool = hooks["AfterTool"]
+	}
 	if !hasAfterTool || !agent.HasNestedHookCommand(afterTool, "shiftlog store") {
 		checks = append(checks, agent.DiagnosticCheck{
 			Name:    "AfterTool hook",
@@ -118,7 +122,26 @@ func (a *Agent) DiagnoseHooks(repoRoot string) []agent.DiagnosticCheck {
 }
 
 // ParseHookInput parses Gemini CLI's AfterTool hook JSON.
+// Gemini 0.29+ uses camelCase field names; earlier versions use snake_case.
 func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
+	// Try camelCase format (gemini 0.29+)
+	var hookV2 struct {
+		SessionID      string `json:"sessionId"`
+		TranscriptPath string `json:"transcriptPath"`
+		ToolName       string `json:"toolName"`
+		ToolInput      struct {
+			Command string `json:"command"`
+		} `json:"toolInput"`
+	}
+	if err := json.Unmarshal(raw, &hookV2); err == nil && hookV2.ToolName != "" {
+		return &agent.HookData{
+			SessionID:      hookV2.SessionID,
+			TranscriptPath: hookV2.TranscriptPath,
+			ToolName:       hookV2.ToolName,
+			Command:        hookV2.ToolInput.Command,
+		}, nil
+	}
+	// Fall back to snake_case format (pre-0.29)
 	return agent.ParseStandardHookInput(raw)
 }
 
@@ -344,5 +367,3 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	// (e.g., absent file, path key mismatch, or non-interactive -p mode).
 	return ScanAllProjectDirs(projectPath)
 }
-
-

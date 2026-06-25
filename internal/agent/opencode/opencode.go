@@ -316,9 +316,11 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		return nil, nil
 	}
 
-	// Find most recent session for this project
+	// Find most recent session for this project.
+	// Use rowid for ordering — compatible across all opencode schema versions
+	// (avoids dependency on time_updated column which was removed in 1.17+).
 	sessionQuery := fmt.Sprintf(
-		`SELECT id FROM session WHERE project_id='%s' ORDER BY time_updated DESC LIMIT 1;`,
+		`SELECT id FROM session WHERE project_id='%s' ORDER BY rowid DESC LIMIT 1;`,
 		projectID,
 	)
 	cmd := exec.Command("sqlite3", "-separator", "\t", dbPath, sessionQuery)
@@ -328,34 +330,46 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 	}
 	sessionID := strings.TrimSpace(string(sessionOutput))
 
-	// Check if this session was recent (within timeout)
-	timeQuery := fmt.Sprintf(
-		`SELECT time_updated FROM session WHERE id='%s';`,
-		sessionID,
-	)
-	cmd = exec.Command("sqlite3", dbPath, timeQuery)
-	timeOutput, err := cmd.Output()
-	if err == nil {
+	// Check if this session was recent (within timeout).
+	// Try time_updated first (older schema), then time (newer schema).
+	// If neither exists or can't be parsed, proceed anyway.
+	for _, col := range []string{"time_updated", "time"} {
+		timeQuery := fmt.Sprintf(`SELECT %s FROM session WHERE id='%s';`, col, sessionID)
+		cmd = exec.Command("sqlite3", dbPath, timeQuery)
+		timeOutput, err := cmd.Output()
+		if err != nil {
+			continue
+		}
 		timeStr := strings.TrimSpace(string(timeOutput))
-		if t, err := time.Parse(time.RFC3339Nano, timeStr); err == nil {
-			if time.Since(t) > agent.RecentSessionTimeout {
-				return nil, nil
-			}
-		} else if t, err := time.Parse("2006-01-02T15:04:05.000Z", timeStr); err == nil {
-			if time.Since(t) > agent.RecentSessionTimeout {
-				return nil, nil
-			}
-		} else if t, err := time.Parse("2006-01-02 15:04:05", timeStr); err == nil {
-			if time.Since(t) > agent.RecentSessionTimeout {
-				return nil, nil
+		if timeStr == "" {
+			continue
+		}
+		// Try ISO 8601 formats
+		for _, layout := range []string{time.RFC3339Nano, "2006-01-02T15:04:05.000Z", "2006-01-02 15:04:05"} {
+			if t, err := time.Parse(layout, timeStr); err == nil {
+				if time.Since(t) > agent.RecentSessionTimeout {
+					return nil, nil
+				}
+				goto timeCheckDone
 			}
 		}
-		// If we can't parse the time, proceed anyway — better to try than skip
+		// Try Unix milliseconds (opencode 1.17+)
+		if ms := parseMilliseconds(timeStr); ms > 0 {
+			t := time.UnixMilli(ms)
+			if time.Since(t) > agent.RecentSessionTimeout {
+				return nil, nil
+			}
+			goto timeCheckDone
+		}
+		break
 	}
+timeCheckDone:
 
-	// Get messages for this session as a JSON array
+	// Get messages for this session as a JSON array.
+	// Use rowid for ordering — compatible across all opencode schema versions
+	// (avoids dependency on time_created column which was removed in 1.17+).
 	msgQuery := fmt.Sprintf(
-		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
+		`SELECT json_group_array(data) FROM message WHERE session_id='%s' ORDER BY rowid;`,
 		sessionID,
 	)
 	cmd = exec.Command("sqlite3", dbPath, msgQuery)
@@ -377,6 +391,23 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		ProjectPath:    projectPath,
 		TranscriptData: transcriptData,
 	}, nil
+}
+
+// parseMilliseconds attempts to parse a string as Unix milliseconds.
+// Returns 0 if the string is not a valid integer.
+func parseMilliseconds(s string) int64 {
+	var ms int64
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return 0
+		}
+		ms = ms*10 + int64(c-'0')
+	}
+	// Sanity check: must be in a plausible range (year 2000 to 2100 in ms)
+	if ms < 946684800000 || ms > 4102444800000 {
+		return 0
+	}
+	return ms
 }
 
 // RestoreSession writes a session to OpenCode's storage location.
@@ -497,4 +528,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-

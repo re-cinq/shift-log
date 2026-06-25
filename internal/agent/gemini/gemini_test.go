@@ -28,24 +28,48 @@ func TestAgentDisplayName(t *testing.T) {
 
 func TestParseHookInput(t *testing.T) {
 	a := &Agent{}
-	input := `{"session_id":"sess-1","transcript_path":"/tmp/t.json","tool_name":"run_shell_command","tool_input":{"command":"git commit -m test"}}`
 
-	hook, err := a.ParseHookInput([]byte(input))
-	if err != nil {
-		t.Fatalf("ParseHookInput() error: %v", err)
-	}
-	if hook.SessionID != "sess-1" {
-		t.Errorf("SessionID = %q, want %q", hook.SessionID, "sess-1")
-	}
-	if hook.TranscriptPath != "/tmp/t.json" {
-		t.Errorf("TranscriptPath = %q, want %q", hook.TranscriptPath, "/tmp/t.json")
-	}
-	if hook.ToolName != "run_shell_command" {
-		t.Errorf("ToolName = %q, want %q", hook.ToolName, "run_shell_command")
-	}
-	if hook.Command != "git commit -m test" {
-		t.Errorf("Command = %q, want %q", hook.Command, "git commit -m test")
-	}
+	t.Run("snake_case (pre-0.29)", func(t *testing.T) {
+		input := `{"session_id":"sess-1","transcript_path":"/tmp/t.json","tool_name":"run_shell_command","tool_input":{"command":"git commit -m test"}}`
+
+		hook, err := a.ParseHookInput([]byte(input))
+		if err != nil {
+			t.Fatalf("ParseHookInput() error: %v", err)
+		}
+		if hook.SessionID != "sess-1" {
+			t.Errorf("SessionID = %q, want %q", hook.SessionID, "sess-1")
+		}
+		if hook.TranscriptPath != "/tmp/t.json" {
+			t.Errorf("TranscriptPath = %q, want %q", hook.TranscriptPath, "/tmp/t.json")
+		}
+		if hook.ToolName != "run_shell_command" {
+			t.Errorf("ToolName = %q, want %q", hook.ToolName, "run_shell_command")
+		}
+		if hook.Command != "git commit -m test" {
+			t.Errorf("Command = %q, want %q", hook.Command, "git commit -m test")
+		}
+	})
+
+	t.Run("camelCase (0.29+)", func(t *testing.T) {
+		input := `{"sessionId":"sess-2","transcriptPath":"/tmp/t2.json","toolName":"run_shell_command","toolInput":{"command":"git commit -m test2"}}`
+
+		hook, err := a.ParseHookInput([]byte(input))
+		if err != nil {
+			t.Fatalf("ParseHookInput() camelCase error: %v", err)
+		}
+		if hook.SessionID != "sess-2" {
+			t.Errorf("SessionID = %q, want %q", hook.SessionID, "sess-2")
+		}
+		if hook.TranscriptPath != "/tmp/t2.json" {
+			t.Errorf("TranscriptPath = %q, want %q", hook.TranscriptPath, "/tmp/t2.json")
+		}
+		if hook.ToolName != "run_shell_command" {
+			t.Errorf("ToolName = %q, want %q", hook.ToolName, "run_shell_command")
+		}
+		if hook.Command != "git commit -m test2" {
+			t.Errorf("Command = %q, want %q", hook.Command, "git commit -m test2")
+		}
+	})
 }
 
 func TestIsCommitCommand(t *testing.T) {
@@ -211,15 +235,16 @@ func TestConfigureHooks(t *testing.T) {
 		t.Fatal("Missing hooks key in settings")
 	}
 
-	afterTool, ok := hooks["AfterTool"].([]interface{})
+	// Gemini 0.29+ uses camelCase key "afterTool"
+	afterTool, ok := hooks["afterTool"].([]interface{})
 	if !ok || len(afterTool) == 0 {
-		t.Fatal("Missing AfterTool hook")
+		t.Fatal("Missing afterTool hook (expected camelCase key for gemini 0.29+)")
 	}
 
 	// Verify matcher is run_shell_command
 	hookObj := afterTool[0].(map[string]interface{})
 	if hookObj["matcher"] != "run_shell_command" {
-		t.Errorf("AfterTool matcher = %q, want run_shell_command", hookObj["matcher"])
+		t.Errorf("afterTool matcher = %q, want run_shell_command", hookObj["matcher"])
 	}
 
 	// Verify timeout is 30000 (milliseconds)
@@ -227,7 +252,7 @@ func TestConfigureHooks(t *testing.T) {
 	hookCmd := hookCmds[0].(map[string]interface{})
 	timeout := hookCmd["timeout"].(float64)
 	if timeout != 30000 {
-		t.Errorf("AfterTool timeout = %v, want 30000", timeout)
+		t.Errorf("afterTool timeout = %v, want 30000", timeout)
 	}
 }
 
@@ -505,5 +530,36 @@ func TestNormalizeGeminiType(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("NormalizeRole(%q) = %q, want %q", tc.input, got, tc.want)
 		}
+	}
+}
+
+func TestReadSettingsMigratesPascalCase(t *testing.T) {
+	tmpDir := t.TempDir()
+	geminiDir := filepath.Join(tmpDir, ".gemini")
+	if err := os.MkdirAll(geminiDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write settings with old PascalCase keys (pre-0.29 format)
+	oldSettings := `{
+		"hooks": {
+			"AfterTool": [{"matcher": "run_shell_command", "hooks": [{"type": "command", "command": "shiftlog store --agent=gemini"}]}],
+			"SessionStart": [{"hooks": [{"type": "command", "command": "shiftlog session-start --agent=gemini"}]}]
+		}
+	}`
+	if err := os.WriteFile(filepath.Join(geminiDir, "settings.json"), []byte(oldSettings), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	settings, err := ReadSettings(geminiDir)
+	if err != nil {
+		t.Fatalf("ReadSettings() error: %v", err)
+	}
+
+	if len(settings.Hooks.AfterTool) == 0 {
+		t.Error("Expected AfterTool hooks to be migrated from PascalCase 'AfterTool'")
+	}
+	if len(settings.Hooks.SessionStart) == 0 {
+		t.Error("Expected SessionStart hooks to be migrated from PascalCase 'SessionStart'")
 	}
 }
