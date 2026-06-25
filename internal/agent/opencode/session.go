@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-// GetDataDir returns the OpenCode data directory.
+// GetDataDir returns the OpenCode data directory for writing.
 // OpenCode follows XDG conventions: it uses $XDG_DATA_HOME/opencode on Linux
 // and ~/Library/Application Support/opencode on macOS.
 func GetDataDir() (string, error) {
@@ -32,6 +32,42 @@ func GetDataDir() (string, error) {
 		return "", fmt.Errorf("could not determine home directory: %w", err)
 	}
 	return filepath.Join(home, ".local", "share", "opencode"), nil
+}
+
+// GetDataDirCandidates returns candidate data directories for session discovery,
+// in preference order. Tries XDG_STATE_HOME (opencode v1.15+) before
+// XDG_DATA_HOME (pre-v1.15) to handle the storage migration between versions.
+func GetDataDirCandidates() []string {
+	if runtime.GOOS == "darwin" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil
+		}
+		return []string{filepath.Join(home, "Library", "Application Support", "opencode")}
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+
+	var candidates []string
+
+	// XDG_STATE_HOME takes precedence if set (opencode v1.15+)
+	if xdg := os.Getenv("XDG_STATE_HOME"); xdg != "" {
+		candidates = append(candidates, filepath.Join(xdg, "opencode"))
+	} else {
+		candidates = append(candidates, filepath.Join(home, ".local", "state", "opencode"))
+	}
+
+	// XDG_DATA_HOME fallback (pre-v1.15)
+	if xdg := os.Getenv("XDG_DATA_HOME"); xdg != "" {
+		candidates = append(candidates, filepath.Join(xdg, "opencode"))
+	} else {
+		candidates = append(candidates, filepath.Join(home, ".local", "share", "opencode"))
+	}
+
+	return candidates
 }
 
 // GetProjectID returns the project identifier for OpenCode.
