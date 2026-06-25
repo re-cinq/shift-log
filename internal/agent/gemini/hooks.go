@@ -1,3 +1,4 @@
+```go
 package gemini
 
 import (
@@ -110,31 +111,6 @@ func AddShiftlogHook(settings *Settings) {
 	settings.Hooks.AfterTool = append(settings.Hooks.AfterTool, shiftlogHook)
 }
 
-// AddSessionHooks adds SessionStart and SessionEnd hooks for session tracking.
-func AddSessionHooks(settings *Settings) {
-	startHook := Hook{
-		Hooks: []HookCmd{
-			{
-				Type:    "command",
-				Command: "shiftlog session-start --agent=gemini",
-				Timeout: 5000,
-			},
-		},
-	}
-	endHook := Hook{
-		Hooks: []HookCmd{
-			{
-				Type:    "command",
-				Command: "shiftlog session-end --agent=gemini",
-				Timeout: 5000,
-			},
-		},
-	}
-
-	settings.Hooks.SessionStart = addOrUpdateHook(settings.Hooks.SessionStart, startHook, "shiftlog session-start")
-	settings.Hooks.SessionEnd = addOrUpdateHook(settings.Hooks.SessionEnd, endHook, "shiftlog session-end")
-}
-
 // RemoveShiftlogHook removes shiftlog store hook entries from AfterTool.
 func RemoveShiftlogHook(settings *Settings) {
 	filtered := settings.Hooks.AfterTool[:0]
@@ -153,7 +129,8 @@ func RemoveShiftlogHook(settings *Settings) {
 	settings.Hooks.AfterTool = filtered
 }
 
-// RemoveSessionHooks removes shiftlog session hooks from SessionStart and SessionEnd.
+// RemoveSessionHooks removes legacy shiftlog session hooks from SessionStart and SessionEnd.
+// These hooks were removed in favor of file-based session discovery (v0.29.7+).
 func RemoveSessionHooks(settings *Settings) {
 	settings.Hooks.SessionStart = removeHookByCommand(settings.Hooks.SessionStart, "shiftlog session-start --agent=gemini")
 	settings.Hooks.SessionEnd = removeHookByCommand(settings.Hooks.SessionEnd, "shiftlog session-end --agent=gemini")
@@ -175,15 +152,4 @@ func removeHookByCommand(hooks []Hook, command string) []Hook {
 	}
 	return filtered
 }
-
-func addOrUpdateHook(hooks []Hook, newHook Hook, commandPrefix string) []Hook {
-	for i, hook := range hooks {
-		for _, h := range hook.Hooks {
-			if h.Command == commandPrefix || h.Command == commandPrefix+" --agent=gemini" {
-				hooks[i] = newHook
-				return hooks
-			}
-		}
-	}
-	return append(hooks, newHook)
-}
+```
