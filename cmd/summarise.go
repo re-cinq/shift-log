@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -123,8 +124,7 @@ func runSummarise(cmd *cobra.Command, args []string) error {
 
 	binary, cmdArgs := summariser.SummariseCommand()
 
-	// Pass prompt as a positional argument (not stdin) — Claude Code v2.1.49+
-	// drains stdin before reading the prompt in -p mode.
+	// Pass prompt as a positional argument
 	cmdArgs = append(cmdArgs, prompt)
 
 	// Check binary exists
@@ -140,6 +140,15 @@ func runSummarise(cmd *cobra.Command, args []string) error {
 	defer cancel()
 
 	agentCmd := exec.CommandContext(ctx, binaryPath, cmdArgs...)
+
+	// Run in a temp directory so the agent doesn't load existing project session
+	// context from the current directory, which would pollute the summary.
+	tmpDir, err := os.MkdirTemp("", "shiftlog-summarise-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temp dir for summarise: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+	agentCmd.Dir = tmpDir
 
 	var stdout, stderr bytes.Buffer
 	agentCmd.Stdout = &stdout

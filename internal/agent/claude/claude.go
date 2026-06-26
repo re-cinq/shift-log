@@ -299,8 +299,9 @@ func (a *Agent) ResumeCommand(sessionID string) (string, []string) {
 }
 
 // SummariseCommand returns the command to run Claude Code in non-interactive mode.
+// Uses --print (long form) for compatibility with Claude Code v2.1.193+.
 func (a *Agent) SummariseCommand() (string, []string) {
-	return "claude", []string{"-p", "--output-format", "text"}
+	return "claude", []string{"--print", "--output-format", "text"}
 }
 
 // ToolAliases returns Claude Code's tool name mappings.
@@ -452,5 +453,3 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	}
 	return agent.ScanDirForRecentSession(sessionDir, ".jsonl", nil, projectPath)
 }
-
-

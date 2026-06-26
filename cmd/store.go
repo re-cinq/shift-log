@@ -3,7 +3,6 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -77,12 +76,16 @@ func runHookStore() error {
 		return nil
 	}
 
-	// Read raw stdin
-	raw, err := io.ReadAll(os.Stdin)
-	if err != nil {
-		cli.LogDebug("store: failed to read stdin: %v", err)
+	// Use a JSON decoder rather than io.ReadAll so we return as soon as we
+	// have one complete JSON object. Some agents (e.g. Gemini CLI v0.29+)
+	// leave stdin open after writing the hook payload, which would cause
+	// io.ReadAll to block until the hook timeout kills the process.
+	var rawMsg json.RawMessage
+	if err := json.NewDecoder(os.Stdin).Decode(&rawMsg); err != nil {
+		cli.LogDebug("store: failed to decode stdin JSON: %v", err)
 		return nil
 	}
+	raw := []byte(rawMsg)
 
 	hookData, err := ag.ParseHookInput(raw)
 	if err != nil {
