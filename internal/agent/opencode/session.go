@@ -10,6 +10,12 @@ import (
 	"strings"
 )
 
+// GetDatabasePath returns the path to the project-local OpenCode SQLite database.
+// OpenCode v1.17+ stores its database at <project>/.opencode/opencode.db.
+func GetDatabasePath(projectPath string) string {
+	return filepath.Join(projectPath, ".opencode", "opencode.db")
+}
+
 // GetDataDir returns the OpenCode data directory.
 // OpenCode follows XDG conventions: it uses $XDG_DATA_HOME/opencode on Linux
 // and ~/Library/Application Support/opencode on macOS.
