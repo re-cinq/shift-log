@@ -34,6 +34,44 @@ func GetDataDir() (string, error) {
 	return filepath.Join(home, ".local", "share", "opencode"), nil
 }
 
+// getPossibleDataDirs returns all candidate data directories to try for session
+// discovery, ordered from most to least likely. This handles path changes across
+// OpenCode versions without requiring an exact match.
+func getPossibleDataDirs() []string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		primary, _ := GetDataDir()
+		return []string{primary}
+	}
+
+	if runtime.GOOS == "darwin" {
+		return []string{
+			filepath.Join(home, "Library", "Application Support", "opencode"),
+		}
+	}
+
+	var dirs []string
+
+	// XDG_DATA_HOME takes priority when set
+	if xdg := os.Getenv("XDG_DATA_HOME"); xdg != "" {
+		dirs = append(dirs, filepath.Join(xdg, "opencode"))
+	}
+
+	// Standard XDG data home
+	dirs = append(dirs, filepath.Join(home, ".local", "share", "opencode"))
+
+	// XDG config home (some versions may have moved here)
+	if xdgCfg := os.Getenv("XDG_CONFIG_HOME"); xdgCfg != "" {
+		dirs = append(dirs, filepath.Join(xdgCfg, "opencode"))
+	}
+	dirs = append(dirs, filepath.Join(home, ".config", "opencode"))
+
+	// Home dotdir (older / simpler convention)
+	dirs = append(dirs, filepath.Join(home, ".opencode"))
+
+	return dirs
+}
+
 // GetProjectID returns the project identifier for OpenCode.
 // For git repos, this is the root commit hash. For non-git dirs, it's "global".
 func GetProjectID(projectPath string) string {
