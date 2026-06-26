@@ -83,6 +83,18 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 		transcriptData = []byte(hook.TranscriptData)
 	}
 
+	// If no inline data, try SQLite when the message directory doesn't exist (OpenCode v1.2+ SQLite mode).
+	// This handles the case where the plugin's client API call timed out or was unavailable.
+	if len(transcriptData) == 0 && hook.DataDir != "" && hook.SessionID != "" {
+		msgDir := filepath.Join(hook.DataDir, "storage", "message", hook.SessionID)
+		if _, err := os.Stat(msgDir); os.IsNotExist(err) {
+			dbPath := filepath.Join(hook.DataDir, "opencode.db")
+			if data := readMessagesFromSQLite(dbPath, hook.SessionID); len(data) > 0 {
+				transcriptData = data
+			}
+		}
+	}
+
 	return &agent.HookData{
 		SessionID:      hook.SessionID,
 		TranscriptPath: transcriptPath,
@@ -96,12 +108,12 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 func (a *Agent) IsCommitCommand(toolName, command string) bool {
 	// OpenCode tool names for shell execution
 	shellTools := map[string]bool{
-		"bash":               true,
-		"shell":              true,
-		"terminal":           true,
-		"execute":            true,
-		"run":                true,
-		"command":            true,
+		"bash":     true,
+		"shell":    true,
+		"terminal": true,
+		"execute":  true,
+		"run":      true,
+		"command":  true,
 	}
 
 	if !shellTools[toolName] {
@@ -316,9 +328,10 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		return nil, nil
 	}
 
-	// Find most recent session for this project
+	// Find most recent session for this project.
+	// Use rowid for ordering — robust across schema versions that may differ in timestamp column names.
 	sessionQuery := fmt.Sprintf(
-		`SELECT id FROM session WHERE project_id='%s' ORDER BY time_updated DESC LIMIT 1;`,
+		`SELECT id FROM session WHERE project_id='%s' ORDER BY rowid DESC LIMIT 1;`,
 		projectID,
 	)
 	cmd := exec.Command("sqlite3", "-separator", "\t", dbPath, sessionQuery)
@@ -328,7 +341,8 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 	}
 	sessionID := strings.TrimSpace(string(sessionOutput))
 
-	// Check if this session was recent (within timeout)
+	// Check if this session was recent (within timeout).
+	// time_updated may not exist in all schema versions; if the query fails we proceed anyway.
 	timeQuery := fmt.Sprintf(
 		`SELECT time_updated FROM session WHERE id='%s';`,
 		sessionID,
@@ -353,20 +367,8 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		// If we can't parse the time, proceed anyway — better to try than skip
 	}
 
-	// Get messages for this session as a JSON array
-	msgQuery := fmt.Sprintf(
-		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
-		sessionID,
-	)
-	cmd = exec.Command("sqlite3", dbPath, msgQuery)
-	msgOutput, err := cmd.Output()
-	if err != nil {
-		return nil, nil
-	}
-
-	transcriptData := []byte(strings.TrimSpace(string(msgOutput)))
-	// sqlite3 returns "[null]" when no rows match
-	if string(transcriptData) == "[null]" || string(transcriptData) == "[]" {
+	transcriptData := readMessagesFromSQLite(dbPath, sessionID)
+	if transcriptData == nil {
 		return nil, nil
 	}
 
@@ -377,6 +379,33 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		ProjectPath:    projectPath,
 		TranscriptData: transcriptData,
 	}, nil
+}
+
+// readMessagesFromSQLite fetches messages for a session from the OpenCode SQLite database.
+// Returns a JSON array of messages, or nil if unavailable.
+// Uses json_set (SQLite 3.15+) and json_group_array (SQLite 3.9+) for broad compatibility.
+func readMessagesFromSQLite(dbPath, sessionID string) []byte {
+	if _, err := exec.LookPath("sqlite3"); err != nil {
+		return nil
+	}
+
+	// json_set merges the separate id column into the message data JSON.
+	// ORDER BY rowid is robust across schema versions (no dependency on time_created).
+	query := fmt.Sprintf(
+		`SELECT json_group_array(json_set(data, '$.id', id)) FROM message WHERE session_id='%s' ORDER BY rowid;`,
+		sessionID,
+	)
+	cmd := exec.Command("sqlite3", dbPath, query)
+	output, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+
+	data := strings.TrimSpace(string(output))
+	if data == "[null]" || data == "[]" {
+		return nil
+	}
+	return []byte(data)
 }
 
 // RestoreSession writes a session to OpenCode's storage location.
@@ -454,7 +483,6 @@ func parseOpenCodeEntry(raw map[string]json.RawMessage, fullData []byte) agent.T
 	return entry
 }
 
-
 // parseOpenCodeMessage parses message content from an OpenCode entry.
 func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageType) *agent.Message {
 	if msgType == "" {
@@ -497,4 +525,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
