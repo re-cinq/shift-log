@@ -303,6 +303,11 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
     try { fs.appendFileSync(captureFile, JSON.stringify(data) + "\n"); } catch(e) {}
   };
 
+  const withTimeout = (p, ms) => Promise.race([
+    p,
+    new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))
+  ]);
+
   return {
     "tool.execute.before": async (input, output) => {
       capture({
@@ -344,7 +349,10 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
       let transcriptData = "";
       if (client && pending.sessionID) {
         try {
-          const msgs = await client.session.messages({ path: { id: pending.sessionID } });
+          const msgs = await withTimeout(
+            client.session.messages({ path: { id: pending.sessionID } }),
+            5000
+          );
           if (msgs && Array.isArray(msgs)) {
             transcriptData = JSON.stringify(msgs.map(m => ({
               role: m.role || "",

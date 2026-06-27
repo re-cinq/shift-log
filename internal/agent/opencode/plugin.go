@@ -22,6 +22,11 @@ const pluginTemplate = `// shiftlog plugin for OpenCode CLI
 export const ShiftlogPlugin = async ({ directory, client }) => {
   const pendingCommits = new Map();
 
+  const withTimeout = (p, ms) => Promise.race([
+    p,
+    new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))
+  ]);
+
   return {
     "tool.execute.before": async (input, output) => {
       const command = output?.args?.command || output?.args?.cmd || "";
@@ -39,11 +44,14 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
       if (!pending) return;
       pendingCommits.delete(input.callID);
 
-      // Try to fetch messages via the SDK client API
+      // Try to fetch messages via the SDK client API (with timeout to handle API changes)
       let transcriptData = "";
       if (client && pending.sessionID) {
         try {
-          const msgs = await client.session.messages({ path: { id: pending.sessionID } });
+          const msgs = await withTimeout(
+            client.session.messages({ path: { id: pending.sessionID } }),
+            5000
+          );
           if (msgs && Array.isArray(msgs)) {
             transcriptData = JSON.stringify(msgs.map(m => ({
               role: m.role || "",
