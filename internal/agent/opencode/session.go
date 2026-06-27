@@ -127,3 +127,31 @@ func WriteSessionFile(projectPath, sessionID string, transcriptData []byte) (str
 
 	return sessionPath, nil
 }
+
+// queryMessagesFromSQLite fetches all messages for a session from the SQLite database
+// and returns them serialised as a JSON array ready for ParseTranscript.
+//
+// Uses json(data) rather than json_patch(data, json_object('id', id)) so that the
+// query works even when the message table has no separate 'id' column (OpenCode ≥1.17).
+func queryMessagesFromSQLite(dbPath, sessionID string) ([]byte, error) {
+	if _, err := exec.LookPath("sqlite3"); err != nil {
+		return nil, fmt.Errorf("sqlite3 not in PATH: %w", err)
+	}
+
+	query := fmt.Sprintf(
+		`SELECT json_group_array(json(data)) FROM message WHERE session_id='%s' ORDER BY time_created;`,
+		sessionID,
+	)
+	cmd := exec.Command("sqlite3", dbPath, query)
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("sqlite3 query failed: %w", err)
+	}
+
+	trimmed := strings.TrimSpace(string(out))
+	if trimmed == "" || trimmed == "[null]" || trimmed == "[]" {
+		return nil, fmt.Errorf("no messages found for session %s", sessionID)
+	}
+
+	return []byte(trimmed), nil
+}
