@@ -127,3 +127,29 @@ func WriteSessionFile(projectPath, sessionID string, transcriptData []byte) (str
 
 	return sessionPath, nil
 }
+
+// querySQLiteMessages fetches all messages for a session from the OpenCode SQLite
+// database and returns them as a JSON array. Ordering by rowid avoids depending on
+// timestamp column names (e.g. time_created) that may change across opencode versions.
+func querySQLiteMessages(dbPath, sessionID string) ([]byte, error) {
+	if _, err := os.Stat(dbPath); err != nil {
+		return nil, err
+	}
+	if _, err := exec.LookPath("sqlite3"); err != nil {
+		return nil, err
+	}
+	msgQuery := fmt.Sprintf(
+		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY rowid;`,
+		sessionID,
+	)
+	cmd := exec.Command("sqlite3", dbPath, msgQuery)
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	trimmed := strings.TrimSpace(string(output))
+	if trimmed == "[null]" || trimmed == "[]" {
+		return nil, fmt.Errorf("no messages found for session %s", sessionID)
+	}
+	return []byte(trimmed), nil
+}
