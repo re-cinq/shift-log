@@ -299,8 +299,10 @@ func (a *Agent) ResumeCommand(sessionID string) (string, []string) {
 }
 
 // SummariseCommand returns the command to run Claude Code in non-interactive mode.
+// --dangerously-skip-permissions prevents claude from prompting for tool approval
+// when stdin is not a terminal (which would cause it to hang indefinitely).
 func (a *Agent) SummariseCommand() (string, []string) {
-	return "claude", []string{"-p", "--output-format", "text"}
+	return "claude", []string{"--print", "--output-format", "text", "--dangerously-skip-permissions"}
 }
 
 // ToolAliases returns Claude Code's tool name mappings.
@@ -452,5 +454,3 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	}
 	return agent.ScanDirForRecentSession(sessionDir, ".jsonl", nil, projectPath)
 }
-
-
