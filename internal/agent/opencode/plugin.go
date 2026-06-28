@@ -10,8 +10,9 @@ import (
 // tool execution hooks and calls shiftlog store after git commits.
 //
 // OpenCode plugin hooks:
-//   tool.execute.before(input, output) — input: {tool, sessionID, callID}, output: {args}
-//   tool.execute.after(input, output)  — input: {tool, sessionID, callID}, output: {title, output, metadata}
+//
+//	tool.execute.before(input, output) — input: {tool, sessionID, callID}, output: {args}
+//	tool.execute.after(input, output)  — input: {tool, sessionID, callID}, output: {title, output, metadata}
 //
 // The command string is only available in the "before" hook (via output.args),
 // so we capture it there and act on it in the "after" hook, matching by callID.
@@ -24,7 +25,8 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
 
   return {
     "tool.execute.before": async (input, output) => {
-      const command = output?.args?.command || output?.args?.cmd || "";
+      const command = output?.args?.command || output?.args?.cmd ||
+                      input?.args?.command || input?.args?.cmd || "";
       if (command.includes("git commit") || command.includes("git-commit")) {
         pendingCommits.set(input.callID, {
           command,
@@ -39,11 +41,18 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
       if (!pending) return;
       pendingCommits.delete(input.callID);
 
-      // Try to fetch messages via the SDK client API
+      // Try to fetch messages via the SDK client API with a hard timeout.
+      // In opencode v1.17+ the client.session.messages() promise may never
+      // settle if the API shape changed; Promise.race ensures we don't block.
       let transcriptData = "";
       if (client && pending.sessionID) {
         try {
-          const msgs = await client.session.messages({ path: { id: pending.sessionID } });
+          const msgs = await Promise.race([
+            client.session.messages({ path: { id: pending.sessionID } }),
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error("client timeout")), 5000)
+            ),
+          ]);
           if (msgs && Array.isArray(msgs)) {
             transcriptData = JSON.stringify(msgs.map(m => ({
               role: m.role || "",
