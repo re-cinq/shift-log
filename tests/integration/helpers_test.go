@@ -291,9 +291,10 @@ func readCaptureEvents(captureFilePath string) captureEvents {
 // capturePluginJS is a modified version of the shiftlog plugin that also
 // captures the raw data OpenCode provides to plugin hooks for validation.
 // It reads the capture file path from CLAUDIT_HOOK_CAPTURE_FILE env var.
+// Uses export default for opencode 1.17+ compatibility.
 const capturePluginJS = `// Capture plugin for shiftlog integration testing
 // Logs raw hook data to validate OpenCode's plugin API
-export const ShiftlogPlugin = async ({ directory, client }) => {
+const _captureFactory = async ({ directory, client }) => {
   const fs = await import("fs");
   const captureFile = process.env.CLAUDIT_HOOK_CAPTURE_FILE;
   const pendingCommits = new Map();
@@ -305,6 +306,9 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
 
   return {
     "tool.execute.before": async (input, output) => {
+      // Support both old format (output.args.command) and new format (input.args.command)
+      const command = output?.args?.command || output?.args?.cmd ||
+                      input?.args?.command || input?.args?.cmd || "";
       capture({
         event: "before",
         input_keys: Object.keys(input || {}),
@@ -312,12 +316,11 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
         input_callID: input?.callID || "",
         input_tool: input?.tool || "",
         output_keys: Object.keys(output || {}),
-        has_args: !!(output?.args),
-        args_keys: output?.args ? Object.keys(output.args) : [],
-        command: output?.args?.command || output?.args?.cmd || "",
+        has_args: !!(output?.args || input?.args),
+        args_keys: (output?.args || input?.args) ? Object.keys(output?.args || input?.args) : [],
+        command,
       });
 
-      const command = output?.args?.command || output?.args?.cmd || "";
       if (command.includes("git commit") || command.includes("git-commit")) {
         pendingCommits.set(input.callID, {
           command,
@@ -381,4 +384,7 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
     },
   };
 };
+
+export const ShiftlogPlugin = _captureFactory;
+export default _captureFactory;
 `
