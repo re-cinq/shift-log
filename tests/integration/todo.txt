@@ -1,1 +1,2 @@
-- [ ] Add todo list
+# Todo List
+- [ ] Initial todo item
