@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -96,12 +97,12 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 func (a *Agent) IsCommitCommand(toolName, command string) bool {
 	// OpenCode tool names for shell execution
 	shellTools := map[string]bool{
-		"bash":               true,
-		"shell":              true,
-		"terminal":           true,
-		"execute":            true,
-		"run":                true,
-		"command":            true,
+		"bash":     true,
+		"shell":    true,
+		"terminal": true,
+		"execute":  true,
+		"run":      true,
+		"command":  true,
 	}
 
 	if !shellTools[toolName] {
@@ -349,19 +350,35 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 			if time.Since(t) > agent.RecentSessionTimeout {
 				return nil, nil
 			}
+		} else if ms, err := strconv.ParseInt(timeStr, 10, 64); err == nil {
+			// opencode v1.17+ stores time_updated as Unix milliseconds
+			if time.Since(time.UnixMilli(ms)) > agent.RecentSessionTimeout {
+				return nil, nil
+			}
 		}
 		// If we can't parse the time, proceed anyway — better to try than skip
 	}
 
-	// Get messages for this session as a JSON array
+	// Get messages for this session as a JSON array.
+	// Try old schema first (pre-v1.17: single 'data' JSON blob column).
 	msgQuery := fmt.Sprintf(
 		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
 		sessionID,
 	)
 	cmd = exec.Command("sqlite3", dbPath, msgQuery)
 	msgOutput, err := cmd.Output()
+
+	// Fall back to new schema (v1.17+: separate role/content columns).
 	if err != nil {
-		return nil, nil
+		msgQuery = fmt.Sprintf(
+			`SELECT json_group_array(json_object('id', id, 'role', role, 'content', json(content))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
+			sessionID,
+		)
+		cmd = exec.Command("sqlite3", dbPath, msgQuery)
+		msgOutput, err = cmd.Output()
+		if err != nil {
+			return nil, nil
+		}
 	}
 
 	transcriptData := []byte(strings.TrimSpace(string(msgOutput)))
@@ -497,4 +514,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
