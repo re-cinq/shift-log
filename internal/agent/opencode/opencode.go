@@ -316,10 +316,23 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		return nil, nil
 	}
 
+	// OpenCode v1.x introduced a `project` table where session.project_id
+	// references project.id (a UUID), not the git fingerprint directly.
+	// Try to resolve the actual project ID used in the session table by
+	// looking up the project by its working directory path.
+	resolvedProjectID := projectID
+	escapedPath := strings.ReplaceAll(projectPath, "'", "''")
+	pathLookup := fmt.Sprintf(`SELECT id FROM project WHERE path='%s' LIMIT 1;`, escapedPath)
+	if out, err := exec.Command("sqlite3", dbPath, pathLookup).Output(); err == nil {
+		if pid := strings.TrimSpace(string(out)); pid != "" {
+			resolvedProjectID = pid
+		}
+	}
+
 	// Find most recent session for this project
 	sessionQuery := fmt.Sprintf(
 		`SELECT id FROM session WHERE project_id='%s' ORDER BY time_updated DESC LIMIT 1;`,
-		projectID,
+		resolvedProjectID,
 	)
 	cmd := exec.Command("sqlite3", "-separator", "\t", dbPath, sessionQuery)
 	sessionOutput, err := cmd.Output()
@@ -353,20 +366,9 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		// If we can't parse the time, proceed anyway — better to try than skip
 	}
 
-	// Get messages for this session as a JSON array
-	msgQuery := fmt.Sprintf(
-		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
-		sessionID,
-	)
-	cmd = exec.Command("sqlite3", dbPath, msgQuery)
-	msgOutput, err := cmd.Output()
-	if err != nil {
-		return nil, nil
-	}
-
-	transcriptData := []byte(strings.TrimSpace(string(msgOutput)))
-	// sqlite3 returns "[null]" when no rows match
-	if string(transcriptData) == "[null]" || string(transcriptData) == "[]" {
+	// Get messages for this session — try multiple schema variants for compatibility.
+	transcriptData := sqliteQueryMessages(dbPath, sessionID)
+	if len(transcriptData) == 0 {
 		return nil, nil
 	}
 
@@ -377,6 +379,37 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		ProjectPath:    projectPath,
 		TranscriptData: transcriptData,
 	}, nil
+}
+
+// sqliteQueryMessages fetches messages for a session from SQLite,
+// handling both the pre-v1.x schema (data column) and the v1.x schema (role + parts columns).
+func sqliteQueryMessages(dbPath, sessionID string) []byte {
+	// Schema 1: pre-v1.x — full message JSON stored in a `data` column.
+	q1 := fmt.Sprintf(
+		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
+		sessionID,
+	)
+	if out, err := exec.Command("sqlite3", dbPath, q1).Output(); err == nil {
+		raw := strings.TrimSpace(string(out))
+		if raw != "" && raw != "[null]" && raw != "[]" {
+			return []byte(raw)
+		}
+	}
+
+	// Schema 2: v1.x — messages stored with separate role and parts columns.
+	// Use json() to embed parts as proper JSON rather than a quoted string.
+	q2 := fmt.Sprintf(
+		`SELECT json_group_array(json_object('id', id, 'role', role, 'content', json(parts))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
+		sessionID,
+	)
+	if out, err := exec.Command("sqlite3", dbPath, q2).Output(); err == nil {
+		raw := strings.TrimSpace(string(out))
+		if raw != "" && raw != "[null]" && raw != "[]" {
+			return []byte(raw)
+		}
+	}
+
+	return nil
 }
 
 // RestoreSession writes a session to OpenCode's storage location.
@@ -497,4 +530,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
