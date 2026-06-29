@@ -1,3 +1,4 @@
+```go
 package opencode
 
 import (
@@ -8,6 +9,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
+
+	"github.com/re-cinq/shift-log/internal/agent"
 )
 
 // GetDataDir returns the OpenCode data directory.
@@ -127,3 +131,78 @@ func WriteSessionFile(projectPath, sessionID string, transcriptData []byte) (str
 
 	return sessionPath, nil
 }
+
+// discoverFromSQLite queries the OpenCode SQLite database for the most recent session.
+// It tries multiple ORDER BY strategies to handle different schema versions:
+//   - ORDER BY time_updated DESC (original schema, v1.2+)
+//   - ORDER BY rowid DESC (fallback when time_updated column was renamed or removed)
+func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionInfo, error) {
+	dbPath := filepath.Join(dataDir, "opencode.db")
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		return nil, nil
+	}
+
+	// Check sqlite3 is available
+	if _, err := exec.LookPath("sqlite3"); err != nil {
+		return nil, nil
+	}
+
+	// Find most recent session for this project, trying multiple ORDER BY strategies
+	// to handle schema changes across OpenCode versions.
+	sessionQueries := []string{
+		fmt.Sprintf(`SELECT id FROM session WHERE project_id='%s' ORDER BY time_updated DESC LIMIT 1;`, projectID),
+		fmt.Sprintf(`SELECT id FROM session WHERE project_id='%s' ORDER BY rowid DESC LIMIT 1;`, projectID),
+	}
+
+	var sessionID string
+	for _, q := range sessionQueries {
+		cmd := exec.Command("sqlite3", "-separator", "\t", dbPath, q)
+		output, err := cmd.Output()
+		if err == nil && strings.TrimSpace(string(output)) != "" {
+			sessionID = strings.TrimSpace(string(output))
+			break
+		}
+	}
+	if sessionID == "" {
+		return nil, nil
+	}
+
+	// Check if this session was recent (within timeout)
+	timeQuery := fmt.Sprintf(
+		`SELECT time_updated FROM session WHERE id='%s';`,
+		sessionID,
+	)
+	cmd := exec.Command("sqlite3", dbPath, timeQuery)
+	timeOutput, err := cmd.Output()
+	if err == nil {
+		timeStr := strings.TrimSpace(string(timeOutput))
+		if t, err := time.Parse(time.RFC3339Nano, timeStr); err == nil {
+			if time.Since(t) > agent.RecentSessionTimeout {
+				return nil, nil
+			}
+		} else if t, err := time.Parse("2006-01-02T15:04:05.000Z", timeStr); err == nil {
+			if time.Since(t) > agent.RecentSessionTimeout {
+				return nil, nil
+			}
+		} else if t, err := time.Parse("2006-01-02 15:04:05", timeStr); err == nil {
+			if time.Since(t) > agent.RecentSessionTimeout {
+				return nil, nil
+			}
+		}
+		// If we can't parse the time, proceed anyway — better to try than skip
+	}
+
+	transcriptData, err := getTranscriptFromSQLite(dataDir, sessionID)
+	if err != nil || len(transcriptData) == 0 {
+		return nil, nil
+	}
+
+	return &agent.SessionInfo{
+		SessionID:      sessionID,
+		TranscriptPath: "", // no file path for SQLite
+		StartedAt:      time.Now().Format(time.RFC3339),
+		ProjectPath:    projectPath,
+		TranscriptData: transcriptData,
+	}, nil
+}
+```
