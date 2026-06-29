@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -96,12 +97,12 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 func (a *Agent) IsCommitCommand(toolName, command string) bool {
 	// OpenCode tool names for shell execution
 	shellTools := map[string]bool{
-		"bash":               true,
-		"shell":              true,
-		"terminal":           true,
-		"execute":            true,
-		"run":                true,
-		"command":            true,
+		"bash":      true,
+		"shell":     true,
+		"terminal":  true,
+		"execute":   true,
+		"run":       true,
+		"command":   true,
 	}
 
 	if !shellTools[toolName] {
@@ -305,6 +306,7 @@ func (a *Agent) discoverFromFlatFiles(projectPath string) (*agent.SessionInfo, e
 }
 
 // discoverFromSQLite queries the OpenCode SQLite database for the most recent session.
+// Supports both old schema (pre-v1.15, project_id column) and new schema (v1.15+, path column).
 func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionInfo, error) {
 	dbPath := filepath.Join(dataDir, "opencode.db")
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
@@ -316,49 +318,91 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		return nil, nil
 	}
 
-	// Find most recent session for this project
-	sessionQuery := fmt.Sprintf(
-		`SELECT id FROM session WHERE project_id='%s' ORDER BY time_updated DESC LIMIT 1;`,
-		projectID,
-	)
-	cmd := exec.Command("sqlite3", "-separator", "\t", dbPath, sessionQuery)
-	sessionOutput, err := cmd.Output()
-	if err != nil || strings.TrimSpace(string(sessionOutput)) == "" {
+	// Inspect session table columns to determine the schema version
+	sessionCols := sqliteTableColumns(dbPath, "session")
+	if len(sessionCols) == 0 {
 		return nil, nil
 	}
-	sessionID := strings.TrimSpace(string(sessionOutput))
 
-	// Check if this session was recent (within timeout)
-	timeQuery := fmt.Sprintf(
-		`SELECT time_updated FROM session WHERE id='%s';`,
-		sessionID,
-	)
-	cmd = exec.Command("sqlite3", dbPath, timeQuery)
-	timeOutput, err := cmd.Output()
-	if err == nil {
-		timeStr := strings.TrimSpace(string(timeOutput))
-		if t, err := time.Parse(time.RFC3339Nano, timeStr); err == nil {
-			if time.Since(t) > agent.RecentSessionTimeout {
-				return nil, nil
-			}
-		} else if t, err := time.Parse("2006-01-02T15:04:05.000Z", timeStr); err == nil {
-			if time.Since(t) > agent.RecentSessionTimeout {
-				return nil, nil
-			}
-		} else if t, err := time.Parse("2006-01-02 15:04:05", timeStr); err == nil {
-			if time.Since(t) > agent.RecentSessionTimeout {
-				return nil, nil
-			}
+	var sessionID, rawTime string
+
+	switch {
+	case sessionCols["project_id"]:
+		// Old schema (pre-v1.15): project identified by git root commit hash
+		timeCol := "time_updated"
+		if !sessionCols["time_updated"] {
+			timeCol = "updated"
 		}
-		// If we can't parse the time, proceed anyway — better to try than skip
+		q := fmt.Sprintf(
+			`SELECT id, %s FROM session WHERE project_id='%s' ORDER BY %s DESC LIMIT 1;`,
+			timeCol, projectID, timeCol,
+		)
+		sessionID, rawTime = sqliteFirstRow(dbPath, q)
+
+	case sessionCols["path"]:
+		// New schema (v1.15+): project identified by working directory path
+		timeCol := "updated"
+		if sessionCols["time_updated"] {
+			timeCol = "time_updated"
+		}
+		q := fmt.Sprintf(
+			`SELECT id, %s FROM session WHERE path='%s' ORDER BY %s DESC LIMIT 1;`,
+			timeCol, projectPath, timeCol,
+		)
+		sessionID, rawTime = sqliteFirstRow(dbPath, q)
+
+	default:
+		return nil, nil
 	}
 
-	// Get messages for this session as a JSON array
-	msgQuery := fmt.Sprintf(
-		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
-		sessionID,
-	)
-	cmd = exec.Command("sqlite3", dbPath, msgQuery)
+	if sessionID == "" {
+		return nil, nil
+	}
+
+	// Check if this session was recent (within timeout)
+	if rawTime != "" && !isSQLiteTimeRecent(rawTime) {
+		return nil, nil
+	}
+
+	// Inspect message table columns to determine the message schema
+	msgCols := sqliteTableColumns(dbPath, "message")
+
+	var msgQuery string
+	switch {
+	case msgCols["data"]:
+		// Old schema: full JSON stored in data column
+		orderCol := "time_created"
+		if !msgCols["time_created"] {
+			orderCol = "created"
+		}
+		msgQuery = fmt.Sprintf(
+			`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY %s;`,
+			sessionID, orderCol,
+		)
+
+	case msgCols["parts"]:
+		// New schema (v1.15+): role + parts columns
+		msgQuery = fmt.Sprintf(
+			`SELECT json_group_array(json_object('id', id, 'role', role, 'content', json(parts))) FROM message WHERE session_id='%s' ORDER BY created;`,
+			sessionID,
+		)
+
+	case msgCols["content"]:
+		// Alternative schema: role + content columns
+		orderCol := "created"
+		if msgCols["time_created"] {
+			orderCol = "time_created"
+		}
+		msgQuery = fmt.Sprintf(
+			`SELECT json_group_array(json_object('id', id, 'role', role, 'content', json(content))) FROM message WHERE session_id='%s' ORDER BY %s;`,
+			sessionID, orderCol,
+		)
+
+	default:
+		return nil, nil
+	}
+
+	cmd := exec.Command("sqlite3", dbPath, msgQuery)
 	msgOutput, err := cmd.Output()
 	if err != nil {
 		return nil, nil
@@ -377,6 +421,69 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		ProjectPath:    projectPath,
 		TranscriptData: transcriptData,
 	}, nil
+}
+
+// sqliteTableColumns returns a set of column names for the given table using PRAGMA table_info.
+// Returns nil if the query fails (e.g. table does not exist or sqlite3 not available).
+func sqliteTableColumns(dbPath, table string) map[string]bool {
+	cmd := exec.Command("sqlite3", dbPath, fmt.Sprintf("PRAGMA table_info(%s);", table))
+	out, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+	cols := make(map[string]bool)
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		fields := strings.Split(line, "|")
+		if len(fields) >= 2 {
+			cols[fields[1]] = true
+		}
+	}
+	return cols
+}
+
+// sqliteFirstRow runs a query and returns the first two tab-separated values of the first row.
+func sqliteFirstRow(dbPath, query string) (string, string) {
+	cmd := exec.Command("sqlite3", "-separator", "\t", dbPath, query)
+	out, err := cmd.Output()
+	if err != nil || strings.TrimSpace(string(out)) == "" {
+		return "", ""
+	}
+	parts := strings.SplitN(strings.TrimSpace(string(out)), "\t", 2)
+	if len(parts) == 0 {
+		return "", ""
+	}
+	second := ""
+	if len(parts) > 1 {
+		second = parts[1]
+	}
+	return parts[0], second
+}
+
+// isSQLiteTimeRecent reports whether a time value (RFC3339 string or Unix ms/s integer)
+// falls within the RecentSessionTimeout window.
+func isSQLiteTimeRecent(raw string) bool {
+	// Try RFC3339Nano
+	if t, err := time.Parse(time.RFC3339Nano, raw); err == nil {
+		return time.Since(t) <= agent.RecentSessionTimeout
+	}
+	// Try 2006-01-02T15:04:05.000Z
+	if t, err := time.Parse("2006-01-02T15:04:05.000Z", raw); err == nil {
+		return time.Since(t) <= agent.RecentSessionTimeout
+	}
+	// Try 2006-01-02 15:04:05
+	if t, err := time.Parse("2006-01-02 15:04:05", raw); err == nil {
+		return time.Since(t) <= agent.RecentSessionTimeout
+	}
+	// Try Unix milliseconds (value > 1e12 distinguishes ms from seconds)
+	if ms, err := strconv.ParseInt(raw, 10, 64); err == nil && ms > 1_000_000_000_000 {
+		return time.Since(time.UnixMilli(ms)) <= agent.RecentSessionTimeout
+	}
+	// Try Unix seconds
+	if s, err := strconv.ParseInt(raw, 10, 64); err == nil && s > 0 {
+		return time.Since(time.Unix(s, 0)) <= agent.RecentSessionTimeout
+	}
+	// Cannot parse — assume recent (better to try and fail than silently skip)
+	return true
 }
 
 // RestoreSession writes a session to OpenCode's storage location.
@@ -454,7 +561,6 @@ func parseOpenCodeEntry(raw map[string]json.RawMessage, fullData []byte) agent.T
 	return entry
 }
 
-
 // parseOpenCodeMessage parses message content from an OpenCode entry.
 func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageType) *agent.Message {
 	if msgType == "" {
@@ -479,9 +585,40 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 			return msg
 		}
 
-		// Try as array of content blocks
+		// Try as array of content blocks (handles both flat {type,text} and nested {type,data:{text}} formats)
 		var blocks []agent.ContentBlock
 		if err := json.Unmarshal(contentRaw, &blocks); err == nil && len(blocks) > 0 {
+			// If no block has text, try extracting from nested data.text (opencode v1.15+ parts format)
+			hasText := false
+			for _, b := range blocks {
+				if b.Text != "" {
+					hasText = true
+					break
+				}
+			}
+			if !hasText {
+				var parts []struct {
+					Type string `json:"type"`
+					Text string `json:"text"`
+					Data struct {
+						Text string `json:"text"`
+					} `json:"data"`
+				}
+				if err := json.Unmarshal(contentRaw, &parts); err == nil {
+					var rebuilt []agent.ContentBlock
+					for _, p := range parts {
+						text := p.Text
+						if text == "" {
+							text = p.Data.Text
+						}
+						rebuilt = append(rebuilt, agent.ContentBlock{Type: p.Type, Text: text})
+					}
+					if len(rebuilt) > 0 {
+						msg.Content = rebuilt
+						return msg
+					}
+				}
+			}
 			msg.Content = blocks
 			return msg
 		}
@@ -497,4 +634,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
