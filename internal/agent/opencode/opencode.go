@@ -1,3 +1,4 @@
+```go
 package opencode
 
 import (
@@ -230,7 +231,11 @@ func (a *Agent) parseMessageDir(dir string) (*agent.Transcript, error) {
 }
 
 // DiscoverSession finds an active or recent OpenCode session.
-// It first tries flat file storage (pre-v1.2), then falls back to SQLite (v1.2+).
+// It first tries flat file storage (pre-v1.2), then falls back to SQLite (v1.2+),
+// and finally scans all project session dirs in case OpenCode's own project
+// identification scheme no longer matches our GetProjectID computation (e.g.
+// after an OpenCode version bump changes how it derives a project's storage
+// directory).
 func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) {
 	// Try flat file storage first (pre-v1.2 OpenCode)
 	session, err := a.discoverFromFlatFiles(projectPath)
@@ -243,12 +248,21 @@ func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) 
 
 	// Fall back to SQLite (OpenCode v1.2+)
 	dataDir, err := GetDataDir()
-	if err != nil {
-		return nil, nil
+	if err == nil {
+		projectID := GetProjectID(projectPath)
+		session, err = discoverFromSQLite(dataDir, projectID, projectPath)
+		if err != nil {
+			return nil, err
+		}
+		if session != nil {
+			return session, nil
+		}
 	}
 
-	projectID := GetProjectID(projectPath)
-	return discoverFromSQLite(dataDir, projectID, projectPath)
+	// Final fallback: our computed project ID may not match the directory
+	// name OpenCode actually used. Scan all project session dirs and match
+	// by each session's own recorded working directory instead.
+	return ScanAllProjectSessions(projectPath)
 }
 
 // discoverFromFlatFiles tries the legacy flat file session discovery.
@@ -454,7 +468,6 @@ func parseOpenCodeEntry(raw map[string]json.RawMessage, fullData []byte) agent.T
 	return entry
 }
 
-
 // parseOpenCodeMessage parses message content from an OpenCode entry.
 func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageType) *agent.Message {
 	if msgType == "" {
@@ -497,4 +510,4 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
+```

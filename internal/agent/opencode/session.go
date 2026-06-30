@@ -1,3 +1,4 @@
+```go
 package opencode
 
 import (
@@ -8,6 +9,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
+
+	"github.com/re-cinq/shift-log/internal/agent"
 )
 
 // GetDataDir returns the OpenCode data directory.
@@ -127,3 +131,113 @@ func WriteSessionFile(projectPath, sessionID string, transcriptData []byte) (str
 
 	return sessionPath, nil
 }
+
+// projectDirCandidateKeys are the field names OpenCode has used (across
+// versions) to record a session's working directory inside its session
+// JSON file. Checked in order when matching a session to a project path.
+var projectDirCandidateKeys = []string{"directory", "cwd", "path", "projectPath", "worktree"}
+
+// sessionMatchesProject reports whether a parsed OpenCode session JSON
+// object refers to the given project path, by checking whichever directory
+// field is present on it.
+func sessionMatchesProject(raw map[string]interface{}, projectPath string) bool {
+	for _, key := range projectDirCandidateKeys {
+		v, ok := raw[key].(string)
+		if !ok || v == "" {
+			continue
+		}
+		if agent.PathsEqual(v, projectPath) {
+			return true
+		}
+	}
+	return false
+}
+
+// ScanAllProjectSessions scans every project directory under OpenCode's
+// session storage root and returns the most recent session whose recorded
+// working directory matches projectPath. This is a fallback for when
+// GetProjectID's git-root-commit hash no longer matches the directory name
+// OpenCode itself uses (e.g. after an OpenCode version change to its
+// project identification scheme) — mirroring the same kind of fallback the
+// Gemini agent uses (ScanAllProjectDirs) for its own session discovery.
+func ScanAllProjectSessions(projectPath string) (*agent.SessionInfo, error) {
+	dataDir, err := GetDataDir()
+	if err != nil {
+		return nil, nil
+	}
+
+	sessionRoot := filepath.Join(dataDir, "storage", "session")
+	projectDirs, err := os.ReadDir(sessionRoot)
+	if err != nil {
+		return nil, nil
+	}
+
+	now := time.Now()
+	var bestSessionID string
+	var bestModTime time.Time
+
+	for _, pd := range projectDirs {
+		if !pd.IsDir() {
+			continue
+		}
+
+		dir := filepath.Join(sessionRoot, pd.Name())
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+				continue
+			}
+
+			info, err := entry.Info()
+			if err != nil {
+				continue
+			}
+
+			modTime := info.ModTime()
+			if now.Sub(modTime) > agent.RecentSessionTimeout {
+				continue
+			}
+
+			data, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+			if err != nil {
+				continue
+			}
+
+			var raw map[string]interface{}
+			if err := json.Unmarshal(data, &raw); err != nil {
+				continue
+			}
+
+			if !sessionMatchesProject(raw, projectPath) {
+				continue
+			}
+
+			if bestSessionID == "" || modTime.After(bestModTime) {
+				id, _ := raw["id"].(string)
+				if id == "" {
+					id = strings.TrimSuffix(entry.Name(), ".json")
+				}
+				bestSessionID = id
+				bestModTime = modTime
+			}
+		}
+	}
+
+	if bestSessionID == "" {
+		return nil, nil
+	}
+
+	msgDir, _ := GetMessageDir(bestSessionID)
+
+	return &agent.SessionInfo{
+		SessionID:      bestSessionID,
+		TranscriptPath: msgDir,
+		StartedAt:      bestModTime.Format(time.RFC3339),
+		ProjectPath:    projectPath,
+	}, nil
+}
+```

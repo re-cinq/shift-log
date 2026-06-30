@@ -1,3 +1,4 @@
+```go
 package gemini
 
 import (
@@ -93,7 +94,12 @@ func AddShiftlogHook(settings *Settings) {
 			{
 				Type:    "command",
 				Command: "shiftlog store --agent=gemini",
-				Timeout: 30000,
+				// Gemini CLI's hook timeout, like Claude Code's, is specified
+				// in seconds (not milliseconds). A too-large value here means
+				// Gemini never enforces a timeout on the hook process, so a
+				// slow or stuck hook invocation can block the CLI indefinitely
+				// instead of being killed after a bounded wait.
+				Timeout: 30,
 			},
 		},
 	}
@@ -117,7 +123,7 @@ func AddSessionHooks(settings *Settings) {
 			{
 				Type:    "command",
 				Command: "shiftlog session-start --agent=gemini",
-				Timeout: 5000,
+				Timeout: 5,
 			},
 		},
 	}
@@ -126,7 +132,7 @@ func AddSessionHooks(settings *Settings) {
 			{
 				Type:    "command",
 				Command: "shiftlog session-end --agent=gemini",
-				Timeout: 5000,
+				Timeout: 5,
 			},
 		},
 	}
@@ -187,3 +193,4 @@ func addOrUpdateHook(hooks []Hook, newHook Hook, commandPrefix string) []Hook {
 	}
 	return append(hooks, newHook)
 }
+```
