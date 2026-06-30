@@ -63,7 +63,9 @@ func GetSessionDir(projectPath string) (string, error) {
 	return filepath.Join(dataDir, "storage", "session", projectID), nil
 }
 
-// GetMessageDir returns the message storage directory for a session.
+// GetMessageDir returns the canonical message storage directory for a
+// session. Use ResolveMessageDir when the directory must actually exist on
+// disk, since some OpenCode releases use a different layout.
 func GetMessageDir(sessionID string) (string, error) {
 	dataDir, err := GetDataDir()
 	if err != nil {
@@ -71,6 +73,27 @@ func GetMessageDir(sessionID string) (string, error) {
 	}
 
 	return filepath.Join(dataDir, "storage", "message", sessionID), nil
+}
+
+// ResolveMessageDir returns the message storage directory for a session,
+// preferring whichever of OpenCode's known layouts actually exists on disk.
+// It falls back to the canonical storage/message/<sessionID> path (the same
+// path GetMessageDir returns) when none of the candidates exist yet, so
+// callers always get a usable path even before any messages are written.
+func ResolveMessageDir(dataDir, sessionID string) string {
+	candidates := []string{
+		filepath.Join(dataDir, "storage", "message", sessionID),
+		filepath.Join(dataDir, "storage", "session", "message", sessionID),
+		filepath.Join(dataDir, "storage", "session", sessionID, "message"),
+	}
+
+	for _, candidate := range candidates {
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			return candidate
+		}
+	}
+
+	return candidates[0]
 }
 
 // sessionInfo represents an OpenCode session JSON file.
