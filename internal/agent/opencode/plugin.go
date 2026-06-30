@@ -1,3 +1,4 @@
+```go
 package opencode
 
 import (
@@ -10,8 +11,9 @@ import (
 // tool execution hooks and calls shiftlog store after git commits.
 //
 // OpenCode plugin hooks:
-//   tool.execute.before(input, output) — input: {tool, sessionID, callID}, output: {args}
-//   tool.execute.after(input, output)  — input: {tool, sessionID, callID}, output: {title, output, metadata}
+//
+//	tool.execute.before(input, output) — input: {tool, sessionID, callID}, output: {args}
+//	tool.execute.after(input, output)  — input: {tool, sessionID, callID}, output: {title, output, metadata}
 //
 // The command string is only available in the "before" hook (via output.args),
 // so we capture it there and act on it in the "after" hook, matching by callID.
@@ -35,15 +37,15 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
     },
 
     "tool.execute.after": async (input, output) => {
-      const pending = pendingCommits.get(input.callID);
-      if (!pending) return;
-      pendingCommits.delete(input.callID);
+      const dataDir = process.platform === "darwin"
+          ? process.env.HOME + "/Library/Application Support/opencode"
+          : (process.env.XDG_DATA_HOME || process.env.HOME + "/.local/share") + "/opencode";
 
-      // Try to fetch messages via the SDK client API
+      // Try to fetch messages once (used for both breadcrumb and hook data)
       let transcriptData = "";
-      if (client && pending.sessionID) {
+      if (client && input.sessionID) {
         try {
-          const msgs = await client.session.messages({ path: { id: pending.sessionID } });
+          const msgs = await client.session.messages({ path: { id: input.sessionID } });
           if (msgs && Array.isArray(msgs)) {
             transcriptData = JSON.stringify(msgs.map(m => ({
               role: m.role || "",
@@ -57,9 +59,27 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
         }
       }
 
-      const dataDir = process.platform === "darwin"
-          ? process.env.HOME + "/Library/Application Support/opencode"
-          : (process.env.XDG_DATA_HOME || process.env.HOME + "/.local/share") + "/opencode";
+      // Always write session breadcrumb so the post-commit git hook can
+      // discover this session for manual commits made after the agent runs.
+      if (input.sessionID && directory) {
+        try {
+          const { writeFileSync, mkdirSync } = await import("fs");
+          const shiftlogDir = directory + "/.shiftlog";
+          mkdirSync(shiftlogDir, { recursive: true });
+          writeFileSync(shiftlogDir + "/opencode-last-session", JSON.stringify({
+            session_id: input.sessionID,
+            data_dir: dataDir,
+            timestamp: new Date().toISOString(),
+            ...(transcriptData ? { transcript_data: transcriptData } : {}),
+          }));
+        } catch (e) {
+          // Silently ignore errors to not disrupt workflow
+        }
+      }
+
+      const pending = pendingCommits.get(input.callID);
+      if (!pending) return;
+      pendingCommits.delete(input.callID);
 
       const hookData = JSON.stringify({
         session_id: pending.sessionID || "",
@@ -125,3 +145,4 @@ func HasPlugin(repoRoot string) bool {
 	_, err := os.Stat(pluginPath)
 	return err == nil
 }
+```

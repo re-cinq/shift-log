@@ -1,3 +1,4 @@
+```go
 package opencode
 
 import (
@@ -96,12 +97,12 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 func (a *Agent) IsCommitCommand(toolName, command string) bool {
 	// OpenCode tool names for shell execution
 	shellTools := map[string]bool{
-		"bash":               true,
-		"shell":              true,
-		"terminal":           true,
-		"execute":            true,
-		"run":                true,
-		"command":            true,
+		"bash":     true,
+		"shell":    true,
+		"terminal": true,
+		"execute":  true,
+		"run":      true,
+		"command":  true,
 	}
 
 	if !shellTools[toolName] {
@@ -230,10 +231,20 @@ func (a *Agent) parseMessageDir(dir string) (*agent.Transcript, error) {
 }
 
 // DiscoverSession finds an active or recent OpenCode session.
-// It first tries flat file storage (pre-v1.2), then falls back to SQLite (v1.2+).
+// It first tries the local breadcrumb written by the plugin, then flat file
+// storage (pre-v1.2), then falls back to SQLite (v1.2+).
 func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) {
-	// Try flat file storage first (pre-v1.2 OpenCode)
-	session, err := a.discoverFromFlatFiles(projectPath)
+	// Try local breadcrumb first (written by plugin after every tool execution)
+	session, err := a.discoverFromLocalFile(projectPath)
+	if err != nil {
+		return nil, err
+	}
+	if session != nil {
+		return session, nil
+	}
+
+	// Try flat file storage (pre-v1.2 OpenCode)
+	session, err = a.discoverFromFlatFiles(projectPath)
 	if err != nil {
 		return nil, err
 	}
@@ -249,6 +260,90 @@ func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) 
 
 	projectID := GetProjectID(projectPath)
 	return discoverFromSQLite(dataDir, projectID, projectPath)
+}
+
+// discoverFromLocalFile reads the session breadcrumb written by the OpenCode plugin
+// after each tool execution. This is the most reliable discovery method as it works
+// regardless of which storage backend opencode uses internally.
+func (a *Agent) discoverFromLocalFile(projectPath string) (*agent.SessionInfo, error) {
+	filePath := filepath.Join(projectPath, ".shiftlog", "opencode-last-session")
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, nil
+	}
+
+	var breadcrumb struct {
+		SessionID      string `json:"session_id"`
+		DataDir        string `json:"data_dir"`
+		Timestamp      string `json:"timestamp"`
+		TranscriptData string `json:"transcript_data"`
+	}
+	if err := json.Unmarshal(data, &breadcrumb); err != nil {
+		return nil, nil
+	}
+	if breadcrumb.SessionID == "" {
+		return nil, nil
+	}
+
+	// Verify the breadcrumb is recent enough
+	if breadcrumb.Timestamp != "" {
+		var sessionTime time.Time
+		for _, layout := range []string{time.RFC3339Nano, "2006-01-02T15:04:05.000Z", time.RFC3339} {
+			if t, err := time.Parse(layout, breadcrumb.Timestamp); err == nil {
+				sessionTime = t
+				break
+			}
+		}
+		if !sessionTime.IsZero() && time.Since(sessionTime) > agent.RecentSessionTimeout {
+			return nil, nil
+		}
+	}
+
+	// Use inline transcript if available, otherwise try SQLite by session ID, then empty fallback
+	transcriptData := []byte(breadcrumb.TranscriptData)
+	if len(transcriptData) == 0 && breadcrumb.DataDir != "" {
+		transcriptData = getTranscriptBySessionID(breadcrumb.DataDir, breadcrumb.SessionID)
+	}
+	if len(transcriptData) == 0 {
+		transcriptData = []byte("[]")
+	}
+
+	return &agent.SessionInfo{
+		SessionID:      breadcrumb.SessionID,
+		TranscriptData: transcriptData,
+		StartedAt:      breadcrumb.Timestamp,
+		ProjectPath:    projectPath,
+	}, nil
+}
+
+// getTranscriptBySessionID queries the OpenCode SQLite database for messages
+// belonging to a known session ID.
+func getTranscriptBySessionID(dataDir, sessionID string) []byte {
+	dbPath := filepath.Join(dataDir, "opencode.db")
+	if _, err := os.Stat(dbPath); err != nil {
+		return nil
+	}
+	if _, err := exec.LookPath("sqlite3"); err != nil {
+		return nil
+	}
+
+	queries := []string{
+		fmt.Sprintf(`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`, sessionID),
+		fmt.Sprintf(`SELECT json_group_array(data) FROM message WHERE session_id='%s';`, sessionID),
+	}
+
+	for _, q := range queries {
+		cmd := exec.Command("sqlite3", dbPath, q)
+		output, err := cmd.Output()
+		if err != nil {
+			continue
+		}
+		trimmed := strings.TrimSpace(string(output))
+		if trimmed != "" && trimmed != "[null]" && trimmed != "[]" {
+			return []byte(trimmed)
+		}
+	}
+	return nil
 }
 
 // discoverFromFlatFiles tries the legacy flat file session discovery.
@@ -454,7 +549,6 @@ func parseOpenCodeEntry(raw map[string]json.RawMessage, fullData []byte) agent.T
 	return entry
 }
 
-
 // parseOpenCodeMessage parses message content from an OpenCode entry.
 func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageType) *agent.Message {
 	if msgType == "" {
@@ -497,4 +591,4 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
+```

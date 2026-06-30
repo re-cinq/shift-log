@@ -1,3 +1,4 @@
+```go
 package gemini
 
 import (
@@ -93,7 +94,7 @@ func AddShiftlogHook(settings *Settings) {
 			{
 				Type:    "command",
 				Command: "shiftlog store --agent=gemini",
-				Timeout: 30000,
+				Timeout: 5000,
 			},
 		},
 	}
@@ -187,3 +188,4 @@ func addOrUpdateHook(hooks []Hook, newHook Hook, commandPrefix string) []Hook {
 	}
 	return append(hooks, newHook)
 }
+```
