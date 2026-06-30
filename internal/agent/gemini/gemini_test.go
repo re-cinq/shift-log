@@ -222,12 +222,13 @@ func TestConfigureHooks(t *testing.T) {
 		t.Errorf("AfterTool matcher = %q, want run_shell_command", hookObj["matcher"])
 	}
 
-	// Verify timeout is 30000 (milliseconds)
+	// Verify timeout is 10000 (milliseconds) — small enough to not block gemini-cli
+	// when stdin is not piped, large enough for shiftlog to complete a store operation.
 	hookCmds := hookObj["hooks"].([]interface{})
 	hookCmd := hookCmds[0].(map[string]interface{})
 	timeout := hookCmd["timeout"].(float64)
-	if timeout != 30000 {
-		t.Errorf("AfterTool timeout = %v, want 30000", timeout)
+	if timeout != 10000 {
+		t.Errorf("AfterTool timeout = %v, want 10000", timeout)
 	}
 }
 

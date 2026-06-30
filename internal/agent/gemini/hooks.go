@@ -93,7 +93,10 @@ func AddShiftlogHook(settings *Settings) {
 			{
 				Type:    "command",
 				Command: "shiftlog store --agent=gemini",
-				Timeout: 30000,
+				// 10s is sufficient for shiftlog to complete a store operation.
+				// Keeping this small prevents the hook from blocking the CLI for
+				// too long when gemini-cli invokes hooks without piping stdin data.
+				Timeout: 10000,
 			},
 		},
 	}
