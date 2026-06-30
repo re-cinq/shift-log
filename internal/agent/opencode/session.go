@@ -3,11 +3,15 @@ package opencode
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
+
+	"github.com/re-cinq/shift-log/internal/agent"
 )
 
 // GetDataDir returns the OpenCode data directory.
@@ -126,4 +130,89 @@ func WriteSessionFile(projectPath, sessionID string, transcriptData []byte) (str
 	_ = os.WriteFile(msgPath, transcriptData, 0600)
 
 	return sessionPath, nil
+}
+
+// scanDataDirForSession performs a content-based scan of OpenCode's storage
+// tree for the most recent session belonging to projectPath. Unlike
+// GetSessionDir (which assumes sessions live under a project-keyed
+// subdirectory), this walks the tree and matches each session JSON file by
+// its own embedded projectID/directory fields. This is resilient to OpenCode
+// versions that lay out session files differently (e.g. flat, not
+// partitioned by project directory), mirroring the content-based fallback
+// already used for Gemini CLI's slug-based session directories.
+func scanDataDirForSession(dataDir, projectID, projectPath string) (*agent.SessionInfo, error) {
+	storageDir := filepath.Join(dataDir, "storage")
+
+	now := time.Now()
+	var bestSessionID string
+	var bestModTime time.Time
+
+	walkErr := filepath.WalkDir(storageDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+
+		if d.IsDir() {
+			// Message/part payloads live in their own subtrees and are never
+			// session JSON files themselves; skip them to avoid scanning
+			// potentially large numbers of irrelevant files.
+			if d.Name() == "message" || d.Name() == "part" {
+				return fs.SkipDir
+			}
+			return nil
+		}
+
+		if !strings.HasSuffix(d.Name(), ".json") || d.Name() == "sessions-index.json" {
+			return nil
+		}
+
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+
+		modTime := info.ModTime()
+		if now.Sub(modTime) > agent.RecentSessionTimeout {
+			return nil
+		}
+		if bestSessionID != "" && !modTime.After(bestModTime) {
+			return nil
+		}
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+
+		var sess sessionInfo
+		if err := json.Unmarshal(data, &sess); err != nil {
+			return nil
+		}
+		if sess.ID == "" {
+			return nil
+		}
+		if sess.ProjectID != projectID && sess.Directory != projectPath {
+			return nil
+		}
+
+		bestSessionID = sess.ID
+		bestModTime = modTime
+		return nil
+	})
+	if walkErr != nil {
+		return nil, nil
+	}
+
+	if bestSessionID == "" {
+		return nil, nil
+	}
+
+	msgDir, _ := GetMessageDir(bestSessionID)
+
+	return &agent.SessionInfo{
+		SessionID:      bestSessionID,
+		TranscriptPath: msgDir,
+		StartedAt:      bestModTime.Format(time.RFC3339),
+		ProjectPath:    projectPath,
+	}, nil
 }
