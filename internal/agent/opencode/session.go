@@ -73,6 +73,36 @@ func GetMessageDir(sessionID string) (string, error) {
 	return filepath.Join(dataDir, "storage", "message", sessionID), nil
 }
 
+// FindSQLiteDB locates the OpenCode SQLite database. The database's location
+// relative to the data directory has moved across OpenCode versions (e.g.
+// from a single top-level file to a nested path), so a few known locations
+// are checked before falling back to a shallow recursive search.
+func FindSQLiteDB(dataDir string) (string, bool) {
+	candidates := []string{
+		filepath.Join(dataDir, "opencode.db"),
+		filepath.Join(dataDir, "storage", "opencode.db"),
+		filepath.Join(dataDir, "db", "opencode.db"),
+	}
+	for _, c := range candidates {
+		if info, err := os.Stat(c); err == nil && !info.IsDir() {
+			return c, true
+		}
+	}
+
+	var found string
+	_ = filepath.WalkDir(dataDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || found != "" {
+			return nil
+		}
+		if !d.IsDir() && strings.HasSuffix(d.Name(), ".db") {
+			found = path
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	return found, found != ""
+}
+
 // sessionInfo represents an OpenCode session JSON file.
 type sessionInfo struct {
 	ID        string `json:"id"`
