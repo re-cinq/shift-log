@@ -251,16 +251,30 @@ func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) 
 	return discoverFromSQLite(dataDir, projectID, projectPath)
 }
 
-// discoverFromFlatFiles tries the legacy flat file session discovery.
+// discoverFromFlatFiles tries the flat file session discovery.
+//
+// Older OpenCode releases nested session files under a per-project directory
+// (dataDir/storage/session/<projectID>/<sessionID>.json). Newer releases have
+// been observed to store all sessions under a single directory instead,
+// recording the owning project via a "projectID" or "directory" field inside
+// each session file. To stay compatible with both layouts, this walks the
+// whole session storage tree and matches sessions either by directory
+// nesting or by field content.
 func (a *Agent) discoverFromFlatFiles(projectPath string) (*agent.SessionInfo, error) {
-	sessionDir, err := GetSessionDir(projectPath)
+	dataDir, err := GetDataDir()
 	if err != nil {
 		return nil, nil
 	}
 
-	dirEntries, err := os.ReadDir(sessionDir)
-	if err != nil {
+	sessionRoot := filepath.Join(dataDir, "storage", "session")
+	if _, err := os.Stat(sessionRoot); err != nil {
 		return nil, nil
+	}
+
+	projectID := GetProjectID(projectPath)
+	absProjectPath, err := filepath.Abs(projectPath)
+	if err != nil {
+		absProjectPath = projectPath
 	}
 
 	now := time.Now()
@@ -268,26 +282,59 @@ func (a *Agent) discoverFromFlatFiles(projectPath string) (*agent.SessionInfo, e
 	var bestSessionID string
 	var bestModTime time.Time
 
-	for _, entry := range dirEntries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
-			continue
+	_ = filepath.WalkDir(sessionRoot, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil || entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			return nil
 		}
 
 		info, err := entry.Info()
 		if err != nil {
-			continue
+			return nil
 		}
 
 		modTime := info.ModTime()
 		if now.Sub(modTime) > recentTimeout {
-			continue
+			return nil
+		}
+
+		// Older layout: session files nested under a directory named for the project ID.
+		matches := filepath.Base(filepath.Dir(path)) == projectID
+
+		if !matches {
+			// Newer layout: sessions are flat, scoped via fields inside the file.
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return nil
+			}
+
+			var sess struct {
+				ProjectID string `json:"projectID"`
+				Directory string `json:"directory"`
+			}
+			if err := json.Unmarshal(data, &sess); err != nil {
+				return nil
+			}
+
+			if sess.ProjectID != "" && sess.ProjectID == projectID {
+				matches = true
+			}
+			if !matches && sess.Directory != "" {
+				if absDir, err := filepath.Abs(sess.Directory); err == nil && absDir == absProjectPath {
+					matches = true
+				}
+			}
+		}
+
+		if !matches {
+			return nil
 		}
 
 		if bestSessionID == "" || modTime.After(bestModTime) {
 			bestSessionID = strings.TrimSuffix(entry.Name(), ".json")
 			bestModTime = modTime
 		}
-	}
+		return nil
+	})
 
 	if bestSessionID == "" {
 		return nil, nil
@@ -497,4 +544,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
