@@ -1,3 +1,4 @@
+```go
 package opencode
 
 import (
@@ -230,8 +231,24 @@ func (a *Agent) parseMessageDir(dir string) (*agent.Transcript, error) {
 }
 
 // DiscoverSession finds an active or recent OpenCode session.
-// It first tries flat file storage (pre-v1.2), then falls back to SQLite (v1.2+).
+//
+// OpenCode's own on-disk session/message storage format has changed across
+// versions (flat JSON files pre-v1.2, SQLite in later versions, and the exact
+// layout keeps shifting), which makes it an unreliable source for discovering
+// a session after a *manual* git commit (i.e. a commit shiftlog didn't
+// observe via a tool call). Instead, we check the .shiftlog/active-session.json
+// pointer first: it's written directly by our own OpenCode plugin the moment
+// a session starts, so it doesn't depend on reverse-engineering OpenCode's
+// storage format at all. This mirrors the approach already used by the
+// Claude and Gemini agents.
+//
+// If that pointer isn't present (e.g. plugin not installed/updated yet), we
+// fall back to the legacy flat file storage (pre-v1.2), then SQLite (v1.2+).
 func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) {
+	if info, err := discoverFromActiveSession(projectPath); err == nil && info != nil {
+		return info, nil
+	}
+
 	// Try flat file storage first (pre-v1.2 OpenCode)
 	session, err := a.discoverFromFlatFiles(projectPath)
 	if err != nil {
@@ -249,6 +266,52 @@ func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) 
 
 	projectID := GetProjectID(projectPath)
 	return discoverFromSQLite(dataDir, projectID, projectPath)
+}
+
+// discoverFromActiveSession checks the .shiftlog/active-session.json file
+// written by the OpenCode plugin's session-start call for a direct pointer
+// to the active session's snapshot transcript.
+func discoverFromActiveSession(projectPath string) (*agent.SessionInfo, error) {
+	sessionPath := filepath.Join(projectPath, ".shiftlog", "active-session.json")
+
+	data, err := os.ReadFile(sessionPath)
+	if err != nil {
+		return nil, err
+	}
+
+	var active struct {
+		SessionID      string `json:"session_id"`
+		TranscriptPath string `json:"transcript_path"`
+		StartedAt      string `json:"started_at"`
+		ProjectPath    string `json:"project_path"`
+	}
+	if err := json.Unmarshal(data, &active); err != nil {
+		return nil, err
+	}
+
+	// Validate project path matches
+	if !agent.PathsEqual(active.ProjectPath, projectPath) {
+		return nil, nil
+	}
+
+	// Validate session is still active (transcript snapshot modified recently)
+	if active.TranscriptPath == "" {
+		return nil, nil
+	}
+	info, err := os.Stat(active.TranscriptPath)
+	if err != nil {
+		return nil, nil
+	}
+	if time.Since(info.ModTime()) > agent.RecentSessionTimeout {
+		return nil, nil
+	}
+
+	return &agent.SessionInfo{
+		SessionID:      active.SessionID,
+		TranscriptPath: active.TranscriptPath,
+		StartedAt:      active.StartedAt,
+		ProjectPath:    active.ProjectPath,
+	}, nil
 }
 
 // discoverFromFlatFiles tries the legacy flat file session discovery.
@@ -497,4 +560,4 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
+```
