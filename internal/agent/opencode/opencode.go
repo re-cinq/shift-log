@@ -296,12 +296,39 @@ func (a *Agent) discoverFromFlatFiles(projectPath string) (*agent.SessionInfo, e
 	// The transcript path for OpenCode is the message directory
 	msgDir, _ := GetMessageDir(bestSessionID)
 
+	// OpenCode 1.2+ sometimes leaves a flat session pointer file behind while
+	// the actual message content only exists in SQLite. If the message
+	// directory doesn't exist or has no message files, this flat-file hit
+	// isn't usable — let the caller fall back to the SQLite discovery path.
+	if !hasMessageFiles(msgDir) {
+		return nil, nil
+	}
+
 	return &agent.SessionInfo{
 		SessionID:      bestSessionID,
 		TranscriptPath: msgDir,
 		StartedAt:      bestModTime.Format(time.RFC3339),
 		ProjectPath:    projectPath,
 	}, nil
+}
+
+// hasMessageFiles reports whether dir exists and contains at least one
+// message file (.json or .jsonl).
+func hasMessageFiles(dir string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if strings.HasSuffix(name, ".json") || strings.HasSuffix(name, ".jsonl") {
+			return true
+		}
+	}
+	return false
 }
 
 // discoverFromSQLite queries the OpenCode SQLite database for the most recent session.
@@ -497,4 +524,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
