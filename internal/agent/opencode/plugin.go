@@ -1,3 +1,4 @@
+```go
 package opencode
 
 import (
@@ -39,13 +40,32 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
       if (!pending) return;
       pendingCommits.delete(input.callID);
 
-      // Try to fetch messages via the SDK client API
+      // Try to fetch messages via the SDK client API. The client call is
+      // bounded by a timeout — some SDK versions can hang indefinitely
+      // (e.g. a stalled HTTP request) rather than reject, and OpenCode
+      // awaits this hook before returning control to the agent loop, so an
+      // unbounded await here would hang the whole CLI invocation.
       let transcriptData = "";
       if (client && pending.sessionID) {
         try {
-          const msgs = await client.session.messages({ path: { id: pending.sessionID } });
-          if (msgs && Array.isArray(msgs)) {
-            transcriptData = JSON.stringify(msgs.map(m => ({
+          const withTimeout = (promise, ms) => Promise.race([
+            promise,
+            new Promise((_, reject) => setTimeout(() => reject(new Error("shiftlog: client call timed out")), ms)),
+          ]);
+
+          const msgs = await withTimeout(
+            client.session.messages({ path: { id: pending.sessionID } }),
+            5000,
+          );
+
+          // Some SDK versions return a bare array, others wrap results as
+          // { data: [...] } (generated OpenAPI client convention).
+          const list = Array.isArray(msgs)
+            ? msgs
+            : (msgs && Array.isArray(msgs.data) ? msgs.data : null);
+
+          if (list) {
+            transcriptData = JSON.stringify(list.map(m => ({
               role: m.role || "",
               id: m.id || "",
               content: m.content || "",
@@ -125,3 +145,4 @@ func HasPlugin(repoRoot string) bool {
 	_, err := os.Stat(pluginPath)
 	return err == nil
 }
+```
