@@ -39,12 +39,17 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
       if (!pending) return;
       pendingCommits.delete(input.callID);
 
-      // Try to fetch messages via the SDK client API
+      // Try to fetch messages via the SDK client API. Newer OpenCode SDK
+      // versions wrap the payload as { data, error } instead of returning
+      // the message array directly, so accept either shape.
       let transcriptData = "";
       if (client && pending.sessionID) {
         try {
-          const msgs = await client.session.messages({ path: { id: pending.sessionID } });
-          if (msgs && Array.isArray(msgs)) {
+          const result = await client.session.messages({ path: { id: pending.sessionID } });
+          const msgs = Array.isArray(result)
+            ? result
+            : (result && Array.isArray(result.data) ? result.data : null);
+          if (msgs) {
             transcriptData = JSON.stringify(msgs.map(m => ({
               role: m.role || "",
               id: m.id || "",
@@ -70,13 +75,21 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
         ...(transcriptData ? { transcript_data: transcriptData } : {}),
       });
 
+      // Use the async (non-blocking) child_process API rather than execSync.
+      // execSync blocks OpenCode's entire event loop until it returns, which
+      // can stall unrelated in-flight work (streaming responses, other tool
+      // calls) for the full duration of the shiftlog store call and cause
+      // the whole run to time out. The async form lets the event loop keep
+      // making progress elsewhere while we wait for shiftlog to finish.
       try {
-        const { execSync } = await import("child_process");
-        execSync("shiftlog store --agent=opencode", {
-          input: hookData,
-          cwd: directory,
-          timeout: 30000,
-          stdio: ["pipe", "pipe", "pipe"],
+        const { exec } = await import("child_process");
+        await new Promise((resolve) => {
+          const child = exec(
+            "shiftlog store --agent=opencode",
+            { cwd: directory, timeout: 30000 },
+            () => resolve(),
+          );
+          child.stdin.end(hookData);
         });
       } catch (e) {
         // Silently ignore errors to not disrupt workflow
