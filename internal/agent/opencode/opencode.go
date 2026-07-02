@@ -1,6 +1,7 @@
 package opencode
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -230,9 +231,11 @@ func (a *Agent) parseMessageDir(dir string) (*agent.Transcript, error) {
 }
 
 // DiscoverSession finds an active or recent OpenCode session.
-// It first tries flat file storage (pre-v1.2), then falls back to SQLite (v1.2+).
+// It tries flat file storage first (both the legacy per-project nested
+// layout and the flat layout used by newer OpenCode releases), then falls
+// back to SQLite for versions that use it.
 func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) {
-	// Try flat file storage first (pre-v1.2 OpenCode)
+	// Try flat file storage first
 	session, err := a.discoverFromFlatFiles(projectPath)
 	if err != nil {
 		return nil, err
@@ -241,7 +244,7 @@ func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) 
 		return session, nil
 	}
 
-	// Fall back to SQLite (OpenCode v1.2+)
+	// Fall back to SQLite (some OpenCode versions use it)
 	dataDir, err := GetDataDir()
 	if err != nil {
 		return nil, nil
@@ -251,16 +254,41 @@ func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) 
 	return discoverFromSQLite(dataDir, projectID, projectPath)
 }
 
-// discoverFromFlatFiles tries the legacy flat file session discovery.
+// discoverFromFlatFiles tries flat file session discovery.
 func (a *Agent) discoverFromFlatFiles(projectPath string) (*agent.SessionInfo, error) {
-	sessionDir, err := GetSessionDir(projectPath)
+	dataDir, err := GetDataDir()
 	if err != nil {
 		return nil, nil
 	}
 
-	dirEntries, err := os.ReadDir(sessionDir)
+	// Legacy layout: sessions nested under a project-ID subdirectory,
+	// storage/session/<projectID>/<sessionID>.json.
+	nestedDir := filepath.Join(dataDir, "storage", "session", GetProjectID(projectPath))
+	if session := bestRecentSession(nestedDir, projectPath, false); session != nil {
+		return session, nil
+	}
+
+	// Newer OpenCode releases store all sessions flat under storage/session/,
+	// keyed only by session ID, with the owning project directory recorded
+	// inside each session's JSON rather than encoded in the directory path.
+	// Scan the flat directory and match sessions that reference this project.
+	flatDir := filepath.Join(dataDir, "storage", "session")
+	if session := bestRecentSession(flatDir, projectPath, true); session != nil {
+		return session, nil
+	}
+
+	return nil, nil
+}
+
+// bestRecentSession scans dir for the most recently modified session file
+// within the recent-session window. When matchProject is true, a session
+// file is only considered if its JSON content references projectPath
+// (OpenCode records the session's working directory in the session file),
+// since dir may contain sessions for many different projects.
+func bestRecentSession(dir, projectPath string, matchProject bool) *agent.SessionInfo {
+	dirEntries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, nil
+		return nil
 	}
 
 	now := time.Now()
@@ -283,6 +311,13 @@ func (a *Agent) discoverFromFlatFiles(projectPath string) (*agent.SessionInfo, e
 			continue
 		}
 
+		if matchProject {
+			data, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+			if err != nil || !bytes.Contains(data, []byte(projectPath)) {
+				continue
+			}
+		}
+
 		if bestSessionID == "" || modTime.After(bestModTime) {
 			bestSessionID = strings.TrimSuffix(entry.Name(), ".json")
 			bestModTime = modTime
@@ -290,7 +325,7 @@ func (a *Agent) discoverFromFlatFiles(projectPath string) (*agent.SessionInfo, e
 	}
 
 	if bestSessionID == "" {
-		return nil, nil
+		return nil
 	}
 
 	// The transcript path for OpenCode is the message directory
@@ -301,7 +336,7 @@ func (a *Agent) discoverFromFlatFiles(projectPath string) (*agent.SessionInfo, e
 		TranscriptPath: msgDir,
 		StartedAt:      bestModTime.Format(time.RFC3339),
 		ProjectPath:    projectPath,
-	}, nil
+	}
 }
 
 // discoverFromSQLite queries the OpenCode SQLite database for the most recent session.
@@ -497,4 +532,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
