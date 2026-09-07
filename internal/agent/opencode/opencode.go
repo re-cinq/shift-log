@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -251,15 +252,33 @@ func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) 
 	return discoverFromSQLite(dataDir, projectID, projectPath)
 }
 
-// discoverFromFlatFiles tries the legacy flat file session discovery.
+// sessionDirectoryKeys are the known/possible JSON field names OpenCode has
+// used to record a session's project directory.
+var sessionDirectoryKeys = []string{"directory", "cwd", "path", "projectPath", "workingDirectory", "root", "worktree"}
+
+// sessionIDKeys are the known/possible JSON field names OpenCode has used
+// to record a session's ID.
+var sessionIDKeys = []string{"id", "sessionID", "sessionId"}
+
+// discoverFromFlatFiles tries the flat-file session discovery.
+//
+// OpenCode's on-disk session layout (flat storage/session/<id>.json vs.
+// nested storage/session/<projectID>/<id>.json, and the exact metadata
+// field names) has changed across versions. Rather than depending on
+// correctly reconstructing OpenCode's internal project identifier (which
+// GetProjectID only approximates via the git root commit hash), this scans
+// every session JSON file under the session storage root and matches by
+// the project directory recorded inside each file, mirroring how Copilot
+// session discovery matches by an embedded cwd field.
 func (a *Agent) discoverFromFlatFiles(projectPath string) (*agent.SessionInfo, error) {
-	sessionDir, err := GetSessionDir(projectPath)
+	dataDir, err := GetDataDir()
 	if err != nil {
 		return nil, nil
 	}
 
-	dirEntries, err := os.ReadDir(sessionDir)
-	if err != nil {
+	sessionRoot := filepath.Join(dataDir, "storage", "session")
+	files, err := findSessionFiles(sessionRoot)
+	if err != nil || len(files) == 0 {
 		return nil, nil
 	}
 
@@ -268,12 +287,8 @@ func (a *Agent) discoverFromFlatFiles(projectPath string) (*agent.SessionInfo, e
 	var bestSessionID string
 	var bestModTime time.Time
 
-	for _, entry := range dirEntries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
-			continue
-		}
-
-		info, err := entry.Info()
+	for _, path := range files {
+		info, err := os.Stat(path)
 		if err != nil {
 			continue
 		}
@@ -283,8 +298,28 @@ func (a *Agent) discoverFromFlatFiles(projectPath string) (*agent.SessionInfo, e
 			continue
 		}
 
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+
+		var raw map[string]interface{}
+		if err := json.Unmarshal(data, &raw); err != nil {
+			continue
+		}
+
+		dir := firstStringValue(raw, sessionDirectoryKeys)
+		if dir == "" || !agent.PathsEqual(dir, projectPath) {
+			continue
+		}
+
+		sessionID := firstStringValue(raw, sessionIDKeys)
+		if sessionID == "" {
+			sessionID = strings.TrimSuffix(filepath.Base(path), ".json")
+		}
+
 		if bestSessionID == "" || modTime.After(bestModTime) {
-			bestSessionID = strings.TrimSuffix(entry.Name(), ".json")
+			bestSessionID = sessionID
 			bestModTime = modTime
 		}
 	}
@@ -302,6 +337,41 @@ func (a *Agent) discoverFromFlatFiles(projectPath string) (*agent.SessionInfo, e
 		StartedAt:      bestModTime.Format(time.RFC3339),
 		ProjectPath:    projectPath,
 	}, nil
+}
+
+// firstStringValue returns the first non-empty string value found in raw
+// under any of the given keys.
+func firstStringValue(raw map[string]interface{}, keys []string) string {
+	for _, key := range keys {
+		if v, ok := raw[key].(string); ok && v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// findSessionFiles walks the session storage root — which may lay out
+// session files flat (storage/session/<id>.json) or nested under a
+// project-keyed directory (storage/session/<projectID>/<id>.json) — and
+// returns the paths of all session JSON files found.
+func findSessionFiles(root string) ([]string, error) {
+	var files []string
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil // skip unreadable entries, keep walking
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if strings.HasSuffix(d.Name(), ".json") {
+			files = append(files, path)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return files, nil
 }
 
 // discoverFromSQLite queries the OpenCode SQLite database for the most recent session.
@@ -454,7 +524,6 @@ func parseOpenCodeEntry(raw map[string]json.RawMessage, fullData []byte) agent.T
 	return entry
 }
 
-
 // parseOpenCodeMessage parses message content from an OpenCode entry.
 func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageType) *agent.Message {
 	if msgType == "" {
@@ -497,4 +566,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-

@@ -437,13 +437,19 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 			continue
 		}
 
-		modTime := info.ModTime()
+		entryPath := filepath.Join(sessionDir, entry.Name())
+
+		// Session directories can be reused/updated in place across CLI
+		// versions instead of being created fresh per session, so the
+		// directory's own mtime can go stale while the session is still
+		// active. Prefer the most recent mtime among the files that
+		// actually change on activity.
+		modTime := mostRecentModTime(entryPath, info.ModTime())
 		if now.Sub(modTime) > recentTimeout {
 			continue
 		}
 
 		// Check if this session directory has a workspace.yaml
-		entryPath := filepath.Join(sessionDir, entry.Name())
 		meta, err := parseSessionMeta(entryPath)
 		if err != nil || meta == nil {
 			continue
@@ -472,4 +478,16 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	}, nil
 }
 
-
+// mostRecentModTime returns the most recent modification time among the
+// session directory itself and its key files (workspace.yaml, events.jsonl).
+func mostRecentModTime(sessionDir string, dirModTime time.Time) time.Time {
+	best := dirModTime
+	for _, name := range []string{"workspace.yaml", "events.jsonl"} {
+		if info, err := os.Stat(filepath.Join(sessionDir, name)); err == nil {
+			if info.ModTime().After(best) {
+				best = info.ModTime()
+			}
+		}
+	}
+	return best
+}
