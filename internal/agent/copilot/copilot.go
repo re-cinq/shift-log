@@ -1,3 +1,4 @@
+```go
 package copilot
 
 import (
@@ -410,13 +411,11 @@ func extractCommand(toolName string, toolArgs json.RawMessage) string {
 }
 
 // scanForRecentSession scans Copilot's session state directory for recent session directories.
+// Session directories aren't assumed to sit at a fixed depth: newer Copilot CLI versions have
+// been observed to nest them under an intermediate directory (e.g. grouped by workspace), so
+// the whole session-state tree is walked rather than just its top level.
 func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	sessionDir, err := GetSessionStateDir()
-	if err != nil {
-		return nil, nil
-	}
-
-	entries, err := os.ReadDir(sessionDir)
 	if err != nil {
 		return nil, nil
 	}
@@ -427,38 +426,38 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	var bestSessionID string
 	var bestModTime time.Time
 
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
+	_ = filepath.WalkDir(sessionDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || !d.IsDir() || path == sessionDir {
+			return nil
 		}
 
-		info, err := entry.Info()
+		// Check if this directory has a workspace.yaml
+		meta, metaErr := parseSessionMeta(path)
+		if metaErr != nil || meta == nil {
+			return nil
+		}
+
+		info, err := d.Info()
 		if err != nil {
-			continue
+			return nil
 		}
 
 		modTime := info.ModTime()
 		if now.Sub(modTime) > recentTimeout {
-			continue
-		}
-
-		// Check if this session directory has a workspace.yaml
-		entryPath := filepath.Join(sessionDir, entry.Name())
-		meta, err := parseSessionMeta(entryPath)
-		if err != nil || meta == nil {
-			continue
+			return nil
 		}
 
 		if !agent.PathsEqual(meta.CWD, projectPath) {
-			continue
+			return nil
 		}
 
 		if bestDir == "" || modTime.After(bestModTime) {
-			bestDir = entryPath
+			bestDir = path
 			bestSessionID = meta.ID
 			bestModTime = modTime
 		}
-	}
+		return nil
+	})
 
 	if bestDir == "" {
 		return nil, nil
@@ -471,5 +470,4 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 		ProjectPath:    projectPath,
 	}, nil
 }
-
-
+```
