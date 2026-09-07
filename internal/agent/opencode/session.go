@@ -1,3 +1,4 @@
+```go
 package opencode
 
 import (
@@ -8,6 +9,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
+
+	"github.com/re-cinq/shift-log/internal/agent"
 )
 
 // GetDataDir returns the OpenCode data directory.
@@ -127,3 +131,58 @@ func WriteSessionFile(projectPath, sessionID string, transcriptData []byte) (str
 
 	return sessionPath, nil
 }
+
+// activeSessionRecord mirrors the JSON the shiftlog OpenCode plugin writes to
+// .shiftlog/active-session.json on every tool call (see plugin.go's
+// cacheActiveSession). OpenCode's own on-disk/SQLite session storage may not
+// be in the format shiftlog expects, or may not be reachable at all by the
+// time a later manual `git commit` triggers the post-commit hook (the
+// process that owned the session has already exited by then). The plugin
+// captures the session id and, when the SDK client is available, the actual
+// transcript content while the process is still alive, so manual-commit
+// discovery doesn't depend on re-reading OpenCode's own storage after exit.
+type activeSessionRecord struct {
+	SessionID      string `json:"session_id"`
+	TranscriptData string `json:"transcript_data"`
+	ProjectPath    string `json:"project_path"`
+	UpdatedAt      string `json:"updated_at"`
+}
+
+// readActiveSession reads the active-session cache written by the plugin.
+// Returns nil if the file is missing, stale, or belongs to a different project.
+func readActiveSession(projectPath string) *agent.SessionInfo {
+	path := filepath.Join(projectPath, ".shiftlog", "active-session.json")
+	info, err := os.Stat(path)
+	if err != nil || time.Since(info.ModTime()) > agent.RecentSessionTimeout {
+		return nil
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+
+	var rec activeSessionRecord
+	if err := json.Unmarshal(data, &rec); err != nil || rec.SessionID == "" {
+		return nil
+	}
+
+	if !agent.PathsEqual(rec.ProjectPath, projectPath) {
+		return nil
+	}
+
+	result := &agent.SessionInfo{
+		SessionID:   rec.SessionID,
+		StartedAt:   rec.UpdatedAt,
+		ProjectPath: rec.ProjectPath,
+	}
+	if rec.TranscriptData != "" {
+		result.TranscriptData = []byte(rec.TranscriptData)
+	} else if msgDir, err := GetMessageDir(rec.SessionID); err == nil {
+		// No inline transcript was cached (SDK call may have failed); fall
+		// back to OpenCode's own message directory for this known session id.
+		result.TranscriptPath = msgDir
+	}
+	return result
+}
+```

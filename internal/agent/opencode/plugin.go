@@ -1,3 +1,4 @@
+```go
 package opencode
 
 import (
@@ -22,6 +23,47 @@ const pluginTemplate = `// shiftlog plugin for OpenCode CLI
 export const ShiftlogPlugin = async ({ directory, client }) => {
   const pendingCommits = new Map();
 
+  // Caches a lightweight pointer to the active session (plus the transcript
+  // itself, when the SDK client is reachable) on every tool call. OpenCode's
+  // own session storage may not be in a format/location shiftlog recognizes,
+  // or may simply be unavailable by the time a later manual (non-agent) git
+  // commit fires shiftlog's post-commit hook, since the OpenCode process
+  // has exited by then. Capturing this while the process is still alive
+  // lets that manual commit still be attributed to this session.
+  const cacheActiveSession = async (sessionID) => {
+    if (!sessionID) return;
+    try {
+      let transcriptData = "";
+      if (client) {
+        try {
+          const msgs = await client.session.messages({ path: { id: sessionID } });
+          if (msgs && Array.isArray(msgs)) {
+            transcriptData = JSON.stringify(msgs.map(m => ({
+              role: m.role || "",
+              id: m.id || "",
+              content: m.content || "",
+              time: m.time || {},
+            })));
+          }
+        } catch (e) {
+          // SDK call failed; still cache the session id below
+        }
+      }
+
+      const fs = await import("node:fs");
+      const shiftlogDir = directory + "/.shiftlog";
+      fs.mkdirSync(shiftlogDir, { recursive: true });
+      fs.writeFileSync(shiftlogDir + "/active-session.json", JSON.stringify({
+        session_id: sessionID,
+        transcript_data: transcriptData,
+        project_path: directory,
+        updated_at: new Date().toISOString(),
+      }));
+    } catch (e) {
+      // Best-effort only; never disrupt the agent's workflow
+    }
+  };
+
   return {
     "tool.execute.before": async (input, output) => {
       const command = output?.args?.command || output?.args?.cmd || "";
@@ -35,6 +77,11 @@ export const ShiftlogPlugin = async ({ directory, client }) => {
     },
 
     "tool.execute.after": async (input, output) => {
+      // Refresh the active-session cache on every tool call, not just
+      // commits, so manual commits made after the session ends can still
+      // be attributed correctly.
+      await cacheActiveSession(input.sessionID);
+
       const pending = pendingCommits.get(input.callID);
       if (!pending) return;
       pendingCommits.delete(input.callID);
@@ -125,3 +172,4 @@ func HasPlugin(repoRoot string) bool {
 	_, err := os.Stat(pluginPath)
 	return err == nil
 }
+```

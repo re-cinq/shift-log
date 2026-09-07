@@ -1,10 +1,14 @@
+```go
 package copilot
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
+	"github.com/re-cinq/shift-log/internal/agent"
 	"gopkg.in/yaml.v3"
 )
 
@@ -82,3 +86,79 @@ func WriteSessionFile(sessionID string, data []byte) (string, error) {
 	return eventsPath, os.WriteFile(eventsPath, data, 0600)
 }
 
+// activeSessionRecord is a lightweight pointer to the most recently observed
+// Copilot session, persisted by ParseHookInput on every hook invocation
+// (not just git-commit ones). Copilot's own ~/.copilot/session-state entry
+// for a session may no longer be discoverable by the time the post-commit
+// git hook runs (e.g. once the CLI process has exited), so this durable,
+// shiftlog-owned pointer lets manual-commit discovery still find the right
+// session.
+type activeSessionRecord struct {
+	SessionID      string `json:"session_id"`
+	TranscriptPath string `json:"transcript_path"`
+	ProjectPath    string `json:"project_path"`
+	UpdatedAt      string `json:"updated_at"`
+}
+
+// activeSessionPath returns the path to the active-session pointer file for a project.
+func activeSessionPath(projectPath string) string {
+	return filepath.Join(projectPath, ".shiftlog", "active-session.json")
+}
+
+// writeActiveSession persists a pointer to the currently active session.
+// Best-effort: this is a fallback mechanism, so failures are non-fatal and
+// silently ignored by callers. No-ops if projectPath or sessionID is empty.
+func writeActiveSession(projectPath, sessionID, transcriptPath string) error {
+	if projectPath == "" || sessionID == "" {
+		return nil
+	}
+
+	path := activeSessionPath(projectPath)
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
+	}
+
+	rec := activeSessionRecord{
+		SessionID:      sessionID,
+		TranscriptPath: transcriptPath,
+		ProjectPath:    projectPath,
+		UpdatedAt:      time.Now().UTC().Format(time.RFC3339),
+	}
+	data, err := json.Marshal(rec)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0600)
+}
+
+// readActiveSession reads the active-session pointer written by writeActiveSession.
+// Returns nil if the file is missing, stale, or belongs to a different project.
+func readActiveSession(projectPath string) *agent.SessionInfo {
+	path := activeSessionPath(projectPath)
+	info, err := os.Stat(path)
+	if err != nil || time.Since(info.ModTime()) > agent.RecentSessionTimeout {
+		return nil
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+
+	var rec activeSessionRecord
+	if err := json.Unmarshal(data, &rec); err != nil || rec.SessionID == "" {
+		return nil
+	}
+
+	if !agent.PathsEqual(rec.ProjectPath, projectPath) {
+		return nil
+	}
+
+	return &agent.SessionInfo{
+		SessionID:      rec.SessionID,
+		TranscriptPath: rec.TranscriptPath,
+		StartedAt:      rec.UpdatedAt,
+		ProjectPath:    rec.ProjectPath,
+	}
+}
+```

@@ -1,3 +1,4 @@
+```go
 package copilot
 
 import (
@@ -160,6 +161,15 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 		}
 	}
 
+	// Opportunistically persist a durable pointer to this session on every
+	// hook invocation (not just commits). Copilot's own session-state
+	// directory may be gone by the time a later manual `git commit` fires
+	// the post-commit hook, so this is the only reliable way to attribute
+	// a manual commit to the right session once the CLI process has exited.
+	if sessionID != "" {
+		_ = writeActiveSession(hook.CWD, sessionID, transcriptPath)
+	}
+
 	return &agent.HookData{
 		SessionID:      sessionID,
 		TranscriptPath: transcriptPath,
@@ -228,6 +238,12 @@ func (a *Agent) ParseTranscriptFile(path string) (*agent.Transcript, error) {
 
 // DiscoverSession finds an active or recent Copilot CLI session.
 func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) {
+	// Prefer the durable pointer shiftlog persisted on the last observed
+	// hook invocation: it survives even if Copilot has already cleaned up
+	// its own ~/.copilot/session-state entry for the session.
+	if info := readActiveSession(projectPath); info != nil {
+		return info, nil
+	}
 	return scanForRecentSession(projectPath)
 }
 
@@ -449,7 +465,13 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 			continue
 		}
 
-		if !agent.PathsEqual(meta.CWD, projectPath) {
+		// Match by cwd, falling back to git_root when cwd doesn't match
+		// (some Copilot CLI versions only populate one of the two).
+		matched := agent.PathsEqual(meta.CWD, projectPath)
+		if !matched && meta.GitRoot != "" {
+			matched = agent.PathsEqual(meta.GitRoot, projectPath)
+		}
+		if !matched {
 			continue
 		}
 
@@ -471,5 +493,4 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 		ProjectPath:    projectPath,
 	}, nil
 }
-
-
+```
