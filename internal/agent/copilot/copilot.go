@@ -442,20 +442,27 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 			continue
 		}
 
-		// Check if this session directory has a workspace.yaml
+		// Check if this session directory has parseable metadata. Its
+		// absence (or an unresolvable field) is tolerated rather than
+		// disqualifying, since the CLI's on-disk format can drift across
+		// versions - we fall back to directory mtime + name for identity
+		// and only exclude on a *confirmed* project mismatch.
 		entryPath := filepath.Join(sessionDir, entry.Name())
-		meta, err := parseSessionMeta(entryPath)
-		if err != nil || meta == nil {
-			continue
-		}
+		sessionID := entry.Name()
 
-		if !agent.PathsEqual(meta.CWD, projectPath) {
-			continue
+		meta, metaErr := parseSessionMeta(entryPath)
+		if metaErr == nil && meta != nil {
+			if meta.ID != "" {
+				sessionID = meta.ID
+			}
+			if meta.CWD != "" && !agent.PathsEqual(meta.CWD, projectPath) {
+				continue
+			}
 		}
 
 		if bestDir == "" || modTime.After(bestModTime) {
 			bestDir = entryPath
-			bestSessionID = meta.ID
+			bestSessionID = sessionID
 			bestModTime = modTime
 		}
 	}
@@ -471,5 +478,3 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 		ProjectPath:    projectPath,
 	}, nil
 }
-
-
