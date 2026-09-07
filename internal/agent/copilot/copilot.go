@@ -409,7 +409,24 @@ func extractCommand(toolName string, toolArgs json.RawMessage) string {
 	return ""
 }
 
+// sessionCandidate tracks a session directory considered during discovery.
+type sessionCandidate struct {
+	dir     string
+	id      string
+	modTime time.Time
+}
+
 // scanForRecentSession scans Copilot's session state directory for recent session directories.
+//
+// Matching is layered so that discovery survives Copilot CLI upgrades that
+// rename or drop workspace.yaml fields:
+//  1. Exact match on workspace.yaml's cwd (or git_root) field.
+//  2. A raw substring match of the project path against the session's
+//     workspace.yaml/events.jsonl content, for when the yaml schema changed
+//     but the path is still recorded somewhere in the session files.
+//  3. If exactly one recent session directory exists at all, use it — an
+//     unambiguous single candidate is very unlikely to belong to another
+//     project.
 func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	sessionDir, err := GetSessionStateDir()
 	if err != nil {
@@ -423,9 +440,9 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 
 	now := time.Now()
 	recentTimeout := agent.RecentSessionTimeout
-	var bestDir string
-	var bestSessionID string
-	var bestModTime time.Time
+
+	var exactMatch, contentMatch, mostRecent *sessionCandidate
+	recentCount := 0
 
 	for _, entry := range entries {
 		if !entry.IsDir() {
@@ -442,34 +459,72 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 			continue
 		}
 
-		// Check if this session directory has a workspace.yaml
+		recentCount++
 		entryPath := filepath.Join(sessionDir, entry.Name())
-		meta, err := parseSessionMeta(entryPath)
-		if err != nil || meta == nil {
-			continue
+
+		meta, metaErr := parseSessionMeta(entryPath)
+		sessionID := entry.Name()
+		if metaErr == nil && meta != nil && meta.ID != "" {
+			sessionID = meta.ID
 		}
 
-		if !agent.PathsEqual(meta.CWD, projectPath) {
-			continue
+		if mostRecent == nil || modTime.After(mostRecent.modTime) {
+			mostRecent = &sessionCandidate{dir: entryPath, id: sessionID, modTime: modTime}
 		}
 
-		if bestDir == "" || modTime.After(bestModTime) {
-			bestDir = entryPath
-			bestSessionID = meta.ID
-			bestModTime = modTime
+		if metaErr == nil && meta != nil {
+			if (meta.CWD != "" && agent.PathsEqual(meta.CWD, projectPath)) ||
+				(meta.GitRoot != "" && agent.PathsEqual(meta.GitRoot, projectPath)) {
+				if exactMatch == nil || modTime.After(exactMatch.modTime) {
+					exactMatch = &sessionCandidate{dir: entryPath, id: sessionID, modTime: modTime}
+				}
+				continue
+			}
+		}
+
+		if containsProjectPath(entryPath, projectPath) {
+			if contentMatch == nil || modTime.After(contentMatch.modTime) {
+				contentMatch = &sessionCandidate{dir: entryPath, id: sessionID, modTime: modTime}
+			}
 		}
 	}
 
-	if bestDir == "" {
+	best := exactMatch
+	if best == nil {
+		best = contentMatch
+	}
+	if best == nil && recentCount == 1 {
+		best = mostRecent
+	}
+
+	if best == nil {
 		return nil, nil
 	}
 
 	return &agent.SessionInfo{
-		SessionID:      bestSessionID,
-		TranscriptPath: GetTranscriptPath(bestDir),
-		StartedAt:      bestModTime.Format(time.RFC3339),
+		SessionID:      best.id,
+		TranscriptPath: GetTranscriptPath(best.dir),
+		StartedAt:      best.modTime.Format(time.RFC3339),
 		ProjectPath:    projectPath,
 	}, nil
 }
 
-
+// containsProjectPath does a best-effort raw scan of a session directory's
+// files for the project path. Used as a fallback when workspace.yaml can't
+// be parsed into the expected schema (e.g. after a Copilot CLI upgrade
+// renamed or restructured its fields).
+func containsProjectPath(sessionDir, projectPath string) bool {
+	if projectPath == "" {
+		return false
+	}
+	for _, name := range []string{"workspace.yaml", "events.jsonl"} {
+		data, err := os.ReadFile(filepath.Join(sessionDir, name))
+		if err != nil {
+			continue
+		}
+		if strings.Contains(string(data), projectPath) {
+			return true
+		}
+	}
+	return false
+}
