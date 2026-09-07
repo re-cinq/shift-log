@@ -1,9 +1,11 @@
+```go
 package copilot
 
 import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -54,6 +56,31 @@ func GetTranscriptPath(sessionDir string) string {
 	return filepath.Join(sessionDir, "events.jsonl")
 }
 
+// resolveTranscriptPath returns the path to a session's transcript file.
+// Copilot's default transcript filename is events.jsonl, but if that file
+// is missing (e.g. renamed by a newer CLI release), fall back to any other
+// .jsonl file present in the session directory rather than failing outright.
+func resolveTranscriptPath(sessionDir string) string {
+	defaultPath := GetTranscriptPath(sessionDir)
+	if _, err := os.Stat(defaultPath); err == nil {
+		return defaultPath
+	}
+
+	entries, err := os.ReadDir(sessionDir)
+	if err != nil {
+		return defaultPath
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".jsonl") {
+			continue
+		}
+		return filepath.Join(sessionDir, entry.Name())
+	}
+
+	return defaultPath
+}
+
 // WriteSessionFile writes a session directory structure to Copilot's session state directory.
 // Creates <sessionDir>/<sessionID>/ with workspace.yaml and events.jsonl.
 func WriteSessionFile(sessionID string, data []byte) (string, error) {
@@ -81,4 +108,4 @@ func WriteSessionFile(sessionID string, data []byte) (string, error) {
 	eventsPath := GetTranscriptPath(sessionDir)
 	return eventsPath, os.WriteFile(eventsPath, data, 0600)
 }
-
+```
