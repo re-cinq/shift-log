@@ -1,3 +1,4 @@
+```go
 package copilot
 
 import (
@@ -410,6 +411,10 @@ func extractCommand(toolName string, toolArgs json.RawMessage) string {
 }
 
 // scanForRecentSession scans Copilot's session state directory for recent session directories.
+// It prefers a directory whose recorded working directory matches projectPath. If none match
+// (e.g. because a Copilot CLI update renamed the workspace.yaml field that records the cwd,
+// or otherwise omitted it), it falls back to the most recently modified session directory
+// within the recency window so discovery still succeeds.
 func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	sessionDir, err := GetSessionStateDir()
 	if err != nil {
@@ -426,6 +431,10 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	var bestDir string
 	var bestSessionID string
 	var bestModTime time.Time
+
+	var fallbackDir string
+	var fallbackSessionID string
+	var fallbackModTime time.Time
 
 	for _, entry := range entries {
 		if !entry.IsDir() {
@@ -449,15 +458,32 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 			continue
 		}
 
-		if !agent.PathsEqual(meta.CWD, projectPath) {
+		sessionID := meta.ID
+		if sessionID == "" {
+			sessionID = entry.Name()
+		}
+
+		if fallbackDir == "" || modTime.After(fallbackModTime) {
+			fallbackDir = entryPath
+			fallbackSessionID = sessionID
+			fallbackModTime = modTime
+		}
+
+		if meta.CWD == "" || !agent.PathsEqual(meta.CWD, projectPath) {
 			continue
 		}
 
 		if bestDir == "" || modTime.After(bestModTime) {
 			bestDir = entryPath
-			bestSessionID = meta.ID
+			bestSessionID = sessionID
 			bestModTime = modTime
 		}
+	}
+
+	if bestDir == "" {
+		bestDir = fallbackDir
+		bestSessionID = fallbackSessionID
+		bestModTime = fallbackModTime
 	}
 
 	if bestDir == "" {
@@ -471,5 +497,4 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 		ProjectPath:    projectPath,
 	}, nil
 }
-
-
+```
