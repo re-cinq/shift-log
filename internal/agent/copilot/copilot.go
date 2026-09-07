@@ -1,3 +1,4 @@
+```go
 package copilot
 
 import (
@@ -410,6 +411,10 @@ func extractCommand(toolName string, toolArgs json.RawMessage) string {
 }
 
 // scanForRecentSession scans Copilot's session state directory for recent session directories.
+// Matching is primarily done by comparing workspace.yaml's cwd against projectPath, but Copilot's
+// workspace.yaml schema has drifted across versions, so parseSessionMeta already tolerates renamed
+// fields. As a last resort, if exactly one session directory is recent and none of them produced a
+// usable cwd match, that lone session is assumed to be ours rather than silently dropping it.
 func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	sessionDir, err := GetSessionStateDir()
 	if err != nil {
@@ -423,53 +428,87 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 
 	now := time.Now()
 	recentTimeout := agent.RecentSessionTimeout
-	var bestDir string
-	var bestSessionID string
-	var bestModTime time.Time
+
+	type candidate struct {
+		dir     string
+		id      string
+		modTime time.Time
+	}
+
+	var matched *candidate
+	var fallback *candidate
+	var recentCount int
 
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
 		}
 
-		info, err := entry.Info()
-		if err != nil {
-			continue
-		}
-
-		modTime := info.ModTime()
+		entryPath := filepath.Join(sessionDir, entry.Name())
+		modTime := latestModTime(entryPath, entry)
 		if now.Sub(modTime) > recentTimeout {
 			continue
 		}
 
 		// Check if this session directory has a workspace.yaml
-		entryPath := filepath.Join(sessionDir, entry.Name())
 		meta, err := parseSessionMeta(entryPath)
 		if err != nil || meta == nil {
 			continue
 		}
 
-		if !agent.PathsEqual(meta.CWD, projectPath) {
+		recentCount++
+
+		id := meta.ID
+		if id == "" {
+			id = entry.Name()
+		}
+		c := &candidate{dir: entryPath, id: id, modTime: modTime}
+
+		if meta.CWD != "" && agent.PathsEqual(meta.CWD, projectPath) {
+			if matched == nil || modTime.After(matched.modTime) {
+				matched = c
+			}
 			continue
 		}
 
-		if bestDir == "" || modTime.After(bestModTime) {
-			bestDir = entryPath
-			bestSessionID = meta.ID
-			bestModTime = modTime
+		if fallback == nil || modTime.After(fallback.modTime) {
+			fallback = c
 		}
 	}
 
-	if bestDir == "" {
+	best := matched
+	if best == nil && recentCount == 1 {
+		best = fallback
+	}
+
+	if best == nil {
 		return nil, nil
 	}
 
 	return &agent.SessionInfo{
-		SessionID:      bestSessionID,
-		TranscriptPath: GetTranscriptPath(bestDir),
-		StartedAt:      bestModTime.Format(time.RFC3339),
+		SessionID:      best.id,
+		TranscriptPath: GetTranscriptPath(best.dir),
+		StartedAt:      best.modTime.Format(time.RFC3339),
 		ProjectPath:    projectPath,
 	}, nil
 }
 
-
+// latestModTime returns the most recent modification time among the session
+// directory itself and its known files. Appending to an existing file does not
+// bump its parent directory's mtime on Linux, so relying on the directory alone
+// can make an active session look stale.
+func latestModTime(entryPath string, entry os.DirEntry) time.Time {
+	var best time.Time
+	if info, err := entry.Info(); err == nil {
+		best = info.ModTime()
+	}
+	for _, name := range []string{"workspace.yaml", "events.jsonl"} {
+		if info, err := os.Stat(filepath.Join(entryPath, name)); err == nil {
+			if info.ModTime().After(best) {
+				best = info.ModTime()
+			}
+		}
+	}
+	return best
+}
+```

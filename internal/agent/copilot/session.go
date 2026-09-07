@@ -1,9 +1,11 @@
+```go
 package copilot
 
 import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -14,6 +16,16 @@ type sessionMeta struct {
 	CWD     string `yaml:"cwd"`
 	GitRoot string `yaml:"git_root,omitempty"`
 }
+
+// cwdFieldCandidates lists known/plausible key names Copilot CLI has used
+// for the session's working directory across versions.
+var cwdFieldCandidates = []string{
+	"cwd", "directory", "workingdirectory", "working_dir", "workdir",
+	"path", "projectpath", "project_path", "cwdpath",
+}
+
+// idFieldCandidates lists known/plausible key names for the session identifier.
+var idFieldCandidates = []string{"id", "sessionid", "session_id"}
 
 // GetCopilotDir returns the path to Copilot's config/data directory.
 func GetCopilotDir() (string, error) {
@@ -34,6 +46,10 @@ func GetSessionStateDir() (string, error) {
 }
 
 // parseSessionMeta reads a workspace.yaml from a Copilot session directory.
+// Copilot CLI's workspace.yaml schema has drifted across versions (field
+// renames/nesting), so if the known "id"/"cwd" fields come back empty, this
+// falls back to scanning all top-level (and one level of nested) keys for a
+// plausibly-named replacement rather than failing outright.
 func parseSessionMeta(sessionDir string) (*sessionMeta, error) {
 	path := filepath.Join(sessionDir, "workspace.yaml")
 	data, err := os.ReadFile(path)
@@ -46,7 +62,49 @@ func parseSessionMeta(sessionDir string) (*sessionMeta, error) {
 		return nil, err
 	}
 
+	if meta.ID == "" || meta.CWD == "" {
+		var raw map[string]interface{}
+		if err := yaml.Unmarshal(data, &raw); err == nil {
+			if meta.ID == "" {
+				meta.ID = findYAMLField(raw, idFieldCandidates)
+			}
+			if meta.CWD == "" {
+				meta.CWD = findYAMLField(raw, cwdFieldCandidates)
+			}
+		}
+	}
+
 	return &meta, nil
+}
+
+// findYAMLField searches top-level and one level of nested maps for a string
+// value under any of the given candidate keys (case-insensitive).
+func findYAMLField(raw map[string]interface{}, candidates []string) string {
+	want := make(map[string]bool, len(candidates))
+	for _, c := range candidates {
+		want[c] = true
+	}
+
+	for k, v := range raw {
+		if !want[strings.ToLower(k)] {
+			continue
+		}
+		if s, ok := v.(string); ok && s != "" {
+			return s
+		}
+	}
+
+	for _, v := range raw {
+		nested, ok := v.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if s := findYAMLField(nested, candidates); s != "" {
+			return s
+		}
+	}
+
+	return ""
 }
 
 // GetTranscriptPath returns the path to the events.jsonl transcript within a session directory.
@@ -81,4 +139,4 @@ func WriteSessionFile(sessionID string, data []byte) (string, error) {
 	eventsPath := GetTranscriptPath(sessionDir)
 	return eventsPath, os.WriteFile(eventsPath, data, 0600)
 }
-
+```
