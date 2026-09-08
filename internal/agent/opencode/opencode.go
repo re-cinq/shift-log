@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -251,41 +252,90 @@ func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) 
 	return discoverFromSQLite(dataDir, projectID, projectPath)
 }
 
+// sessionDiscoveryInfo captures the fields we need from an OpenCode session
+// JSON file to match it against a project path during discovery.
+type sessionDiscoveryInfo struct {
+	Directory string `json:"directory,omitempty"`
+}
+
 // discoverFromFlatFiles tries the legacy flat file session discovery.
+// OpenCode's on-disk project ID is an internal implementation detail that
+// has changed across versions, so rather than trusting our own guess at the
+// project ID (GetProjectID) to locate the right directory, we scan every
+// project directory under storage/session and match sessions by their own
+// recorded "directory" field. Older OpenCode versions that don't record a
+// directory field fall back to comparing against our best-effort project ID.
 func (a *Agent) discoverFromFlatFiles(projectPath string) (*agent.SessionInfo, error) {
-	sessionDir, err := GetSessionDir(projectPath)
+	dataDir, err := GetDataDir()
 	if err != nil {
 		return nil, nil
 	}
 
-	dirEntries, err := os.ReadDir(sessionDir)
+	sessionRoot := filepath.Join(dataDir, "storage", "session")
+	projectDirs, err := os.ReadDir(sessionRoot)
 	if err != nil {
 		return nil, nil
 	}
 
 	now := time.Now()
 	recentTimeout := agent.RecentSessionTimeout
+	expectedProjectID := GetProjectID(projectPath)
 	var bestSessionID string
 	var bestModTime time.Time
 
-	for _, entry := range dirEntries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+	for _, projectDir := range projectDirs {
+		if !projectDir.IsDir() {
 			continue
 		}
 
-		info, err := entry.Info()
+		projectDirPath := filepath.Join(sessionRoot, projectDir.Name())
+		dirEntries, err := os.ReadDir(projectDirPath)
 		if err != nil {
 			continue
 		}
 
-		modTime := info.ModTime()
-		if now.Sub(modTime) > recentTimeout {
-			continue
-		}
+		for _, entry := range dirEntries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+				continue
+			}
 
-		if bestSessionID == "" || modTime.After(bestModTime) {
-			bestSessionID = strings.TrimSuffix(entry.Name(), ".json")
-			bestModTime = modTime
+			info, err := entry.Info()
+			if err != nil {
+				continue
+			}
+
+			modTime := info.ModTime()
+			if now.Sub(modTime) > recentTimeout {
+				continue
+			}
+
+			entryPath := filepath.Join(projectDirPath, entry.Name())
+			data, err := os.ReadFile(entryPath)
+			if err != nil {
+				continue
+			}
+
+			var sf sessionDiscoveryInfo
+			if err := json.Unmarshal(data, &sf); err != nil {
+				continue
+			}
+
+			// Match against the session's own recorded directory when
+			// present. Fall back to comparing the containing project
+			// directory name against our best-effort project ID guess for
+			// older OpenCode versions that don't record a directory field.
+			if sf.Directory != "" {
+				if !agent.PathsEqual(sf.Directory, projectPath) {
+					continue
+				}
+			} else if projectDir.Name() != expectedProjectID {
+				continue
+			}
+
+			if bestSessionID == "" || modTime.After(bestModTime) {
+				bestSessionID = strings.TrimSuffix(entry.Name(), ".json")
+				bestModTime = modTime
+			}
 		}
 	}
 
