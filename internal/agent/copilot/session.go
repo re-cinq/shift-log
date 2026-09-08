@@ -15,6 +15,38 @@ type sessionMeta struct {
 	GitRoot string `yaml:"git_root,omitempty"`
 }
 
+// UnmarshalYAML parses workspace.yaml leniently. The Copilot CLI has renamed
+// the working-directory field across releases, so we accept several known
+// aliases instead of hard-coding a single key.
+func (m *sessionMeta) UnmarshalYAML(node *yaml.Node) error {
+	var raw map[string]interface{}
+	if err := node.Decode(&raw); err != nil {
+		return err
+	}
+
+	m.ID = firstStringField(raw, "id", "session_id", "sessionId", "sessionID")
+	m.CWD = firstStringField(raw, "cwd", "cwd_path", "cwdPath",
+		"working_directory", "workingDirectory",
+		"workspace", "workspaceFolder", "workspace_folder",
+		"directory", "path", "root")
+	m.GitRoot = firstStringField(raw, "git_root", "gitRoot")
+
+	return nil
+}
+
+// firstStringField returns the first non-empty string value found in m for
+// any of the given keys.
+func firstStringField(m map[string]interface{}, keys ...string) string {
+	for _, k := range keys {
+		if v, ok := m[k]; ok {
+			if s, ok := v.(string); ok && s != "" {
+				return s
+			}
+		}
+	}
+	return ""
+}
+
 // GetCopilotDir returns the path to Copilot's config/data directory.
 func GetCopilotDir() (string, error) {
 	home, err := os.UserHomeDir()
@@ -33,9 +65,8 @@ func GetSessionStateDir() (string, error) {
 	return filepath.Join(copilotDir, "session-state"), nil
 }
 
-// parseSessionMeta reads a workspace.yaml from a Copilot session directory.
-func parseSessionMeta(sessionDir string) (*sessionMeta, error) {
-	path := filepath.Join(sessionDir, "workspace.yaml")
+// parseSessionMetaFile reads and parses a workspace metadata YAML file.
+func parseSessionMetaFile(path string) (*sessionMeta, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -81,4 +112,3 @@ func WriteSessionFile(sessionID string, data []byte) (string, error) {
 	eventsPath := GetTranscriptPath(sessionDir)
 	return eventsPath, os.WriteFile(eventsPath, data, 0600)
 }
-
