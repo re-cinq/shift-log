@@ -33,6 +33,10 @@ func GetSessionStateDir() (string, error) {
 	return filepath.Join(copilotDir, "session-state"), nil
 }
 
+// cwdKeyCandidates are the keys Copilot CLI has used across releases to record
+// a session's working directory in workspace.yaml.
+var cwdKeyCandidates = []string{"cwd", "workingDirectory", "working_directory", "directory", "path", "workspace"}
+
 // parseSessionMeta reads a workspace.yaml from a Copilot session directory.
 func parseSessionMeta(sessionDir string) (*sessionMeta, error) {
 	path := filepath.Join(sessionDir, "workspace.yaml")
@@ -44,6 +48,20 @@ func parseSessionMeta(sessionDir string) (*sessionMeta, error) {
 	var meta sessionMeta
 	if err := yaml.Unmarshal(data, &meta); err != nil {
 		return nil, err
+	}
+
+	// Copilot CLI has renamed the working-directory key between releases.
+	// Fall back to a generic scan so discovery doesn't depend on one schema.
+	if meta.CWD == "" {
+		var raw map[string]string
+		if err := yaml.Unmarshal(data, &raw); err == nil {
+			for _, key := range cwdKeyCandidates {
+				if v := raw[key]; v != "" {
+					meta.CWD = v
+					break
+				}
+			}
+		}
 	}
 
 	return &meta, nil
@@ -81,4 +99,3 @@ func WriteSessionFile(sessionID string, data []byte) (string, error) {
 	eventsPath := GetTranscriptPath(sessionDir)
 	return eventsPath, os.WriteFile(eventsPath, data, 0600)
 }
-

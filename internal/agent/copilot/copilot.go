@@ -410,6 +410,10 @@ func extractCommand(toolName string, toolArgs json.RawMessage) string {
 }
 
 // scanForRecentSession scans Copilot's session state directory for recent session directories.
+// It prefers a session whose recorded working directory matches projectPath, but Copilot CLI has
+// changed the workspace-metadata schema between releases (see parseSessionMeta). If nothing can
+// be matched by content but there's exactly one recent session directory, it's unambiguous which
+// one belongs to this run, so it's used as a fallback rather than silently missing the capture.
 func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	sessionDir, err := GetSessionStateDir()
 	if err != nil {
@@ -423,9 +427,13 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 
 	now := time.Now()
 	recentTimeout := agent.RecentSessionTimeout
-	var bestDir string
-	var bestSessionID string
-	var bestModTime time.Time
+
+	var matchedDir, matchedID string
+	var matchedModTime time.Time
+
+	var onlyCandidateDir, onlyCandidateID string
+	var onlyCandidateModTime time.Time
+	recentCount := 0
 
 	for _, entry := range entries {
 		if !entry.IsDir() {
@@ -442,22 +450,36 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 			continue
 		}
 
-		// Check if this session directory has a workspace.yaml
+		recentCount++
 		entryPath := filepath.Join(sessionDir, entry.Name())
+		onlyCandidateDir, onlyCandidateID, onlyCandidateModTime = entryPath, entry.Name(), modTime
+
+		// Check if this session directory has a workspace.yaml
 		meta, err := parseSessionMeta(entryPath)
 		if err != nil || meta == nil {
 			continue
 		}
 
-		if !agent.PathsEqual(meta.CWD, projectPath) {
+		sessionID := meta.ID
+		if sessionID == "" {
+			sessionID = entry.Name()
+		}
+
+		if !agent.PathsEqual(meta.CWD, projectPath) &&
+			!(meta.GitRoot != "" && agent.PathsEqual(meta.GitRoot, projectPath)) {
 			continue
 		}
 
-		if bestDir == "" || modTime.After(bestModTime) {
-			bestDir = entryPath
-			bestSessionID = meta.ID
-			bestModTime = modTime
+		if matchedDir == "" || modTime.After(matchedModTime) {
+			matchedDir = entryPath
+			matchedID = sessionID
+			matchedModTime = modTime
 		}
+	}
+
+	bestDir, bestSessionID, bestModTime := matchedDir, matchedID, matchedModTime
+	if bestDir == "" && recentCount == 1 {
+		bestDir, bestSessionID, bestModTime = onlyCandidateDir, onlyCandidateID, onlyCandidateModTime
 	}
 
 	if bestDir == "" {
@@ -471,5 +493,3 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 		ProjectPath:    projectPath,
 	}, nil
 }
-
-
