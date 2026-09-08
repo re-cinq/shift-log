@@ -202,6 +202,11 @@ type copilotEventData struct {
 	ToolUseID string          `json:"toolUseId,omitempty"`
 	ToolName  string          `json:"toolName,omitempty"`
 	Result    json.RawMessage `json:"result,omitempty"`
+
+	// For session.start events (and, on newer Copilot CLI releases where the
+	// session-state workspace.yaml sidecar may be stale/absent, the primary
+	// source of the session's working directory).
+	CWD string `json:"cwd,omitempty"`
 }
 
 // copilotToolRequest represents a tool request in an assistant message.
@@ -409,6 +414,45 @@ func extractCommand(toolName string, toolArgs json.RawMessage) string {
 	return ""
 }
 
+// sessionCWD determines the working directory a Copilot session was started
+// in. It first tries the session's workspace.yaml sidecar file (the format
+// used by earlier Copilot CLI releases). Newer releases may omit or delay
+// writing that sidecar, so this falls back to the "cwd" field embedded in
+// the session.start event at the top of events.jsonl.
+func sessionCWD(sessionDir string) string {
+	if meta, err := parseSessionMeta(sessionDir); err == nil && meta != nil && meta.CWD != "" {
+		return meta.CWD
+	}
+
+	f, err := os.Open(GetTranscriptPath(sessionDir))
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = f.Close() }()
+
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+
+		var event copilotEvent
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			continue
+		}
+		if event.Data.CWD != "" {
+			return event.Data.CWD
+		}
+		// Session metadata, if present at all, is expected on the first
+		// non-empty line (the session.start event).
+		break
+	}
+
+	return ""
+}
+
 // scanForRecentSession scans Copilot's session state directory for recent session directories.
 func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	sessionDir, err := GetSessionStateDir()
@@ -427,6 +471,15 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	var bestSessionID string
 	var bestModTime time.Time
 
+	// Last-resort fallback: the most recently modified session directory,
+	// regardless of whether we could determine/match its cwd. Used only
+	// when no directory yields a confirmed cwd match — this keeps manual
+	// commit capture working even if a Copilot CLI upgrade changes the
+	// session metadata format shiftlog doesn't yet know how to parse.
+	var fallbackDir string
+	var fallbackSessionID string
+	var fallbackModTime time.Time
+
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -442,34 +495,48 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 			continue
 		}
 
-		// Check if this session directory has a workspace.yaml
 		entryPath := filepath.Join(sessionDir, entry.Name())
-		meta, err := parseSessionMeta(entryPath)
-		if err != nil || meta == nil {
+
+		if fallbackDir == "" || modTime.After(fallbackModTime) {
+			fallbackDir = entryPath
+			fallbackSessionID = entry.Name()
+			fallbackModTime = modTime
+		}
+
+		cwd := sessionCWD(entryPath)
+		if cwd == "" || !agent.PathsEqual(cwd, projectPath) {
 			continue
 		}
 
-		if !agent.PathsEqual(meta.CWD, projectPath) {
-			continue
+		sessionID := entry.Name()
+		if meta, err := parseSessionMeta(entryPath); err == nil && meta != nil && meta.ID != "" {
+			sessionID = meta.ID
 		}
 
 		if bestDir == "" || modTime.After(bestModTime) {
 			bestDir = entryPath
-			bestSessionID = meta.ID
+			bestSessionID = sessionID
 			bestModTime = modTime
 		}
 	}
 
-	if bestDir == "" {
-		return nil, nil
+	if bestDir != "" {
+		return &agent.SessionInfo{
+			SessionID:      bestSessionID,
+			TranscriptPath: GetTranscriptPath(bestDir),
+			StartedAt:      bestModTime.Format(time.RFC3339),
+			ProjectPath:    projectPath,
+		}, nil
 	}
 
-	return &agent.SessionInfo{
-		SessionID:      bestSessionID,
-		TranscriptPath: GetTranscriptPath(bestDir),
-		StartedAt:      bestModTime.Format(time.RFC3339),
-		ProjectPath:    projectPath,
-	}, nil
+	if fallbackDir != "" {
+		return &agent.SessionInfo{
+			SessionID:      fallbackSessionID,
+			TranscriptPath: GetTranscriptPath(fallbackDir),
+			StartedAt:      fallbackModTime.Format(time.RFC3339),
+			ProjectPath:    projectPath,
+		}, nil
+	}
+
+	return nil, nil
 }
-
-
