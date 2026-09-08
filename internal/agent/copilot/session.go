@@ -46,7 +46,39 @@ func parseSessionMeta(sessionDir string) (*sessionMeta, error) {
 		return nil, err
 	}
 
+	// Copilot CLI has renamed/restructured the working-directory field across
+	// versions. If the expected "cwd" key is absent, fall back to scanning
+	// known aliases before giving up on this session's metadata.
+	if meta.CWD == "" {
+		meta.CWD = extractCWDAlias(data)
+	}
+
 	return &meta, nil
+}
+
+// cwdAliasKeys are alternate field names Copilot CLI has used across versions
+// for the session's working directory in workspace.yaml.
+var cwdAliasKeys = []string{
+	"cwd", "workingDirectory", "working_dir", "workingDir",
+	"directory", "workspace", "workspacePath", "path",
+}
+
+// extractCWDAlias parses workspace.yaml as a generic map and checks known
+// alias keys for the working directory. Used when the "cwd" field isn't
+// present under its expected name, e.g. after a Copilot CLI schema change.
+func extractCWDAlias(data []byte) string {
+	var generic map[string]interface{}
+	if err := yaml.Unmarshal(data, &generic); err != nil {
+		return ""
+	}
+	for _, key := range cwdAliasKeys {
+		if v, ok := generic[key]; ok {
+			if s, ok := v.(string); ok && s != "" {
+				return s
+			}
+		}
+	}
+	return ""
 }
 
 // GetTranscriptPath returns the path to the events.jsonl transcript within a session directory.
@@ -81,4 +113,3 @@ func WriteSessionFile(sessionID string, data []byte) (string, error) {
 	eventsPath := GetTranscriptPath(sessionDir)
 	return eventsPath, os.WriteFile(eventsPath, data, 0600)
 }
-
