@@ -1,3 +1,4 @@
+```go
 package copilot
 
 import (
@@ -31,6 +32,21 @@ func GetSessionStateDir() (string, error) {
 		return "", err
 	}
 	return filepath.Join(copilotDir, "session-state"), nil
+}
+
+// GetHistorySessionStateDir returns the directory Copilot CLI relocates a
+// session's state into once the session ends. Newer Copilot CLI versions move
+// session data here (to support --resume) instead of leaving it under the
+// live session-state directory, so discovery must check both locations:
+// session-state for a session that's still active, and history-session-state
+// for one whose process has already exited (e.g. the manual-commit flow,
+// which runs from a post-commit git hook after the agent CLI has returned).
+func GetHistorySessionStateDir() (string, error) {
+	copilotDir, err := GetCopilotDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(copilotDir, "history-session-state"), nil
 }
 
 // parseSessionMeta reads a workspace.yaml from a Copilot session directory.
@@ -81,4 +97,4 @@ func WriteSessionFile(sessionID string, data []byte) (string, error) {
 	eventsPath := GetTranscriptPath(sessionDir)
 	return eventsPath, os.WriteFile(eventsPath, data, 0600)
 }
-
+```

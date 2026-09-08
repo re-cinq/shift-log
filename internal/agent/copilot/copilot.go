@@ -1,3 +1,4 @@
+```go
 package copilot
 
 import (
@@ -409,16 +410,22 @@ func extractCommand(toolName string, toolArgs json.RawMessage) string {
 	return ""
 }
 
-// scanForRecentSession scans Copilot's session state directory for recent session directories.
+// scanForRecentSession scans Copilot's session state directories for a recent
+// session matching projectPath.
+//
+// Copilot CLI keeps a "live" session under session-state while it's running;
+// on newer CLI versions that data is relocated to history-session-state once
+// the process exits (so --resume keeps working). Hook-triggered discovery
+// runs while Copilot is still alive, so session-state alone used to be
+// sufficient, but manual-commit discovery (via the post-commit git hook) runs
+// after Copilot has already exited, so both locations must be checked.
 func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
-	sessionDir, err := GetSessionStateDir()
-	if err != nil {
-		return nil, nil
+	var candidateDirs []string
+	if dir, err := GetSessionStateDir(); err == nil {
+		candidateDirs = append(candidateDirs, dir)
 	}
-
-	entries, err := os.ReadDir(sessionDir)
-	if err != nil {
-		return nil, nil
+	if dir, err := GetHistorySessionStateDir(); err == nil {
+		candidateDirs = append(candidateDirs, dir)
 	}
 
 	now := time.Now()
@@ -427,36 +434,43 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	var bestSessionID string
 	var bestModTime time.Time
 
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-
-		info, err := entry.Info()
+	for _, sessionDir := range candidateDirs {
+		entries, err := os.ReadDir(sessionDir)
 		if err != nil {
 			continue
 		}
 
-		modTime := info.ModTime()
-		if now.Sub(modTime) > recentTimeout {
-			continue
-		}
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
 
-		// Check if this session directory has a workspace.yaml
-		entryPath := filepath.Join(sessionDir, entry.Name())
-		meta, err := parseSessionMeta(entryPath)
-		if err != nil || meta == nil {
-			continue
-		}
+			info, err := entry.Info()
+			if err != nil {
+				continue
+			}
 
-		if !agent.PathsEqual(meta.CWD, projectPath) {
-			continue
-		}
+			modTime := info.ModTime()
+			if now.Sub(modTime) > recentTimeout {
+				continue
+			}
 
-		if bestDir == "" || modTime.After(bestModTime) {
-			bestDir = entryPath
-			bestSessionID = meta.ID
-			bestModTime = modTime
+			// Check if this session directory has a workspace.yaml
+			entryPath := filepath.Join(sessionDir, entry.Name())
+			meta, err := parseSessionMeta(entryPath)
+			if err != nil || meta == nil {
+				continue
+			}
+
+			if !agent.PathsEqual(meta.CWD, projectPath) {
+				continue
+			}
+
+			if bestDir == "" || modTime.After(bestModTime) {
+				bestDir = entryPath
+				bestSessionID = meta.ID
+				bestModTime = modTime
+			}
 		}
 	}
 
@@ -471,5 +485,4 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 		ProjectPath:    projectPath,
 	}, nil
 }
-
-
+```
