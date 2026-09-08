@@ -427,6 +427,16 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	var bestSessionID string
 	var bestModTime time.Time
 
+	// fallbackDir tracks the most recently modified session directory whose
+	// workspace.yaml is missing, unparseable, or lacks a cwd value. Newer
+	// Copilot CLI releases can change the session-state file layout; falling
+	// back to recency (instead of giving up entirely) keeps discovery working
+	// across such format drift, as long as no directory can be positively
+	// matched by CWD.
+	var fallbackDir string
+	var fallbackSessionID string
+	var fallbackModTime time.Time
+
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -445,7 +455,16 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 		// Check if this session directory has a workspace.yaml
 		entryPath := filepath.Join(sessionDir, entry.Name())
 		meta, err := parseSessionMeta(entryPath)
-		if err != nil || meta == nil {
+		if err != nil || meta == nil || meta.CWD == "" {
+			sessionID := entry.Name()
+			if meta != nil && meta.ID != "" {
+				sessionID = meta.ID
+			}
+			if fallbackDir == "" || modTime.After(fallbackModTime) {
+				fallbackDir = entryPath
+				fallbackSessionID = sessionID
+				fallbackModTime = modTime
+			}
 			continue
 		}
 
@@ -461,6 +480,10 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	}
 
 	if bestDir == "" {
+		bestDir, bestSessionID, bestModTime = fallbackDir, fallbackSessionID, fallbackModTime
+	}
+
+	if bestDir == "" {
 		return nil, nil
 	}
 
@@ -471,5 +494,3 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 		ProjectPath:    projectPath,
 	}, nil
 }
-
-
