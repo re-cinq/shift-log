@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/re-cinq/shift-log/internal/agent"
 )
 
 // sessionMeta represents lightweight metadata from a Copilot session workspace.yaml.
@@ -49,9 +52,83 @@ func parseSessionMeta(sessionDir string) (*sessionMeta, error) {
 	return &meta, nil
 }
 
-// GetTranscriptPath returns the path to the events.jsonl transcript within a session directory.
+// parseSessionMetaGeneric reads a session directory's workspace.yaml (if present)
+// into a generic structure. Copilot CLI releases have renamed metadata fields
+// (e.g. "cwd" -> something else) across versions; a generic decode lets callers
+// fall back to a lenient, name-agnostic match instead of failing outright when
+// the known field names change.
+func parseSessionMetaGeneric(sessionDir string) (map[string]interface{}, error) {
+	path := filepath.Join(sessionDir, "workspace.yaml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var raw map[string]interface{}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+
+// containsPathValue recursively searches a decoded YAML value for a string that
+// resolves to the same filesystem location as targetPath. This is used as a
+// fallback when the expected metadata field name isn't present.
+func containsPathValue(v interface{}, targetPath string) bool {
+	switch val := v.(type) {
+	case string:
+		return val != "" && agent.PathsEqual(val, targetPath)
+	case map[string]interface{}:
+		for _, item := range val {
+			if containsPathValue(item, targetPath) {
+				return true
+			}
+		}
+	case []interface{}:
+		for _, item := range val {
+			if containsPathValue(item, targetPath) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// GetTranscriptPath returns the path to the events transcript within a session directory.
+// Copilot CLI has historically used events.jsonl; if that file isn't present (e.g. a
+// renamed transcript file in a newer CLI version), this falls back to the most recently
+// modified *.jsonl file in the directory.
 func GetTranscriptPath(sessionDir string) string {
-	return filepath.Join(sessionDir, "events.jsonl")
+	primary := filepath.Join(sessionDir, "events.jsonl")
+	if _, err := os.Stat(primary); err == nil {
+		return primary
+	}
+
+	entries, err := os.ReadDir(sessionDir)
+	if err != nil {
+		return primary
+	}
+
+	var bestPath string
+	var bestModTime int64
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".jsonl") {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		if bestPath == "" || info.ModTime().Unix() > bestModTime {
+			bestPath = filepath.Join(sessionDir, entry.Name())
+			bestModTime = info.ModTime().Unix()
+		}
+	}
+
+	if bestPath != "" {
+		return bestPath
+	}
+	return primary
 }
 
 // WriteSessionFile writes a session directory structure to Copilot's session state directory.
@@ -81,4 +158,3 @@ func WriteSessionFile(sessionID string, data []byte) (string, error) {
 	eventsPath := GetTranscriptPath(sessionDir)
 	return eventsPath, os.WriteFile(eventsPath, data, 0600)
 }
-
