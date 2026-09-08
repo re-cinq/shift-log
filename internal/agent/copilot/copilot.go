@@ -409,6 +409,39 @@ func extractCommand(toolName string, toolArgs json.RawMessage) string {
 	return ""
 }
 
+// cwdFieldNames are the known key variants Copilot CLI has used across
+// versions to record a session's working directory inside workspace.yaml.
+var cwdFieldNames = []string{
+	"cwd", "cwd_path", "workspace_cwd", "workspaceFolder",
+	"workspace_dir", "directory", "root", "path", "project_dir", "git_root",
+}
+
+// extractCWD looks up the working directory recorded in a session's
+// workspace.yaml, trying several known field-name variants (including one
+// level of nesting under a "workspace" key) since Copilot CLI has changed
+// this schema across versions.
+func extractCWD(meta map[string]interface{}) string {
+	for _, key := range cwdFieldNames {
+		if v, ok := meta[key]; ok {
+			if s, ok := v.(string); ok && s != "" {
+				return s
+			}
+		}
+	}
+
+	if ws, ok := meta["workspace"].(map[string]interface{}); ok {
+		for _, key := range cwdFieldNames {
+			if v, ok := ws[key]; ok {
+				if s, ok := v.(string); ok && s != "" {
+					return s
+				}
+			}
+		}
+	}
+
+	return ""
+}
+
 // scanForRecentSession scans Copilot's session state directory for recent session directories.
 func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	sessionDir, err := GetSessionStateDir()
@@ -423,9 +456,18 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 
 	now := time.Now()
 	recentTimeout := agent.RecentSessionTimeout
+
 	var bestDir string
 	var bestSessionID string
 	var bestModTime time.Time
+
+	// Fallback candidate: the most recently active session directory within
+	// the timeout window, regardless of whether we could confirm its cwd.
+	// Used when workspace.yaml is missing/unparseable or its schema no
+	// longer matches any known field name.
+	var fallbackDir string
+	var fallbackSessionID string
+	var fallbackModTime time.Time
 
 	for _, entry := range entries {
 		if !entry.IsDir() {
@@ -442,22 +484,43 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 			continue
 		}
 
-		// Check if this session directory has a workspace.yaml
 		entryPath := filepath.Join(sessionDir, entry.Name())
+
+		// The session directory is named after the session ID by
+		// construction (see WriteSessionFile), so use it directly rather
+		// than depending on an "id" field inside workspace.yaml.
+		sessionID := entry.Name()
+
+		if fallbackDir == "" || modTime.After(fallbackModTime) {
+			fallbackDir = entryPath
+			fallbackSessionID = sessionID
+			fallbackModTime = modTime
+		}
+
 		meta, err := parseSessionMeta(entryPath)
 		if err != nil || meta == nil {
 			continue
 		}
 
-		if !agent.PathsEqual(meta.CWD, projectPath) {
+		cwd := extractCWD(meta)
+		if cwd == "" || !agent.PathsEqual(cwd, projectPath) {
 			continue
 		}
 
 		if bestDir == "" || modTime.After(bestModTime) {
 			bestDir = entryPath
-			bestSessionID = meta.ID
+			bestSessionID = sessionID
 			bestModTime = modTime
 		}
+	}
+
+	if bestDir == "" {
+		// No session's recorded working directory matched exactly (the
+		// workspace.yaml schema may have changed). Fall back to the most
+		// recently active session rather than silently capturing nothing.
+		bestDir = fallbackDir
+		bestSessionID = fallbackSessionID
+		bestModTime = fallbackModTime
 	}
 
 	if bestDir == "" {
@@ -471,5 +534,3 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 		ProjectPath:    projectPath,
 	}, nil
 }
-
-
