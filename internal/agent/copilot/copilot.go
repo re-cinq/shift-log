@@ -192,6 +192,12 @@ type copilotEventData struct {
 	// For user.message events
 	Content string `json:"content,omitempty"`
 
+	// For session.start events. Newer Copilot CLI releases embed the
+	// session id and working directory in the transcript's session.start
+	// event instead of writing a separate workspace.yaml metadata file.
+	ID  string `json:"id,omitempty"`
+	CWD string `json:"cwd,omitempty"`
+
 	// For assistant.message events
 	Message string `json:"message,omitempty"`
 
@@ -409,7 +415,55 @@ func extractCommand(toolName string, toolArgs json.RawMessage) string {
 	return ""
 }
 
+// sessionStartMeta scans an events.jsonl transcript for its session.start
+// event and extracts the session id and working directory from it. This is
+// a fallback used when a session directory has no workspace.yaml — some
+// Copilot CLI releases stopped writing that separate metadata file and
+// embed the same information in the transcript instead.
+func sessionStartMeta(eventsPath string) *sessionMeta {
+	f, err := os.Open(eventsPath)
+	if err != nil {
+		return nil
+	}
+	defer func() { _ = f.Close() }()
+
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+
+		var event copilotEvent
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			continue
+		}
+
+		if event.Type != "session.start" {
+			continue
+		}
+
+		if event.Data.CWD == "" {
+			return nil
+		}
+
+		return &sessionMeta{ID: event.Data.ID, CWD: event.Data.CWD}
+	}
+
+	return nil
+}
+
 // scanForRecentSession scans Copilot's session state directory for recent session directories.
+//
+// Supports two on-disk layouts:
+//   - Directory-based: <session-state>/<sessionID>/{workspace.yaml,events.jsonl}
+//   - Flat-file-based: <session-state>/<sessionID>.jsonl (metadata embedded in
+//     the transcript's session.start event)
+//
+// When a session directory exists but lacks workspace.yaml, metadata is
+// recovered from the events.jsonl transcript's session.start event.
 func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	sessionDir, err := GetSessionStateDir()
 	if err != nil {
@@ -423,14 +477,12 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 
 	now := time.Now()
 	recentTimeout := agent.RecentSessionTimeout
-	var bestDir string
 	var bestSessionID string
 	var bestModTime time.Time
+	var bestTranscriptPath string
 
 	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
+		entryPath := filepath.Join(sessionDir, entry.Name())
 
 		info, err := entry.Info()
 		if err != nil {
@@ -442,10 +494,33 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 			continue
 		}
 
-		// Check if this session directory has a workspace.yaml
-		entryPath := filepath.Join(sessionDir, entry.Name())
-		meta, err := parseSessionMeta(entryPath)
-		if err != nil || meta == nil {
+		var meta *sessionMeta
+		var transcriptPath string
+
+		if entry.IsDir() {
+			transcriptPath = GetTranscriptPath(entryPath)
+
+			meta, err = parseSessionMeta(entryPath)
+			if err != nil || meta == nil {
+				meta = sessionStartMeta(transcriptPath)
+			}
+			if meta == nil {
+				continue
+			}
+			if meta.ID == "" {
+				meta.ID = entry.Name()
+			}
+		} else if strings.HasSuffix(entry.Name(), ".jsonl") || strings.HasSuffix(entry.Name(), ".json") {
+			transcriptPath = entryPath
+
+			meta = sessionStartMeta(entryPath)
+			if meta == nil {
+				continue
+			}
+			if meta.ID == "" {
+				meta.ID = strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
+			}
+		} else {
 			continue
 		}
 
@@ -453,23 +528,21 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 			continue
 		}
 
-		if bestDir == "" || modTime.After(bestModTime) {
-			bestDir = entryPath
+		if bestSessionID == "" || modTime.After(bestModTime) {
 			bestSessionID = meta.ID
 			bestModTime = modTime
+			bestTranscriptPath = transcriptPath
 		}
 	}
 
-	if bestDir == "" {
+	if bestSessionID == "" {
 		return nil, nil
 	}
 
 	return &agent.SessionInfo{
 		SessionID:      bestSessionID,
-		TranscriptPath: GetTranscriptPath(bestDir),
+		TranscriptPath: bestTranscriptPath,
 		StartedAt:      bestModTime.Format(time.RFC3339),
 		ProjectPath:    projectPath,
 	}, nil
 }
-
-

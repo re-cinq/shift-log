@@ -46,7 +46,38 @@ func parseSessionMeta(sessionDir string) (*sessionMeta, error) {
 		return nil, err
 	}
 
+	if meta.CWD == "" {
+		// Some Copilot CLI releases have used alternate field names, or
+		// nested the working directory under a "workspace" key. Fall back
+		// to a generic scan so we don't depend on one exact shape.
+		var raw map[string]interface{}
+		if err := yaml.Unmarshal(data, &raw); err == nil {
+			meta.CWD = firstStringField(raw, "cwd", "workingDirectory", "directory", "path", "root")
+			if meta.CWD == "" {
+				if ws, ok := raw["workspace"].(map[string]interface{}); ok {
+					meta.CWD = firstStringField(ws, "cwd", "workingDirectory", "directory", "path", "root")
+				}
+			}
+			if meta.ID == "" {
+				if id, ok := raw["id"].(string); ok {
+					meta.ID = id
+				}
+			}
+		}
+	}
+
 	return &meta, nil
+}
+
+// firstStringField returns the first non-empty string value found in m for
+// any of the given keys.
+func firstStringField(m map[string]interface{}, keys ...string) string {
+	for _, k := range keys {
+		if v, ok := m[k].(string); ok && v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // GetTranscriptPath returns the path to the events.jsonl transcript within a session directory.
@@ -81,4 +112,3 @@ func WriteSessionFile(sessionID string, data []byte) (string, error) {
 	eventsPath := GetTranscriptPath(sessionDir)
 	return eventsPath, os.WriteFile(eventsPath, data, 0600)
 }
-
