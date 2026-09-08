@@ -442,20 +442,16 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 			continue
 		}
 
-		// Check if this session directory has a workspace.yaml
 		entryPath := filepath.Join(sessionDir, entry.Name())
-		meta, err := parseSessionMeta(entryPath)
-		if err != nil || meta == nil {
-			continue
-		}
 
-		if !agent.PathsEqual(meta.CWD, projectPath) {
+		sessionID, cwd := sessionIdentity(entryPath)
+		if cwd == "" || !agent.PathsEqual(cwd, projectPath) {
 			continue
 		}
 
 		if bestDir == "" || modTime.After(bestModTime) {
 			bestDir = entryPath
-			bestSessionID = meta.ID
+			bestSessionID = sessionID
 			bestModTime = modTime
 		}
 	}
@@ -472,4 +468,55 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	}, nil
 }
 
+// sessionIdentity resolves a session's ID and working directory for a
+// session directory. It prefers the workspace.yaml sidecar file, but falls
+// back to the "session.start" event recorded as the first line of
+// events.jsonl for Copilot versions that no longer write a separate
+// workspace.yaml (the session metadata is inlined into the transcript
+// stream instead).
+func sessionIdentity(sessionDir string) (sessionID, cwd string) {
+	if meta, err := parseSessionMeta(sessionDir); err == nil && meta != nil && meta.CWD != "" {
+		return meta.ID, meta.CWD
+	}
+	return parseSessionStartEvent(GetTranscriptPath(sessionDir))
+}
 
+// sessionStartEvent represents the first "session.start" event written to
+// events.jsonl.
+type sessionStartEvent struct {
+	Type string `json:"type"`
+	Data struct {
+		ID  string `json:"id"`
+		CWD string `json:"cwd"`
+	} `json:"data"`
+}
+
+// parseSessionStartEvent reads the first line of a Copilot events.jsonl
+// transcript and extracts the session id and working directory from a
+// leading "session.start" event, if present.
+func parseSessionStartEvent(transcriptPath string) (sessionID, cwd string) {
+	f, err := os.Open(transcriptPath)
+	if err != nil {
+		return "", ""
+	}
+	defer func() { _ = f.Close() }()
+
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+
+		var event sessionStartEvent
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			return "", ""
+		}
+		if event.Type != "session.start" {
+			return "", ""
+		}
+		return event.Data.ID, event.Data.CWD
+	}
+	return "", ""
+}
