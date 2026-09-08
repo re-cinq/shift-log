@@ -1,3 +1,4 @@
+```go
 package copilot
 
 import (
@@ -409,6 +410,13 @@ func extractCommand(toolName string, toolArgs json.RawMessage) string {
 	return ""
 }
 
+// sessionCandidate represents a discovered Copilot session directory.
+type sessionCandidate struct {
+	dir     string
+	meta    *sessionMeta
+	modTime time.Time
+}
+
 // scanForRecentSession scans Copilot's session state directory for recent session directories.
 func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	sessionDir, err := GetSessionStateDir()
@@ -416,60 +424,93 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 		return nil, nil
 	}
 
-	entries, err := os.ReadDir(sessionDir)
-	if err != nil {
+	candidates := collectSessionCandidates(sessionDir, agent.RecentSessionTimeout, 1)
+	if len(candidates) == 0 {
 		return nil, nil
 	}
 
-	now := time.Now()
-	recentTimeout := agent.RecentSessionTimeout
-	var bestDir string
-	var bestSessionID string
-	var bestModTime time.Time
-
-	for _, entry := range entries {
-		if !entry.IsDir() {
+	// Prefer a candidate whose recorded cwd matches the target project.
+	var best *sessionCandidate
+	for i := range candidates {
+		c := &candidates[i]
+		if c.meta.CWD == "" || !agent.PathsEqual(c.meta.CWD, projectPath) {
 			continue
 		}
-
-		info, err := entry.Info()
-		if err != nil {
-			continue
-		}
-
-		modTime := info.ModTime()
-		if now.Sub(modTime) > recentTimeout {
-			continue
-		}
-
-		// Check if this session directory has a workspace.yaml
-		entryPath := filepath.Join(sessionDir, entry.Name())
-		meta, err := parseSessionMeta(entryPath)
-		if err != nil || meta == nil {
-			continue
-		}
-
-		if !agent.PathsEqual(meta.CWD, projectPath) {
-			continue
-		}
-
-		if bestDir == "" || modTime.After(bestModTime) {
-			bestDir = entryPath
-			bestSessionID = meta.ID
-			bestModTime = modTime
+		if best == nil || c.modTime.After(best.modTime) {
+			best = c
 		}
 	}
 
-	if bestDir == "" {
+	// Fall back to the single most-recent session when none could be
+	// matched by cwd (e.g. the session metadata schema changed) and there
+	// is no ambiguity about which session to use.
+	if best == nil && len(candidates) == 1 {
+		best = &candidates[0]
+	}
+
+	if best == nil {
 		return nil, nil
+	}
+
+	sessionID := best.meta.ID
+	if sessionID == "" {
+		sessionID = filepath.Base(best.dir)
 	}
 
 	return &agent.SessionInfo{
-		SessionID:      bestSessionID,
-		TranscriptPath: GetTranscriptPath(bestDir),
-		StartedAt:      bestModTime.Format(time.RFC3339),
+		SessionID:      sessionID,
+		TranscriptPath: GetTranscriptPath(best.dir),
+		StartedAt:      best.modTime.Format(time.RFC3339),
 		ProjectPath:    projectPath,
 	}, nil
 }
 
+// collectSessionCandidates finds session directories containing a
+// workspace.yaml, modified within timeout. It searches up to maxDepth extra
+// levels below sessionDir so that an added grouping level (e.g. by date)
+// doesn't hide sessions from discovery.
+func collectSessionCandidates(sessionDir string, timeout time.Duration, maxDepth int) []sessionCandidate {
+	var candidates []sessionCandidate
+	now := time.Now()
 
+	var scan func(dir string, depth int)
+	scan = func(dir string, depth int) {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return
+		}
+
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+
+			entryPath := filepath.Join(dir, entry.Name())
+
+			if meta, err := parseSessionMeta(entryPath); err == nil && meta != nil {
+				info, err := entry.Info()
+				if err != nil {
+					continue
+				}
+				modTime := info.ModTime()
+				if now.Sub(modTime) > timeout {
+					continue
+				}
+				candidates = append(candidates, sessionCandidate{
+					dir:     entryPath,
+					meta:    meta,
+					modTime: modTime,
+				})
+				continue
+			}
+
+			if depth > 0 {
+				scan(entryPath, depth-1)
+			}
+		}
+	}
+
+	scan(sessionDir, maxDepth)
+	return candidates
+}
+```
