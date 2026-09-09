@@ -410,6 +410,13 @@ func extractCommand(toolName string, toolArgs json.RawMessage) string {
 }
 
 // scanForRecentSession scans Copilot's session state directory for recent session directories.
+//
+// Copilot CLI releases have varied in which workspace.yaml fields are
+// populated (or whether the file is written promptly at all), so this does
+// not discard a session solely because its metadata couldn't be read or
+// didn't include a location field. Instead it prefers sessions whose CWD or
+// GitRoot explicitly match the target project, and falls back to the most
+// recently modified session within the recency window otherwise.
 func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	sessionDir, err := GetSessionStateDir()
 	if err != nil {
@@ -426,6 +433,7 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	var bestDir string
 	var bestSessionID string
 	var bestModTime time.Time
+	var bestConfirmed bool
 
 	for _, entry := range entries {
 		if !entry.IsDir() {
@@ -442,21 +450,36 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 			continue
 		}
 
-		// Check if this session directory has a workspace.yaml
 		entryPath := filepath.Join(sessionDir, entry.Name())
+		sessionID := entry.Name()
+		confirmed := false
+
 		meta, err := parseSessionMeta(entryPath)
-		if err != nil || meta == nil {
-			continue
+		if err == nil && meta != nil {
+			if meta.ID != "" {
+				sessionID = meta.ID
+			}
+
+			hasLocation := meta.CWD != "" || meta.GitRoot != ""
+			match := meta.CWD != "" && agent.PathsEqual(meta.CWD, projectPath)
+			if !match && meta.GitRoot != "" {
+				match = agent.PathsEqual(meta.GitRoot, projectPath)
+			}
+
+			if hasLocation && !match {
+				continue // explicit mismatch, this session belongs elsewhere
+			}
+			confirmed = hasLocation && match
 		}
 
-		if !agent.PathsEqual(meta.CWD, projectPath) {
-			continue
-		}
-
-		if bestDir == "" || modTime.After(bestModTime) {
+		better := bestDir == "" ||
+			(confirmed && !bestConfirmed) ||
+			(confirmed == bestConfirmed && modTime.After(bestModTime))
+		if better {
 			bestDir = entryPath
-			bestSessionID = meta.ID
+			bestSessionID = sessionID
 			bestModTime = modTime
+			bestConfirmed = confirmed
 		}
 	}
 
@@ -471,5 +494,3 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 		ProjectPath:    projectPath,
 	}, nil
 }
-
-
