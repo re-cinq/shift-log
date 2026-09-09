@@ -409,24 +409,25 @@ func extractCommand(toolName string, toolArgs json.RawMessage) string {
 	return ""
 }
 
-// scanForRecentSession scans Copilot's session state directory for recent session directories.
-func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
-	sessionDir, err := GetSessionStateDir()
-	if err != nil {
-		return nil, nil
-	}
+// sessionCandidate pairs a Copilot session directory with its parsed metadata.
+type sessionCandidate struct {
+	dir     string
+	meta    *sessionMeta
+	modTime time.Time
+}
 
+// collectSessionCandidates finds Copilot session directories under sessionDir
+// modified within recentTimeout. It looks one level deep in addition to the
+// top level to tolerate newer Copilot CLI versions that bucket sessions into
+// dated subdirectories instead of storing them flat.
+func collectSessionCandidates(sessionDir string, recentTimeout time.Duration) []sessionCandidate {
+	now := time.Now()
 	entries, err := os.ReadDir(sessionDir)
 	if err != nil {
-		return nil, nil
+		return nil
 	}
 
-	now := time.Now()
-	recentTimeout := agent.RecentSessionTimeout
-	var bestDir string
-	var bestSessionID string
-	var bestModTime time.Time
-
+	var candidates []sessionCandidate
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -436,40 +437,90 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 		if err != nil {
 			continue
 		}
-
 		modTime := info.ModTime()
 		if now.Sub(modTime) > recentTimeout {
 			continue
 		}
 
-		// Check if this session directory has a workspace.yaml
 		entryPath := filepath.Join(sessionDir, entry.Name())
-		meta, err := parseSessionMeta(entryPath)
-		if err != nil || meta == nil {
+		if meta, err := parseSessionMeta(entryPath); err == nil && meta != nil {
+			candidates = append(candidates, sessionCandidate{dir: entryPath, meta: meta, modTime: modTime})
 			continue
 		}
 
-		if !agent.PathsEqual(meta.CWD, projectPath) {
+		// No workspace.yaml directly inside; check one level deeper in case
+		// sessions are now bucketed into dated subdirectories.
+		nested, err := os.ReadDir(entryPath)
+		if err != nil {
 			continue
 		}
-
-		if bestDir == "" || modTime.After(bestModTime) {
-			bestDir = entryPath
-			bestSessionID = meta.ID
-			bestModTime = modTime
+		for _, nestedEntry := range nested {
+			if !nestedEntry.IsDir() {
+				continue
+			}
+			nestedInfo, err := nestedEntry.Info()
+			if err != nil {
+				continue
+			}
+			nestedModTime := nestedInfo.ModTime()
+			if now.Sub(nestedModTime) > recentTimeout {
+				continue
+			}
+			nestedPath := filepath.Join(entryPath, nestedEntry.Name())
+			meta, err := parseSessionMeta(nestedPath)
+			if err != nil || meta == nil {
+				continue
+			}
+			candidates = append(candidates, sessionCandidate{dir: nestedPath, meta: meta, modTime: nestedModTime})
 		}
 	}
 
-	if bestDir == "" {
+	return candidates
+}
+
+// scanForRecentSession scans Copilot's session state directory for recent session directories.
+func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
+	sessionDir, err := GetSessionStateDir()
+	if err != nil {
 		return nil, nil
 	}
 
+	candidates := collectSessionCandidates(sessionDir, agent.RecentSessionTimeout)
+	if len(candidates) == 0 {
+		return nil, nil
+	}
+
+	// Prefer a session whose recorded working directory matches projectPath.
+	// If no candidate's metadata matches (e.g. a newer Copilot CLI renamed or
+	// relocated the CWD field), fall back to the most recently modified
+	// candidate rather than dropping the session entirely.
+	var matched, fallback *sessionCandidate
+	for i := range candidates {
+		c := &candidates[i]
+		if fallback == nil || c.modTime.After(fallback.modTime) {
+			fallback = c
+		}
+		if agent.PathsEqual(c.meta.resolvedCWD(), projectPath) {
+			if matched == nil || c.modTime.After(matched.modTime) {
+				matched = c
+			}
+		}
+	}
+
+	best := matched
+	if best == nil {
+		best = fallback
+	}
+
+	sessionID := best.meta.ID
+	if sessionID == "" {
+		sessionID = filepath.Base(best.dir)
+	}
+
 	return &agent.SessionInfo{
-		SessionID:      bestSessionID,
-		TranscriptPath: GetTranscriptPath(bestDir),
-		StartedAt:      bestModTime.Format(time.RFC3339),
+		SessionID:      sessionID,
+		TranscriptPath: GetTranscriptPath(best.dir),
+		StartedAt:      best.modTime.Format(time.RFC3339),
 		ProjectPath:    projectPath,
 	}, nil
 }
-
-
