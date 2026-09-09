@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -251,42 +252,89 @@ func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) 
 	return discoverFromSQLite(dataDir, projectID, projectPath)
 }
 
-// discoverFromFlatFiles tries the legacy flat file session discovery.
+// discoverFromFlatFiles scans OpenCode's JSON session storage for a session
+// belonging to projectPath.
+//
+// It walks storage/session recursively rather than assuming sessions live
+// directly under a project-ID-keyed subdirectory: this keeps working with
+// the legacy storage/session/<projectID>/<sessionID>.json layout (matched by
+// the immediate parent directory name) while also picking up a flatter
+// storage/session/<sessionID>.json layout where project scoping is recorded
+// inside the session's own JSON (matched via a "directory"/"cwd"-style field
+// or a "projectID" field).
+//
+// If nothing matches by directory or content but exactly one recent session
+// exists overall, that session is used as a last resort — the common single
+// active session case — rather than giving up when the project-scoping
+// field has been renamed to something unrecognized.
 func (a *Agent) discoverFromFlatFiles(projectPath string) (*agent.SessionInfo, error) {
-	sessionDir, err := GetSessionDir(projectPath)
+	dataDir, err := GetDataDir()
 	if err != nil {
 		return nil, nil
 	}
 
-	dirEntries, err := os.ReadDir(sessionDir)
-	if err != nil {
-		return nil, nil
-	}
+	sessionRoot := filepath.Join(dataDir, "storage", "session")
+	projectID := GetProjectID(projectPath)
 
 	now := time.Now()
 	recentTimeout := agent.RecentSessionTimeout
-	var bestSessionID string
-	var bestModTime time.Time
 
-	for _, entry := range dirEntries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
-			continue
+	var matchedID string
+	var matchedModTime time.Time
+
+	var onlyID string
+	var onlyModTime time.Time
+	candidateCount := 0
+
+	_ = filepath.WalkDir(sessionRoot, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return nil
+		}
+		if d.IsDir() || !strings.HasSuffix(d.Name(), ".json") {
+			return nil
 		}
 
-		info, err := entry.Info()
+		info, err := d.Info()
 		if err != nil {
-			continue
+			return nil
 		}
 
 		modTime := info.ModTime()
 		if now.Sub(modTime) > recentTimeout {
-			continue
+			return nil
 		}
 
-		if bestSessionID == "" || modTime.After(bestModTime) {
-			bestSessionID = strings.TrimSuffix(entry.Name(), ".json")
-			bestModTime = modTime
+		sessionID := strings.TrimSuffix(d.Name(), ".json")
+
+		candidateCount++
+		if onlyID == "" || modTime.After(onlyModTime) {
+			onlyID = sessionID
+			onlyModTime = modTime
 		}
+
+		parentDir := filepath.Base(filepath.Dir(path))
+		matches := parentDir == projectID
+
+		if !matches {
+			if data, err := os.ReadFile(path); err == nil {
+				var raw map[string]interface{}
+				if err := json.Unmarshal(data, &raw); err == nil {
+					matches = sessionMatchesProject(raw, projectPath, projectID)
+				}
+			}
+		}
+
+		if matches && (matchedID == "" || modTime.After(matchedModTime)) {
+			matchedID = sessionID
+			matchedModTime = modTime
+		}
+
+		return nil
+	})
+
+	bestSessionID, bestModTime := matchedID, matchedModTime
+	if bestSessionID == "" && candidateCount == 1 {
+		bestSessionID, bestModTime = onlyID, onlyModTime
 	}
 
 	if bestSessionID == "" {
@@ -302,6 +350,26 @@ func (a *Agent) discoverFromFlatFiles(projectPath string) (*agent.SessionInfo, e
 		StartedAt:      bestModTime.Format(time.RFC3339),
 		ProjectPath:    projectPath,
 	}, nil
+}
+
+// sessionMatchesProject checks whether a session JSON's recorded directory
+// or project identifier corresponds to the given project.
+func sessionMatchesProject(raw map[string]interface{}, projectPath, projectID string) bool {
+	directoryKeys := []string{"directory", "cwd", "path", "worktree", "root", "projectPath", "project_path"}
+	for _, k := range directoryKeys {
+		if v, ok := raw[k].(string); ok && v != "" && agent.PathsEqual(v, projectPath) {
+			return true
+		}
+	}
+
+	idKeys := []string{"projectID", "projectId", "project_id"}
+	for _, k := range idKeys {
+		if v, ok := raw[k].(string); ok && v != "" && v == projectID {
+			return true
+		}
+	}
+
+	return false
 }
 
 // discoverFromSQLite queries the OpenCode SQLite database for the most recent session.
@@ -454,7 +522,6 @@ func parseOpenCodeEntry(raw map[string]json.RawMessage, fullData []byte) agent.T
 	return entry
 }
 
-
 // parseOpenCodeMessage parses message content from an OpenCode entry.
 func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageType) *agent.Message {
 	if msgType == "" {
@@ -497,4 +564,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-

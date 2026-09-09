@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -410,54 +411,77 @@ func extractCommand(toolName string, toolArgs json.RawMessage) string {
 }
 
 // scanForRecentSession scans Copilot's session state directory for recent session directories.
+//
+// It walks the tree recursively (rather than assuming session directories sit
+// directly under the state dir) so a Copilot CLI release that adds an extra
+// nesting level (e.g. per-workspace grouping) doesn't break discovery.
+//
+// Matching prefers an exact CWD match from workspace.yaml. If no session's
+// recorded CWD matches (e.g. a future release renames the field to something
+// not covered by cwdKeys) but exactly one recent session exists, that session
+// is used as a last resort — safe for the common single-active-session case
+// without risking cross-project misattribution when multiple are in flight.
 func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	sessionDir, err := GetSessionStateDir()
 	if err != nil {
 		return nil, nil
 	}
 
-	entries, err := os.ReadDir(sessionDir)
-	if err != nil {
-		return nil, nil
-	}
-
 	now := time.Now()
 	recentTimeout := agent.RecentSessionTimeout
-	var bestDir string
-	var bestSessionID string
-	var bestModTime time.Time
 
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
+	var matchedDir, matchedID string
+	var matchedModTime time.Time
+
+	var onlyDir, onlyID string
+	var onlyModTime time.Time
+	candidateCount := 0
+
+	_ = filepath.WalkDir(sessionDir, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return nil
+		}
+		if d.IsDir() || d.Name() != "workspace.yaml" {
+			return nil
 		}
 
-		info, err := entry.Info()
-		if err != nil {
-			continue
-		}
-
-		modTime := info.ModTime()
-		if now.Sub(modTime) > recentTimeout {
-			continue
-		}
-
-		// Check if this session directory has a workspace.yaml
-		entryPath := filepath.Join(sessionDir, entry.Name())
-		meta, err := parseSessionMeta(entryPath)
+		entryDir := filepath.Dir(path)
+		meta, err := parseSessionMeta(entryDir)
 		if err != nil || meta == nil {
-			continue
+			return nil
 		}
 
-		if !agent.PathsEqual(meta.CWD, projectPath) {
-			continue
+		modTime := latestModTimeInDir(entryDir)
+		if now.Sub(modTime) > recentTimeout {
+			return nil
 		}
 
-		if bestDir == "" || modTime.After(bestModTime) {
-			bestDir = entryPath
-			bestSessionID = meta.ID
-			bestModTime = modTime
+		sessionID := meta.ID
+		if sessionID == "" {
+			sessionID = filepath.Base(entryDir)
 		}
+
+		candidateCount++
+		if onlyDir == "" || modTime.After(onlyModTime) {
+			onlyDir = entryDir
+			onlyID = sessionID
+			onlyModTime = modTime
+		}
+
+		if meta.CWD != "" && agent.PathsEqual(meta.CWD, projectPath) {
+			if matchedDir == "" || modTime.After(matchedModTime) {
+				matchedDir = entryDir
+				matchedID = sessionID
+				matchedModTime = modTime
+			}
+		}
+
+		return nil
+	})
+
+	bestDir, bestSessionID, bestModTime := matchedDir, matchedID, matchedModTime
+	if bestDir == "" && candidateCount == 1 {
+		bestDir, bestSessionID, bestModTime = onlyDir, onlyID, onlyModTime
 	}
 
 	if bestDir == "" {
@@ -472,4 +496,27 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	}, nil
 }
 
+// latestModTimeInDir returns the most recent modification time among the
+// files directly inside dir (used as the session's "last activity" time,
+// since a session directory's own mtime doesn't change when files within it
+// are merely rewritten).
+func latestModTimeInDir(dir string) time.Time {
+	var latest time.Time
 
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return latest
+	}
+
+	for _, e := range entries {
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if info.ModTime().After(latest) {
+			latest = info.ModTime()
+		}
+	}
+
+	return latest
+}
