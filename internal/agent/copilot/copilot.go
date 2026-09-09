@@ -466,10 +466,9 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 
 	return &agent.SessionInfo{
 		SessionID:      bestSessionID,
-		TranscriptPath: GetTranscriptPath(bestDir),
+		TranscriptPath: findTranscriptFile(bestDir),
 		StartedAt:      bestModTime.Format(time.RFC3339),
 		ProjectPath:    projectPath,
 	}, nil
 }
-
 
