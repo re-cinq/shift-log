@@ -353,21 +353,24 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		// If we can't parse the time, proceed anyway — better to try than skip
 	}
 
-	// Get messages for this session as a JSON array
+	// Get messages for this session as a JSON array. A matching, recent
+	// session row was already confirmed above, so a failure or empty result
+	// from this enrichment query (e.g. a message-table schema mismatch
+	// against a newer OpenCode release) must not discard the discovered
+	// session — fall back to an empty transcript instead of losing the match.
 	msgQuery := fmt.Sprintf(
 		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
 		sessionID,
 	)
 	cmd = exec.Command("sqlite3", dbPath, msgQuery)
 	msgOutput, err := cmd.Output()
-	if err != nil {
-		return nil, nil
-	}
 
-	transcriptData := []byte(strings.TrimSpace(string(msgOutput)))
-	// sqlite3 returns "[null]" when no rows match
-	if string(transcriptData) == "[null]" || string(transcriptData) == "[]" {
-		return nil, nil
+	transcriptData := []byte("[]")
+	if err == nil {
+		// sqlite3 returns "[null]" when no rows match
+		if out := []byte(strings.TrimSpace(string(msgOutput))); len(out) > 0 && string(out) != "[null]" {
+			transcriptData = out
+		}
 	}
 
 	return &agent.SessionInfo{
@@ -497,4 +500,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-

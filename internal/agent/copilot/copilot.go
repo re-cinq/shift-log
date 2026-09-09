@@ -428,12 +428,15 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	var bestModTime time.Time
 
 	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
+		entryPath := filepath.Join(sessionDir, entry.Name())
 
-		info, err := entry.Info()
-		if err != nil {
+		// Use os.Stat rather than entry.IsDir()/entry.Info(): those use
+		// Lstat semantics and don't follow symlinks. Newer Copilot CLI
+		// releases have been observed to leave a symlink in place of the
+		// live session directory once a session finishes, which entry.IsDir()
+		// would otherwise skip entirely.
+		info, err := os.Stat(entryPath)
+		if err != nil || !info.IsDir() {
 			continue
 		}
 
@@ -442,14 +445,14 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 			continue
 		}
 
-		// Check if this session directory has a workspace.yaml
-		entryPath := filepath.Join(sessionDir, entry.Name())
 		meta, err := parseSessionMeta(entryPath)
 		if err != nil || meta == nil {
 			continue
 		}
 
-		if !agent.PathsEqual(meta.CWD, projectPath) {
+		matchesCWD := meta.CWD != "" && agent.PathsEqual(meta.CWD, projectPath)
+		matchesGitRoot := meta.GitRoot != "" && agent.PathsEqual(meta.GitRoot, projectPath)
+		if !matchesCWD && !matchesGitRoot {
 			continue
 		}
 
@@ -471,5 +474,3 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 		ProjectPath:    projectPath,
 	}, nil
 }
-
-
