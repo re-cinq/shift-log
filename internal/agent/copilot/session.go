@@ -1,3 +1,4 @@
+```go
 package copilot
 
 import (
@@ -33,7 +34,21 @@ func GetSessionStateDir() (string, error) {
 	return filepath.Join(copilotDir, "session-state"), nil
 }
 
+// cwdKeys are the field names Copilot CLI has used across versions to record
+// a session's working directory in workspace.yaml.
+var cwdKeys = []string{
+	"cwd", "cwdPath", "cwd_path", "workingDirectory", "working_directory",
+	"directory", "workspacePath", "workspace_path", "path",
+}
+
+// idKeys are the field names used to record the session ID in workspace.yaml.
+var idKeys = []string{"id", "sessionId", "session_id"}
+
 // parseSessionMeta reads a workspace.yaml from a Copilot session directory.
+// It tolerates schema drift across Copilot CLI versions: if the known "cwd"/
+// "id" fields aren't populated by the strict struct decode, it falls back to
+// scanning a generic map for alternate field names, so a rename upstream
+// doesn't silently make every session invisible to shiftlog.
 func parseSessionMeta(sessionDir string) (*sessionMeta, error) {
 	path := filepath.Join(sessionDir, "workspace.yaml")
 	data, err := os.ReadFile(path)
@@ -46,7 +61,30 @@ func parseSessionMeta(sessionDir string) (*sessionMeta, error) {
 		return nil, err
 	}
 
+	if meta.CWD == "" || meta.ID == "" {
+		var raw map[string]interface{}
+		if err := yaml.Unmarshal(data, &raw); err == nil {
+			if meta.CWD == "" {
+				meta.CWD = firstStringField(raw, cwdKeys)
+			}
+			if meta.ID == "" {
+				meta.ID = firstStringField(raw, idKeys)
+			}
+		}
+	}
+
 	return &meta, nil
+}
+
+// firstStringField returns the first non-empty string value found in raw
+// for any of the given keys.
+func firstStringField(raw map[string]interface{}, keys []string) string {
+	for _, key := range keys {
+		if v, ok := raw[key].(string); ok && v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // GetTranscriptPath returns the path to the events.jsonl transcript within a session directory.
@@ -81,4 +119,4 @@ func WriteSessionFile(sessionID string, data []byte) (string, error) {
 	eventsPath := GetTranscriptPath(sessionDir)
 	return eventsPath, os.WriteFile(eventsPath, data, 0600)
 }
-
+```

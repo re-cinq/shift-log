@@ -1,3 +1,4 @@
+```go
 package copilot
 
 import (
@@ -410,6 +411,16 @@ func extractCommand(toolName string, toolArgs json.RawMessage) string {
 }
 
 // scanForRecentSession scans Copilot's session state directory for recent session directories.
+//
+// It prefers session directories whose workspace.yaml records a working
+// directory matching projectPath, but Copilot CLI's workspace.yaml schema
+// has drifted across versions (field names/shapes change), so as a last
+// resort it falls back to the single most recently modified session
+// directory within the recency window even when its metadata can't be
+// matched to this project. Without this fallback, a schema change alone can
+// make every session invisible to shiftlog and silently break note capture,
+// since the session directory's name is itself the session ID (see
+// WriteSessionFile).
 func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	sessionDir, err := GetSessionStateDir()
 	if err != nil {
@@ -423,9 +434,11 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 
 	now := time.Now()
 	recentTimeout := agent.RecentSessionTimeout
-	var bestDir string
-	var bestSessionID string
+
+	var bestDir, bestSessionID string
 	var bestModTime time.Time
+	var fallbackDir, fallbackSessionID string
+	var fallbackModTime time.Time
 
 	for _, entry := range entries {
 		if !entry.IsDir() {
@@ -442,14 +455,27 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 			continue
 		}
 
-		// Check if this session directory has a workspace.yaml
 		entryPath := filepath.Join(sessionDir, entry.Name())
+
+		// Track the most recently modified session directory regardless of
+		// whether we can confirm it belongs to this project; the directory
+		// name doubles as the session ID (see WriteSessionFile).
+		if fallbackDir == "" || modTime.After(fallbackModTime) {
+			fallbackDir = entryPath
+			fallbackSessionID = entry.Name()
+			fallbackModTime = modTime
+		}
+
+		// Check if this session directory has a workspace.yaml
 		meta, err := parseSessionMeta(entryPath)
 		if err != nil || meta == nil {
 			continue
 		}
+		if meta.ID != "" {
+			fallbackSessionID = meta.ID
+		}
 
-		if !agent.PathsEqual(meta.CWD, projectPath) {
+		if meta.CWD == "" || !agent.PathsEqual(meta.CWD, projectPath) {
 			continue
 		}
 
@@ -460,16 +486,20 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 		}
 	}
 
-	if bestDir == "" {
+	dir, sessionID, modTime := bestDir, bestSessionID, bestModTime
+	if dir == "" {
+		dir, sessionID, modTime = fallbackDir, fallbackSessionID, fallbackModTime
+	}
+
+	if dir == "" {
 		return nil, nil
 	}
 
 	return &agent.SessionInfo{
-		SessionID:      bestSessionID,
-		TranscriptPath: GetTranscriptPath(bestDir),
-		StartedAt:      bestModTime.Format(time.RFC3339),
+		SessionID:      sessionID,
+		TranscriptPath: GetTranscriptPath(dir),
+		StartedAt:      modTime.Format(time.RFC3339),
 		ProjectPath:    projectPath,
 	}, nil
 }
-
-
+```
