@@ -353,20 +353,53 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		// If we can't parse the time, proceed anyway — better to try than skip
 	}
 
-	// Get messages for this session as a JSON array
+	// Get messages for this session. Fetch id/data pairs individually rather than
+	// aggregating with json_patch/json_group_array in SQL: if any single row's
+	// "data" column isn't valid JSON (e.g. a newer message/part type), the whole
+	// aggregate expression fails and the session is silently dropped. Merging in
+	// Go lets us skip a bad row instead of losing the entire transcript.
 	msgQuery := fmt.Sprintf(
-		`SELECT json_group_array(json_patch(data, json_object('id', id))) FROM message WHERE session_id='%s' ORDER BY time_created;`,
+		`SELECT id, data FROM message WHERE session_id='%s' ORDER BY time_created;`,
 		sessionID,
 	)
-	cmd = exec.Command("sqlite3", dbPath, msgQuery)
+	cmd = exec.Command("sqlite3", "-json", dbPath, msgQuery)
 	msgOutput, err := cmd.Output()
 	if err != nil {
 		return nil, nil
 	}
 
-	transcriptData := []byte(strings.TrimSpace(string(msgOutput)))
-	// sqlite3 returns "[null]" when no rows match
-	if string(transcriptData) == "[null]" || string(transcriptData) == "[]" {
+	var rows []struct {
+		ID   string `json:"id"`
+		Data string `json:"data"`
+	}
+	if err := json.Unmarshal(msgOutput, &rows); err != nil {
+		return nil, nil
+	}
+
+	var messages []json.RawMessage
+	for _, row := range rows {
+		var msg map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(row.Data), &msg); err != nil {
+			continue
+		}
+		idJSON, err := json.Marshal(row.ID)
+		if err != nil {
+			continue
+		}
+		msg["id"] = idJSON
+		patched, err := json.Marshal(msg)
+		if err != nil {
+			continue
+		}
+		messages = append(messages, patched)
+	}
+
+	if len(messages) == 0 {
+		return nil, nil
+	}
+
+	transcriptData, err := json.Marshal(messages)
+	if err != nil {
 		return nil, nil
 	}
 
@@ -454,7 +487,6 @@ func parseOpenCodeEntry(raw map[string]json.RawMessage, fullData []byte) agent.T
 	return entry
 }
 
-
 // parseOpenCodeMessage parses message content from an OpenCode entry.
 func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageType) *agent.Message {
 	if msgType == "" {
@@ -497,4 +529,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
