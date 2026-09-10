@@ -1,3 +1,4 @@
+```go
 package copilot
 
 import (
@@ -427,6 +428,32 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	var bestSessionID string
 	var bestModTime time.Time
 
+	consider := func(entryPath, fallbackID string, modTime time.Time) {
+		if now.Sub(modTime) > recentTimeout {
+			return
+		}
+
+		meta, err := parseSessionMeta(entryPath)
+		if err != nil || meta == nil {
+			return
+		}
+
+		if !agent.PathsEqual(meta.CWD, projectPath) {
+			return
+		}
+
+		sessionID := meta.ID
+		if sessionID == "" {
+			sessionID = fallbackID
+		}
+
+		if bestDir == "" || modTime.After(bestModTime) {
+			bestDir = entryPath
+			bestSessionID = sessionID
+			bestModTime = modTime
+		}
+	}
+
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -437,26 +464,33 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 			continue
 		}
 
-		modTime := info.ModTime()
-		if now.Sub(modTime) > recentTimeout {
-			continue
-		}
-
-		// Check if this session directory has a workspace.yaml
 		entryPath := filepath.Join(sessionDir, entry.Name())
-		meta, err := parseSessionMeta(entryPath)
-		if err != nil || meta == nil {
+
+		if _, err := os.Stat(filepath.Join(entryPath, "workspace.yaml")); err == nil {
+			consider(entryPath, entry.Name(), info.ModTime())
 			continue
 		}
 
-		if !agent.PathsEqual(meta.CWD, projectPath) {
+		// Newer Copilot CLI releases have been observed grouping sessions
+		// under an extra directory level (e.g. per-workspace) before the
+		// session ID directory. Look one level deeper for workspace.yaml.
+		nested, err := os.ReadDir(entryPath)
+		if err != nil {
 			continue
 		}
-
-		if bestDir == "" || modTime.After(bestModTime) {
-			bestDir = entryPath
-			bestSessionID = meta.ID
-			bestModTime = modTime
+		for _, sub := range nested {
+			if !sub.IsDir() {
+				continue
+			}
+			subPath := filepath.Join(entryPath, sub.Name())
+			if _, err := os.Stat(filepath.Join(subPath, "workspace.yaml")); err != nil {
+				continue
+			}
+			subInfo, err := sub.Info()
+			if err != nil {
+				continue
+			}
+			consider(subPath, sub.Name(), subInfo.ModTime())
 		}
 	}
 
@@ -471,5 +505,4 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 		ProjectPath:    projectPath,
 	}, nil
 }
-
-
+```

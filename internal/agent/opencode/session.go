@@ -1,13 +1,18 @@
+```go
 package opencode
 
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
+
+	"github.com/re-cinq/shift-log/internal/agent"
 )
 
 // GetDataDir returns the OpenCode data directory.
@@ -81,6 +86,108 @@ type sessionInfo struct {
 	Title     string `json:"title,omitempty"`
 }
 
+// sessionCandidate represents an OpenCode session discovered by scanning
+// disk for a matching working directory, used when the project-ID-keyed
+// directory layout doesn't match the installed OpenCode CLI version.
+type sessionCandidate struct {
+	sessionID  string
+	messageDir string
+	modTime    time.Time
+}
+
+// stringField looks up the first non-empty string value among the given
+// keys in a decoded JSON object.
+func stringField(m map[string]interface{}, keys ...string) string {
+	for _, k := range keys {
+		if v, ok := m[k]; ok {
+			if s, ok := v.(string); ok && s != "" {
+				return s
+			}
+		}
+	}
+	return ""
+}
+
+// findSessionsByDirectory recursively scans dataDir for OpenCode session
+// JSON files (stored inside a directory literally named "session") whose
+// recorded working directory matches projectPath. This tolerates OpenCode
+// CLI versions that key session storage by an internal directory hash
+// rather than by the git root commit hash used in GetProjectID.
+func findSessionsByDirectory(dataDir, projectPath string) []sessionCandidate {
+	var candidates []sessionCandidate
+
+	_ = filepath.WalkDir(dataDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil // skip unreadable entries
+		}
+		if d.IsDir() || !strings.HasSuffix(path, ".json") {
+			return nil
+		}
+		if filepath.Base(filepath.Dir(path)) != "session" {
+			return nil
+		}
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+
+		var raw map[string]interface{}
+		if err := json.Unmarshal(data, &raw); err != nil {
+			return nil
+		}
+
+		dir := stringField(raw, "directory", "path", "cwd", "worktree")
+		if dir == "" || !agent.PathsEqual(dir, projectPath) {
+			return nil
+		}
+
+		id := stringField(raw, "id")
+		if id == "" {
+			id = strings.TrimSuffix(filepath.Base(path), ".json")
+		}
+
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+
+		storageDir := filepath.Dir(filepath.Dir(path)) // parent of "session"
+		messageDir := filepath.Join(storageDir, "message", id)
+		if _, err := os.Stat(messageDir); err != nil {
+			if found, ok := findMessageDir(dataDir, id); ok {
+				messageDir = found
+			}
+		}
+
+		candidates = append(candidates, sessionCandidate{
+			sessionID:  id,
+			messageDir: messageDir,
+			modTime:    info.ModTime(),
+		})
+		return nil
+	})
+
+	return candidates
+}
+
+// findMessageDir searches dataDir for a directory named sessionID whose
+// parent directory is literally named "message".
+func findMessageDir(dataDir, sessionID string) (string, bool) {
+	var found string
+	_ = filepath.WalkDir(dataDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || found != "" {
+			return nil
+		}
+		if d.IsDir() && d.Name() == sessionID && filepath.Base(filepath.Dir(path)) == "message" {
+			found = path
+			return fs.SkipAll
+		}
+		return nil
+	})
+	return found, found != ""
+}
+
 // WriteSessionFile writes a session and its messages to OpenCode's storage.
 func WriteSessionFile(projectPath, sessionID string, transcriptData []byte) (string, error) {
 	sessionDir, err := GetSessionDir(projectPath)
@@ -127,3 +234,4 @@ func WriteSessionFile(projectPath, sessionID string, transcriptData []byte) (str
 
 	return sessionPath, nil
 }
+```
