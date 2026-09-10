@@ -410,6 +410,14 @@ func extractCommand(toolName string, toolArgs json.RawMessage) string {
 }
 
 // scanForRecentSession scans Copilot's session state directory for recent session directories.
+//
+// Session metadata (workspace.yaml fields) has drifted across Copilot CLI
+// releases, so a session directory whose metadata can't be parsed or no
+// longer matches our expected schema shouldn't be treated as "no session
+// exists". We prefer an exact cwd match when metadata is available and
+// parses, but fall back to the most recently modified session directory
+// otherwise (the directory name doubles as the session ID, matching what
+// WriteSessionFile creates).
 func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	sessionDir, err := GetSessionStateDir()
 	if err != nil {
@@ -423,9 +431,11 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 
 	now := time.Now()
 	recentTimeout := agent.RecentSessionTimeout
-	var bestDir string
-	var bestSessionID string
+
+	var bestDir, bestSessionID string
 	var bestModTime time.Time
+	var bestMatchedDir, bestMatchedSessionID string
+	var bestMatchedModTime time.Time
 
 	for _, entry := range entries {
 		if !entry.IsDir() {
@@ -442,34 +452,45 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 			continue
 		}
 
-		// Check if this session directory has a workspace.yaml
 		entryPath := filepath.Join(sessionDir, entry.Name())
-		meta, err := parseSessionMeta(entryPath)
-		if err != nil || meta == nil {
-			continue
+		sessionID := entry.Name()
+
+		if meta, err := parseSessionMeta(entryPath); err == nil && meta != nil {
+			if meta.ID != "" {
+				sessionID = meta.ID
+			}
+			if meta.CWD != "" && agent.PathsEqual(meta.CWD, projectPath) {
+				if bestMatchedDir == "" || modTime.After(bestMatchedModTime) {
+					bestMatchedDir = entryPath
+					bestMatchedSessionID = sessionID
+					bestMatchedModTime = modTime
+				}
+				continue
+			}
 		}
 
-		if !agent.PathsEqual(meta.CWD, projectPath) {
-			continue
-		}
-
+		// Metadata missing, unparseable, or for a different cwd: still a
+		// candidate for the recency-based fallback below.
 		if bestDir == "" || modTime.After(bestModTime) {
 			bestDir = entryPath
-			bestSessionID = meta.ID
+			bestSessionID = sessionID
 			bestModTime = modTime
 		}
 	}
 
-	if bestDir == "" {
+	dir, sessionID, modTime := bestMatchedDir, bestMatchedSessionID, bestMatchedModTime
+	if dir == "" {
+		dir, sessionID, modTime = bestDir, bestSessionID, bestModTime
+	}
+
+	if dir == "" {
 		return nil, nil
 	}
 
 	return &agent.SessionInfo{
-		SessionID:      bestSessionID,
-		TranscriptPath: GetTranscriptPath(bestDir),
-		StartedAt:      bestModTime.Format(time.RFC3339),
+		SessionID:      sessionID,
+		TranscriptPath: GetTranscriptPath(dir),
+		StartedAt:      modTime.Format(time.RFC3339),
 		ProjectPath:    projectPath,
 	}, nil
 }
-
-
