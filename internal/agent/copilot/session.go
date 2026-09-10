@@ -1,3 +1,4 @@
+```go
 package copilot
 
 import (
@@ -13,6 +14,30 @@ type sessionMeta struct {
 	ID      string `yaml:"id"`
 	CWD     string `yaml:"cwd"`
 	GitRoot string `yaml:"git_root,omitempty"`
+}
+
+// cwdKeys and idKeys list the field names Copilot CLI has used across
+// versions for a session's working directory and identifier. The primary
+// struct tags above cover the documented format; these are checked as a
+// fallback when that format doesn't match (e.g. after an upstream rename).
+var cwdKeys = []string{
+	"cwd", "cwdPath", "cwd_path",
+	"workingDirectory", "working_directory",
+	"directory", "workspace", "workspacePath", "workspace_path",
+	"path", "root", "projectPath", "project_path",
+}
+
+var idKeys = []string{"id", "sessionId", "session_id", "sessionID"}
+
+// firstStringValue returns the first non-empty string value found in m for
+// any of the given keys.
+func firstStringValue(m map[string]interface{}, keys []string) string {
+	for _, k := range keys {
+		if v, ok := m[k].(string); ok && v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // GetCopilotDir returns the path to Copilot's config/data directory.
@@ -34,6 +59,9 @@ func GetSessionStateDir() (string, error) {
 }
 
 // parseSessionMeta reads a workspace.yaml from a Copilot session directory.
+// The known fields (id, cwd) are parsed first; if either is missing, a
+// second, lenient pass checks a broader set of key names so that a field
+// rename upstream doesn't silently break session discovery.
 func parseSessionMeta(sessionDir string) (*sessionMeta, error) {
 	path := filepath.Join(sessionDir, "workspace.yaml")
 	data, err := os.ReadFile(path)
@@ -44,6 +72,18 @@ func parseSessionMeta(sessionDir string) (*sessionMeta, error) {
 	var meta sessionMeta
 	if err := yaml.Unmarshal(data, &meta); err != nil {
 		return nil, err
+	}
+
+	if meta.CWD == "" || meta.ID == "" {
+		var raw map[string]interface{}
+		if err := yaml.Unmarshal(data, &raw); err == nil {
+			if meta.CWD == "" {
+				meta.CWD = firstStringValue(raw, cwdKeys)
+			}
+			if meta.ID == "" {
+				meta.ID = firstStringValue(raw, idKeys)
+			}
+		}
 	}
 
 	return &meta, nil
@@ -81,4 +121,4 @@ func WriteSessionFile(sessionID string, data []byte) (string, error) {
 	eventsPath := GetTranscriptPath(sessionDir)
 	return eventsPath, os.WriteFile(eventsPath, data, 0600)
 }
-
+```

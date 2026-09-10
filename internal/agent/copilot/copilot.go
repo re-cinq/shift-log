@@ -1,3 +1,4 @@
+```go
 package copilot
 
 import (
@@ -409,7 +410,21 @@ func extractCommand(toolName string, toolArgs json.RawMessage) string {
 	return ""
 }
 
+// copilotSessionCandidate is a session directory discovered while scanning
+// Copilot's session-state directory.
+type copilotSessionCandidate struct {
+	dir       string
+	sessionID string
+	modTime   time.Time
+}
+
 // scanForRecentSession scans Copilot's session state directory for recent session directories.
+//
+// Copilot CLI's on-disk workspace.yaml schema has changed across releases, so
+// this uses a two-tier strategy: prefer a session whose recorded cwd matches
+// projectPath, but fall back to the single most recently modified session
+// directory within the recency window if no cwd match is found (or if the
+// cwd field can no longer be parsed at all).
 func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	sessionDir, err := GetSessionStateDir()
 	if err != nil {
@@ -423,9 +438,9 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 
 	now := time.Now()
 	recentTimeout := agent.RecentSessionTimeout
-	var bestDir string
-	var bestSessionID string
-	var bestModTime time.Time
+
+	var cwdMatch *copilotSessionCandidate
+	var mostRecent *copilotSessionCandidate
 
 	for _, entry := range entries {
 		if !entry.IsDir() {
@@ -442,34 +457,66 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 			continue
 		}
 
-		// Check if this session directory has a workspace.yaml
 		entryPath := filepath.Join(sessionDir, entry.Name())
-		meta, err := parseSessionMeta(entryPath)
-		if err != nil || meta == nil {
-			continue
+		sessionID := entry.Name()
+
+		meta, metaErr := parseSessionMeta(entryPath)
+		if metaErr == nil && meta != nil && meta.ID != "" {
+			sessionID = meta.ID
 		}
 
-		if !agent.PathsEqual(meta.CWD, projectPath) {
-			continue
+		c := &copilotSessionCandidate{dir: entryPath, sessionID: sessionID, modTime: modTime}
+
+		if mostRecent == nil || modTime.After(mostRecent.modTime) {
+			mostRecent = c
 		}
 
-		if bestDir == "" || modTime.After(bestModTime) {
-			bestDir = entryPath
-			bestSessionID = meta.ID
-			bestModTime = modTime
+		if metaErr == nil && meta != nil && meta.CWD != "" && agent.PathsEqual(meta.CWD, projectPath) {
+			if cwdMatch == nil || modTime.After(cwdMatch.modTime) {
+				cwdMatch = c
+			}
 		}
 	}
 
-	if bestDir == "" {
+	best := cwdMatch
+	if best == nil {
+		best = mostRecent
+	}
+	if best == nil {
 		return nil, nil
 	}
 
-	return &agent.SessionInfo{
-		SessionID:      bestSessionID,
-		TranscriptPath: GetTranscriptPath(bestDir),
-		StartedAt:      bestModTime.Format(time.RFC3339),
-		ProjectPath:    projectPath,
-	}, nil
+	return buildCopilotSessionInfo(best.dir, best.sessionID, best.modTime, projectPath), nil
 }
 
+// buildCopilotSessionInfo constructs a SessionInfo for a discovered session
+// directory. If the expected events.jsonl transcript is missing (Copilot's
+// transcript file naming has changed across versions), it looks for any
+// other .jsonl file in the directory, then falls back to an empty but valid
+// transcript so that storing the conversation doesn't fail outright.
+func buildCopilotSessionInfo(dir, sessionID string, modTime time.Time, projectPath string) *agent.SessionInfo {
+	info := &agent.SessionInfo{
+		SessionID:   sessionID,
+		StartedAt:   modTime.Format(time.RFC3339),
+		ProjectPath: projectPath,
+	}
 
+	transcriptPath := GetTranscriptPath(dir)
+	if _, err := os.Stat(transcriptPath); err == nil {
+		info.TranscriptPath = transcriptPath
+		return info
+	}
+
+	if entries, err := os.ReadDir(dir); err == nil {
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasSuffix(e.Name(), ".jsonl") {
+				info.TranscriptPath = filepath.Join(dir, e.Name())
+				return info
+			}
+		}
+	}
+
+	info.TranscriptData = []byte("\n")
+	return info
+}
+```
