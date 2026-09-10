@@ -409,15 +409,20 @@ func extractCommand(toolName string, toolArgs json.RawMessage) string {
 	return ""
 }
 
-// scanForRecentSession scans Copilot's session state directory for recent session directories.
+// scanForRecentSession scans Copilot's session state directory for recent sessions.
+// It walks the tree recursively (bounded depth) rather than assuming a fixed
+// nesting level, since Copilot CLI has changed how session directories are
+// grouped/nested across releases (e.g. grouping sessions under a per-workspace
+// directory). Any directory containing a workspace.yaml is treated as a
+// candidate session directory, regardless of how deep it sits under
+// session-state.
 func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	sessionDir, err := GetSessionStateDir()
 	if err != nil {
 		return nil, nil
 	}
 
-	entries, err := os.ReadDir(sessionDir)
-	if err != nil {
+	if info, err := os.Stat(sessionDir); err != nil || !info.IsDir() {
 		return nil, nil
 	}
 
@@ -427,38 +432,53 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	var bestSessionID string
 	var bestModTime time.Time
 
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
+	const maxDepth = 6
+	rootDepth := strings.Count(filepath.Clean(sessionDir), string(filepath.Separator))
+
+	_ = filepath.WalkDir(sessionDir, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return nil
+		}
+		if !d.IsDir() {
+			return nil
+		}
+		if path == sessionDir {
+			return nil
 		}
 
-		info, err := entry.Info()
+		depth := strings.Count(filepath.Clean(path), string(filepath.Separator)) - rootDepth
+		if depth > maxDepth {
+			return filepath.SkipDir
+		}
+
+		info, err := d.Info()
 		if err != nil {
-			continue
+			return nil
 		}
 
 		modTime := info.ModTime()
 		if now.Sub(modTime) > recentTimeout {
-			continue
+			return nil
 		}
 
-		// Check if this session directory has a workspace.yaml
-		entryPath := filepath.Join(sessionDir, entry.Name())
-		meta, err := parseSessionMeta(entryPath)
+		// Check if this directory has a workspace.yaml directly inside it.
+		meta, err := parseSessionMeta(path)
 		if err != nil || meta == nil {
-			continue
+			return nil
 		}
 
 		if !agent.PathsEqual(meta.CWD, projectPath) {
-			continue
+			return nil
 		}
 
 		if bestDir == "" || modTime.After(bestModTime) {
-			bestDir = entryPath
+			bestDir = path
 			bestSessionID = meta.ID
 			bestModTime = modTime
 		}
-	}
+
+		return nil
+	})
 
 	if bestDir == "" {
 		return nil, nil
@@ -471,5 +491,3 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 		ProjectPath:    projectPath,
 	}, nil
 }
-
-
