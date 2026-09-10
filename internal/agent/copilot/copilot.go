@@ -1,3 +1,4 @@
+```go
 package copilot
 
 import (
@@ -409,7 +410,25 @@ func extractCommand(toolName string, toolArgs json.RawMessage) string {
 	return ""
 }
 
+// copilotSessionCandidate is a session directory found while scanning Copilot's
+// session state directory.
+type copilotSessionCandidate struct {
+	dir       string
+	sessionID string
+	modTime   time.Time
+}
+
 // scanForRecentSession scans Copilot's session state directory for recent session directories.
+//
+// Matching is primarily done by comparing workspace.yaml's recorded CWD against
+// projectPath. Newer Copilot CLI releases may change when/whether that field is
+// populated by the time a session directory is scanned after the process has
+// already exited (e.g. for a manual, non-hook-triggered git commit), so if no
+// directory has a matching (or even parseable) CWD, we fall back to the most
+// recently modified session directory within the recency window - the same
+// mtime-only heuristic already used for Claude/Gemini session discovery
+// (see agent.ScanDirForRecentSession). Exact CWD matches are still always
+// preferred when available.
 func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	sessionDir, err := GetSessionStateDir()
 	if err != nil {
@@ -423,9 +442,8 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 
 	now := time.Now()
 	recentTimeout := agent.RecentSessionTimeout
-	var bestDir string
-	var bestSessionID string
-	var bestModTime time.Time
+	var matched *copilotSessionCandidate
+	var mostRecent *copilotSessionCandidate
 
 	for _, entry := range entries {
 		if !entry.IsDir() {
@@ -442,34 +460,44 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 			continue
 		}
 
-		// Check if this session directory has a workspace.yaml
 		entryPath := filepath.Join(sessionDir, entry.Name())
-		meta, err := parseSessionMeta(entryPath)
-		if err != nil || meta == nil {
-			continue
+
+		// Default the session ID to the directory name; prefer the ID recorded
+		// in workspace.yaml when it's present and parses cleanly.
+		sessionID := entry.Name()
+		cwdMatches := false
+
+		if meta, err := parseSessionMeta(entryPath); err == nil && meta != nil {
+			if meta.ID != "" {
+				sessionID = meta.ID
+			}
+			cwdMatches = meta.CWD != "" && agent.PathsEqual(meta.CWD, projectPath)
 		}
 
-		if !agent.PathsEqual(meta.CWD, projectPath) {
-			continue
+		candidate := &copilotSessionCandidate{dir: entryPath, sessionID: sessionID, modTime: modTime}
+
+		if mostRecent == nil || modTime.After(mostRecent.modTime) {
+			mostRecent = candidate
 		}
 
-		if bestDir == "" || modTime.After(bestModTime) {
-			bestDir = entryPath
-			bestSessionID = meta.ID
-			bestModTime = modTime
+		if cwdMatches && (matched == nil || modTime.After(matched.modTime)) {
+			matched = candidate
 		}
 	}
 
-	if bestDir == "" {
+	best := matched
+	if best == nil {
+		best = mostRecent
+	}
+	if best == nil {
 		return nil, nil
 	}
 
 	return &agent.SessionInfo{
-		SessionID:      bestSessionID,
-		TranscriptPath: GetTranscriptPath(bestDir),
-		StartedAt:      bestModTime.Format(time.RFC3339),
+		SessionID:      best.sessionID,
+		TranscriptPath: GetTranscriptPath(best.dir),
+		StartedAt:      best.modTime.Format(time.RFC3339),
 		ProjectPath:    projectPath,
 	}, nil
 }
-
-
+```
