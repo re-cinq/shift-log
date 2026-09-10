@@ -432,16 +432,6 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 			continue
 		}
 
-		info, err := entry.Info()
-		if err != nil {
-			continue
-		}
-
-		modTime := info.ModTime()
-		if now.Sub(modTime) > recentTimeout {
-			continue
-		}
-
 		// Check if this session directory has a workspace.yaml
 		entryPath := filepath.Join(sessionDir, entry.Name())
 		meta, err := parseSessionMeta(entryPath)
@@ -449,7 +439,24 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 			continue
 		}
 
-		if !agent.PathsEqual(meta.CWD, projectPath) {
+		// Match on either the recorded cwd or the git repository root: the
+		// manual/post-commit discovery path resolves the git root, while a
+		// live postToolUse hook passes the process's raw cwd. Both are
+		// valid identifiers for "this project" and meta.GitRoot was being
+		// parsed but never consulted, silently narrowing matches to cwd only.
+		matchesCWD := meta.CWD != "" && agent.PathsEqual(meta.CWD, projectPath)
+		matchesGitRoot := meta.GitRoot != "" && agent.PathsEqual(meta.GitRoot, projectPath)
+		if !matchesCWD && !matchesGitRoot {
+			continue
+		}
+
+		// Use the freshest of the session directory's own mtime and its
+		// transcript file's mtime. A directory's mtime only changes when
+		// entries are added/removed inside it, not when an existing
+		// events.jsonl is merely appended to, so relying on the directory
+		// alone can understate how recently a session was active.
+		modTime := sessionModTime(entry, GetTranscriptPath(entryPath))
+		if now.Sub(modTime) > recentTimeout {
 			continue
 		}
 
@@ -472,4 +479,17 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	}, nil
 }
 
-
+// sessionModTime returns the most recent modification time between a
+// session directory entry and its transcript file.
+func sessionModTime(entry os.DirEntry, transcriptPath string) time.Time {
+	var best time.Time
+	if info, err := entry.Info(); err == nil {
+		best = info.ModTime()
+	}
+	if info, err := os.Stat(transcriptPath); err == nil {
+		if info.ModTime().After(best) {
+			best = info.ModTime()
+		}
+	}
+	return best
+}
