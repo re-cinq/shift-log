@@ -15,6 +15,15 @@ type sessionMeta struct {
 	GitRoot string `yaml:"git_root,omitempty"`
 }
 
+// metadataFileNames lists known/possible session metadata filenames, tried in
+// order. Copilot CLI has renamed this file across releases.
+var metadataFileNames = []string{"workspace.yaml", "workspace.yml", "session.yaml", "metadata.yaml"}
+
+// cwdKeys lists known/possible keys for the working-directory field, tried in
+// order when the primary "cwd" field is absent. Copilot CLI has renamed this
+// field across releases.
+var cwdKeys = []string{"cwd", "cwd_path", "working_directory", "workingDirectory", "directory", "workspace", "root", "path"}
+
 // GetCopilotDir returns the path to Copilot's config/data directory.
 func GetCopilotDir() (string, error) {
 	home, err := os.UserHomeDir()
@@ -33,10 +42,20 @@ func GetSessionStateDir() (string, error) {
 	return filepath.Join(copilotDir, "session-state"), nil
 }
 
-// parseSessionMeta reads a workspace.yaml from a Copilot session directory.
+// parseSessionMeta reads session metadata from a Copilot session directory.
+// It tolerates metadata filename and field-name drift across Copilot CLI
+// releases: it tries several known filenames, and if the "cwd" field isn't
+// present under its usual YAML key, it re-scans the document for known
+// alternate key names (including one level of nesting under "workspace").
 func parseSessionMeta(sessionDir string) (*sessionMeta, error) {
-	path := filepath.Join(sessionDir, "workspace.yaml")
-	data, err := os.ReadFile(path)
+	var data []byte
+	var err error
+	for _, name := range metadataFileNames {
+		data, err = os.ReadFile(filepath.Join(sessionDir, name))
+		if err == nil {
+			break
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -46,7 +65,33 @@ func parseSessionMeta(sessionDir string) (*sessionMeta, error) {
 		return nil, err
 	}
 
+	if meta.CWD == "" {
+		var raw map[string]interface{}
+		if err := yaml.Unmarshal(data, &raw); err == nil {
+			meta.CWD = findStringField(raw, cwdKeys)
+		}
+	}
+
 	return &meta, nil
+}
+
+// findStringField looks up the first matching key holding a non-empty string
+// value, checking both the top level and one level of nesting under a
+// "workspace" key (e.g. {"workspace": {"cwd": "..."}}).
+func findStringField(raw map[string]interface{}, keys []string) string {
+	for _, k := range keys {
+		if s, ok := raw[k].(string); ok && s != "" {
+			return s
+		}
+	}
+	if ws, ok := raw["workspace"].(map[string]interface{}); ok {
+		for _, k := range keys {
+			if s, ok := ws[k].(string); ok && s != "" {
+				return s
+			}
+		}
+	}
+	return ""
 }
 
 // GetTranscriptPath returns the path to the events.jsonl transcript within a session directory.
@@ -81,4 +126,3 @@ func WriteSessionFile(sessionID string, data []byte) (string, error) {
 	eventsPath := GetTranscriptPath(sessionDir)
 	return eventsPath, os.WriteFile(eventsPath, data, 0600)
 }
-

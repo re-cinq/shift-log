@@ -410,6 +410,13 @@ func extractCommand(toolName string, toolArgs json.RawMessage) string {
 }
 
 // scanForRecentSession scans Copilot's session state directory for recent session directories.
+// It tolerates layout drift across Copilot CLI releases: some versions group session
+// directories under an extra directory level (e.g. per-workspace), so if a top-level
+// entry doesn't itself contain a transcript, its immediate children are checked too.
+// It also treats a session with metadata it can't confidently match against projectPath
+// (e.g. because the cwd field couldn't be found at all) as a best-effort candidate
+// rather than discarding it outright, since silently finding nothing is worse than an
+// occasional false positive in the common single-session-per-host case.
 func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	sessionDir, err := GetSessionStateDir()
 	if err != nil {
@@ -427,6 +434,23 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	var bestSessionID string
 	var bestModTime time.Time
 
+	consider := func(entryPath string, modTime time.Time) {
+		meta, err := parseSessionMeta(entryPath)
+		if err != nil || meta == nil {
+			return
+		}
+
+		if meta.CWD != "" && !agent.PathsEqual(meta.CWD, projectPath) {
+			return
+		}
+
+		if bestDir == "" || modTime.After(bestModTime) {
+			bestDir = entryPath
+			bestSessionID = meta.ID
+			bestModTime = modTime
+		}
+	}
+
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -442,21 +466,32 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 			continue
 		}
 
-		// Check if this session directory has a workspace.yaml
 		entryPath := filepath.Join(sessionDir, entry.Name())
-		meta, err := parseSessionMeta(entryPath)
-		if err != nil || meta == nil {
+
+		if _, err := os.Stat(GetTranscriptPath(entryPath)); err == nil {
+			consider(entryPath, modTime)
 			continue
 		}
 
-		if !agent.PathsEqual(meta.CWD, projectPath) {
+		// No transcript directly here; this Copilot CLI version may group
+		// sessions under an extra directory level. Check immediate children.
+		nested, err := os.ReadDir(entryPath)
+		if err != nil {
 			continue
 		}
-
-		if bestDir == "" || modTime.After(bestModTime) {
-			bestDir = entryPath
-			bestSessionID = meta.ID
-			bestModTime = modTime
+		for _, ne := range nested {
+			if !ne.IsDir() {
+				continue
+			}
+			nestedInfo, err := ne.Info()
+			if err != nil {
+				continue
+			}
+			nestedModTime := nestedInfo.ModTime()
+			if now.Sub(nestedModTime) > recentTimeout {
+				continue
+			}
+			consider(filepath.Join(entryPath, ne.Name()), nestedModTime)
 		}
 	}
 
@@ -471,5 +506,3 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 		ProjectPath:    projectPath,
 	}, nil
 }
-
-
