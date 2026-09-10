@@ -1,3 +1,4 @@
+```go
 package copilot
 
 import (
@@ -409,7 +410,12 @@ func extractCommand(toolName string, toolArgs json.RawMessage) string {
 	return ""
 }
 
-// scanForRecentSession scans Copilot's session state directory for recent session directories.
+// scanForRecentSession scans Copilot's session state directory for recent session
+// directories. It prefers a session whose recorded working directory or git root
+// matches projectPath. Copilot CLI has changed the metadata field names/casing used
+// for this across versions (see parseSessionMeta), so if metadata doesn't carry a
+// usable, matching path but exactly one recent session exists, that unambiguous
+// session is used as a fallback rather than reporting no session at all.
 func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	sessionDir, err := GetSessionStateDir()
 	if err != nil {
@@ -421,11 +427,16 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 		return nil, nil
 	}
 
+	type candidate struct {
+		dir       string
+		sessionID string
+		modTime   time.Time
+	}
+
 	now := time.Now()
 	recentTimeout := agent.RecentSessionTimeout
-	var bestDir string
-	var bestSessionID string
-	var bestModTime time.Time
+	var recent []candidate
+	var matched []candidate
 
 	for _, entry := range entries {
 		if !entry.IsDir() {
@@ -449,27 +460,43 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 			continue
 		}
 
-		if !agent.PathsEqual(meta.CWD, projectPath) {
-			continue
+		sessionID := meta.ID
+		if sessionID == "" {
+			sessionID = entry.Name()
 		}
 
-		if bestDir == "" || modTime.After(bestModTime) {
-			bestDir = entryPath
-			bestSessionID = meta.ID
-			bestModTime = modTime
+		c := candidate{dir: entryPath, sessionID: sessionID, modTime: modTime}
+		recent = append(recent, c)
+
+		if (meta.CWD != "" && agent.PathsEqual(meta.CWD, projectPath)) ||
+			(meta.GitRoot != "" && agent.PathsEqual(meta.GitRoot, projectPath)) {
+			matched = append(matched, c)
 		}
 	}
 
-	if bestDir == "" {
+	pool := matched
+	if len(pool) == 0 && len(recent) == 1 {
+		// Metadata didn't match projectPath directly (the cwd/git_root field may be
+		// empty, stale, or use a field name we don't recognize), but there's exactly
+		// one recent session, so it's unambiguously the one we're looking for.
+		pool = recent
+	}
+
+	var best *candidate
+	for i := range pool {
+		if best == nil || pool[i].modTime.After(best.modTime) {
+			best = &pool[i]
+		}
+	}
+	if best == nil {
 		return nil, nil
 	}
 
 	return &agent.SessionInfo{
-		SessionID:      bestSessionID,
-		TranscriptPath: GetTranscriptPath(bestDir),
-		StartedAt:      bestModTime.Format(time.RFC3339),
+		SessionID:      best.sessionID,
+		TranscriptPath: GetTranscriptPath(best.dir),
+		StartedAt:      best.modTime.Format(time.RFC3339),
 		ProjectPath:    projectPath,
 	}, nil
 }
-
-
+```
