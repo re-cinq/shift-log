@@ -160,6 +160,17 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 		}
 	}
 
+	// Opportunistically cache the transcript on every hook invocation (not
+	// just commits). Copilot CLI removes its own session-state directory once
+	// a non-interactive invocation finishes, so the post-commit "manual"
+	// discovery path (which runs after the CLI has already exited) would
+	// otherwise find nothing. Caching here, while the CLI is still running
+	// and its session-state directory still exists, preserves the transcript
+	// inside the repo's own .shiftlog directory for later discovery.
+	if sessionID != "" && transcriptPath != "" && hook.CWD != "" {
+		CacheSessionTranscript(hook.CWD, sessionID, transcriptPath)
+	}
+
 	return &agent.HookData{
 		SessionID:      sessionID,
 		TranscriptPath: transcriptPath,
@@ -228,6 +239,13 @@ func (a *Agent) ParseTranscriptFile(path string) (*agent.Transcript, error) {
 
 // DiscoverSession finds an active or recent Copilot CLI session.
 func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) {
+	// Prefer shiftlog's own cache, captured while the CLI was still running.
+	// Copilot CLI removes its own session-state directory once a
+	// non-interactive invocation exits, so the live directory scan below can
+	// no longer find anything by that point.
+	if info := ReadCachedSession(projectPath); info != nil {
+		return info, nil
+	}
 	return scanForRecentSession(projectPath)
 }
 
@@ -471,5 +489,3 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 		ProjectPath:    projectPath,
 	}, nil
 }
-
-
