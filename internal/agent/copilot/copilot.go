@@ -1,3 +1,4 @@
+```go
 package copilot
 
 import (
@@ -5,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -409,67 +411,129 @@ func extractCommand(toolName string, toolArgs json.RawMessage) string {
 	return ""
 }
 
-// scanForRecentSession scans Copilot's session state directory for recent session directories.
+// sessionCandidate represents a discovered Copilot session directory awaiting
+// selection in scanForRecentSession.
+type sessionCandidate struct {
+	dir       string
+	sessionID string
+	modTime   time.Time
+	cwdMatch  bool
+}
+
+// scanForRecentSession scans Copilot's session state directory for recent sessions.
+//
+// Copilot CLI has changed the on-disk layout of ~/.copilot/session-state across
+// releases (e.g. nesting session directories under an extra parent level, and
+// renaming workspace.yaml fields). Rather than assuming workspace.yaml is a
+// direct child of session-state/, this walks the whole tree looking for any
+// workspace.yaml file. Sessions whose recorded working directory matches the
+// target project are preferred; if none declare a matching (or any) working
+// directory, the most recently modified session within the recency window is
+// used instead, since that's almost always the session we actually want.
 func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	sessionDir, err := GetSessionStateDir()
 	if err != nil {
 		return nil, nil
 	}
 
-	entries, err := os.ReadDir(sessionDir)
-	if err != nil {
-		return nil, nil
-	}
-
 	now := time.Now()
 	recentTimeout := agent.RecentSessionTimeout
-	var bestDir string
-	var bestSessionID string
-	var bestModTime time.Time
 
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
+	var candidates []sessionCandidate
+
+	_ = filepath.WalkDir(sessionDir, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return nil
+		}
+		if d.IsDir() || d.Name() != "workspace.yaml" {
+			return nil
 		}
 
-		info, err := entry.Info()
+		info, err := d.Info()
 		if err != nil {
-			continue
+			return nil
 		}
 
 		modTime := info.ModTime()
 		if now.Sub(modTime) > recentTimeout {
-			continue
+			return nil
 		}
 
-		// Check if this session directory has a workspace.yaml
-		entryPath := filepath.Join(sessionDir, entry.Name())
-		meta, err := parseSessionMeta(entryPath)
+		dir := filepath.Dir(path)
+		meta, err := parseSessionMeta(dir)
 		if err != nil || meta == nil {
-			continue
+			return nil
 		}
 
-		if !agent.PathsEqual(meta.CWD, projectPath) {
-			continue
+		sessionID := meta.ID
+		if sessionID == "" {
+			sessionID = filepath.Base(dir)
 		}
 
-		if bestDir == "" || modTime.After(bestModTime) {
-			bestDir = entryPath
-			bestSessionID = meta.ID
-			bestModTime = modTime
-		}
+		candidates = append(candidates, sessionCandidate{
+			dir:       dir,
+			sessionID: sessionID,
+			modTime:   modTime,
+			cwdMatch:  meta.CWD != "" && agent.PathsEqual(meta.CWD, projectPath),
+		})
+		return nil
+	})
+
+	if len(candidates) == 0 {
+		return nil, nil
 	}
 
-	if bestDir == "" {
+	best := selectBestCandidate(candidates, true)
+	if best == nil {
+		best = selectBestCandidate(candidates, false)
+	}
+	if best == nil {
 		return nil, nil
 	}
 
 	return &agent.SessionInfo{
-		SessionID:      bestSessionID,
-		TranscriptPath: GetTranscriptPath(bestDir),
-		StartedAt:      bestModTime.Format(time.RFC3339),
+		SessionID:      best.sessionID,
+		TranscriptPath: resolveTranscriptPath(best.dir),
+		StartedAt:      best.modTime.Format(time.RFC3339),
 		ProjectPath:    projectPath,
 	}, nil
 }
 
+// selectBestCandidate returns the most recently modified candidate. When
+// requireCWDMatch is true, only candidates with a matching working directory
+// are considered.
+func selectBestCandidate(candidates []sessionCandidate, requireCWDMatch bool) *sessionCandidate {
+	var best *sessionCandidate
+	for i := range candidates {
+		c := &candidates[i]
+		if requireCWDMatch && !c.cwdMatch {
+			continue
+		}
+		if best == nil || c.modTime.After(best.modTime) {
+			best = c
+		}
+	}
+	return best
+}
 
+// resolveTranscriptPath returns the events.jsonl path if present, otherwise
+// falls back to any other .jsonl file found in the session directory. Copilot
+// CLI has not always named the transcript file events.jsonl.
+func resolveTranscriptPath(sessionDir string) string {
+	primary := GetTranscriptPath(sessionDir)
+	if _, err := os.Stat(primary); err == nil {
+		return primary
+	}
+
+	entries, err := os.ReadDir(sessionDir)
+	if err != nil {
+		return primary
+	}
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".jsonl") {
+			return filepath.Join(sessionDir, e.Name())
+		}
+	}
+	return primary
+}
+```
