@@ -317,23 +317,25 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 	}
 
 	// Find most recent session for this project
-	sessionQuery := fmt.Sprintf(
-		`SELECT id FROM session WHERE project_id='%s' ORDER BY time_updated DESC LIMIT 1;`,
-		projectID,
-	)
-	cmd := exec.Command("sqlite3", "-separator", "\t", dbPath, sessionQuery)
-	sessionOutput, err := cmd.Output()
-	if err != nil || strings.TrimSpace(string(sessionOutput)) == "" {
+	sessionID := findMostRecentSQLiteSession(dbPath, fmt.Sprintf("project_id='%s'", projectID))
+	if sessionID == "" {
+		// Newer OpenCode releases have changed how project identifiers are
+		// computed/stored before; if the project-scoped lookup can't find a
+		// match (e.g. because project_id no longer means what this tool
+		// expects), fall back to the most recently updated session across
+		// all projects rather than silently reporting no session.
+		sessionID = findMostRecentSQLiteSession(dbPath, "1=1")
+	}
+	if sessionID == "" {
 		return nil, nil
 	}
-	sessionID := strings.TrimSpace(string(sessionOutput))
 
 	// Check if this session was recent (within timeout)
 	timeQuery := fmt.Sprintf(
 		`SELECT time_updated FROM session WHERE id='%s';`,
 		sessionID,
 	)
-	cmd = exec.Command("sqlite3", dbPath, timeQuery)
+	cmd := exec.Command("sqlite3", dbPath, timeQuery)
 	timeOutput, err := cmd.Output()
 	if err == nil {
 		timeStr := strings.TrimSpace(string(timeOutput))
@@ -377,6 +379,21 @@ func discoverFromSQLite(dataDir, projectID, projectPath string) (*agent.SessionI
 		ProjectPath:    projectPath,
 		TranscriptData: transcriptData,
 	}, nil
+}
+
+// findMostRecentSQLiteSession returns the ID of the most recently updated
+// session matching the given SQL WHERE clause, or "" if none is found.
+func findMostRecentSQLiteSession(dbPath, whereClause string) string {
+	query := fmt.Sprintf(
+		`SELECT id FROM session WHERE %s ORDER BY time_updated DESC LIMIT 1;`,
+		whereClause,
+	)
+	cmd := exec.Command("sqlite3", "-separator", "\t", dbPath, query)
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(output))
 }
 
 // RestoreSession writes a session to OpenCode's storage location.
@@ -497,4 +514,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-

@@ -427,6 +427,16 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	var bestSessionID string
 	var bestModTime time.Time
 
+	// fallbackDir/fallbackModTime track the most recently modified session
+	// directory within the timeout window, regardless of whether its
+	// metadata could be parsed or matched a CWD. Copilot CLI has changed its
+	// workspace.yaml schema across releases before; if meta parsing/matching
+	// fails for every entry (e.g. after another such change), this lets us
+	// still attach the note to the most plausible session instead of
+	// silently finding nothing.
+	var fallbackDir string
+	var fallbackModTime time.Time
+
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -442,8 +452,14 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 			continue
 		}
 
-		// Check if this session directory has a workspace.yaml
 		entryPath := filepath.Join(sessionDir, entry.Name())
+
+		if fallbackDir == "" || modTime.After(fallbackModTime) {
+			fallbackDir = entryPath
+			fallbackModTime = modTime
+		}
+
+		// Check if this session directory has a workspace.yaml
 		meta, err := parseSessionMeta(entryPath)
 		if err != nil || meta == nil {
 			continue
@@ -460,16 +476,28 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 		}
 	}
 
-	if bestDir == "" {
+	if bestDir != "" {
+		return &agent.SessionInfo{
+			SessionID:      bestSessionID,
+			TranscriptPath: GetTranscriptPath(bestDir),
+			StartedAt:      bestModTime.Format(time.RFC3339),
+			ProjectPath:    projectPath,
+		}, nil
+	}
+
+	if fallbackDir == "" {
 		return nil, nil
 	}
 
+	sessionID := filepath.Base(fallbackDir)
+	if meta, err := parseSessionMeta(fallbackDir); err == nil && meta != nil && meta.ID != "" {
+		sessionID = meta.ID
+	}
+
 	return &agent.SessionInfo{
-		SessionID:      bestSessionID,
-		TranscriptPath: GetTranscriptPath(bestDir),
-		StartedAt:      bestModTime.Format(time.RFC3339),
+		SessionID:      sessionID,
+		TranscriptPath: GetTranscriptPath(fallbackDir),
+		StartedAt:      fallbackModTime.Format(time.RFC3339),
 		ProjectPath:    projectPath,
 	}, nil
 }
-
-
