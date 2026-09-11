@@ -1,3 +1,4 @@
+```go
 package copilot
 
 import (
@@ -409,67 +410,156 @@ func extractCommand(toolName string, toolArgs json.RawMessage) string {
 	return ""
 }
 
+// scannedSession is a candidate session directory found while scanning
+// Copilot's session-state tree.
+type scannedSession struct {
+	dir       string
+	sessionID string
+	modTime   time.Time
+}
+
 // scanForRecentSession scans Copilot's session state directory for recent session directories.
+//
+// Copilot CLI has changed where it nests session directories and which
+// workspace.yaml fields it populates across releases. To stay compatible
+// across versions, this:
+//   - looks for workspace.yaml both directly under session-state/<id>/ (the
+//     originally observed layout) and one level deeper, in case sessions are
+//     now grouped under an intermediate directory
+//   - matches the current project via either the cwd or git_root field
+//   - falls back to the most recent session with no cwd/git_root recorded at
+//     all (rather than skipping it outright), since a schema change could
+//     mean those fields moved to a key we don't recognize yet
 func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	sessionDir, err := GetSessionStateDir()
 	if err != nil {
 		return nil, nil
 	}
 
-	entries, err := os.ReadDir(sessionDir)
-	if err != nil {
-		return nil, nil
-	}
-
 	now := time.Now()
 	recentTimeout := agent.RecentSessionTimeout
-	var bestDir string
-	var bestSessionID string
-	var bestModTime time.Time
 
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
+	var bestMatch *scannedSession
+	var bestUnknown *scannedSession
 
-		info, err := entry.Info()
-		if err != nil {
-			continue
-		}
-
-		modTime := info.ModTime()
-		if now.Sub(modTime) > recentTimeout {
-			continue
-		}
-
-		// Check if this session directory has a workspace.yaml
-		entryPath := filepath.Join(sessionDir, entry.Name())
-		meta, err := parseSessionMeta(entryPath)
+	for _, dir := range findWorkspaceDirs(sessionDir) {
+		meta, err := parseSessionMeta(dir)
 		if err != nil || meta == nil {
 			continue
 		}
 
-		if !agent.PathsEqual(meta.CWD, projectPath) {
+		modTime := latestModTime(dir)
+		if now.Sub(modTime) > recentTimeout {
 			continue
 		}
 
-		if bestDir == "" || modTime.After(bestModTime) {
-			bestDir = entryPath
-			bestSessionID = meta.ID
-			bestModTime = modTime
+		sessionID := meta.ID
+		if sessionID == "" {
+			sessionID = filepath.Base(dir)
+		}
+
+		cand := &scannedSession{dir: dir, sessionID: sessionID, modTime: modTime}
+
+		matches := meta.CWD != "" && agent.PathsEqual(meta.CWD, projectPath)
+		if !matches && meta.GitRoot != "" {
+			matches = agent.PathsEqual(meta.GitRoot, projectPath)
+		}
+
+		if matches {
+			if bestMatch == nil || modTime.After(bestMatch.modTime) {
+				bestMatch = cand
+			}
+		} else if meta.CWD == "" && meta.GitRoot == "" {
+			if bestUnknown == nil || modTime.After(bestUnknown.modTime) {
+				bestUnknown = cand
+			}
 		}
 	}
 
-	if bestDir == "" {
+	best := bestMatch
+	if best == nil {
+		best = bestUnknown
+	}
+	if best == nil {
 		return nil, nil
 	}
 
 	return &agent.SessionInfo{
-		SessionID:      bestSessionID,
-		TranscriptPath: GetTranscriptPath(bestDir),
-		StartedAt:      bestModTime.Format(time.RFC3339),
+		SessionID:      best.sessionID,
+		TranscriptPath: GetTranscriptPath(best.dir),
+		StartedAt:      best.modTime.Format(time.RFC3339),
 		ProjectPath:    projectPath,
 	}, nil
 }
 
+// findWorkspaceDirs returns every directory under root that directly
+// contains a workspace.yaml, searching both root/*/ and root/*/*/ so session
+// discovery keeps working if Copilot CLI adds (or removes) a level of
+// nesting under session-state.
+func findWorkspaceDirs(root string) []string {
+	level1, err := os.ReadDir(root)
+	if err != nil {
+		return nil
+	}
 
+	var dirs []string
+	for _, e1 := range level1 {
+		if !e1.IsDir() {
+			continue
+		}
+		p1 := filepath.Join(root, e1.Name())
+		if hasWorkspaceFile(p1) {
+			dirs = append(dirs, p1)
+			continue
+		}
+
+		level2, err := os.ReadDir(p1)
+		if err != nil {
+			continue
+		}
+		for _, e2 := range level2 {
+			if !e2.IsDir() {
+				continue
+			}
+			p2 := filepath.Join(p1, e2.Name())
+			if hasWorkspaceFile(p2) {
+				dirs = append(dirs, p2)
+			}
+		}
+	}
+
+	return dirs
+}
+
+// hasWorkspaceFile reports whether dir directly contains a workspace.yaml.
+func hasWorkspaceFile(dir string) bool {
+	_, err := os.Stat(filepath.Join(dir, "workspace.yaml"))
+	return err == nil
+}
+
+// latestModTime returns the most recent modification time among dir itself
+// and its immediate children, so a session whose directory mtime is stale
+// (because only an existing file like events.jsonl was appended to, which
+// doesn't touch the parent directory's mtime) is still treated as recent.
+func latestModTime(dir string) time.Time {
+	var best time.Time
+	if info, err := os.Stat(dir); err == nil {
+		best = info.ModTime()
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return best
+	}
+	for _, e := range entries {
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if info.ModTime().After(best) {
+			best = info.ModTime()
+		}
+	}
+	return best
+}
+```
