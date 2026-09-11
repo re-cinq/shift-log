@@ -442,20 +442,37 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 			continue
 		}
 
-		// Check if this session directory has a workspace.yaml
 		entryPath := filepath.Join(sessionDir, entry.Name())
-		meta, err := parseSessionMeta(entryPath)
-		if err != nil || meta == nil {
+
+		// Only consider directories that actually hold a transcript; this is
+		// the one file we know is always present regardless of workspace.yaml
+		// schema changes across Copilot CLI versions.
+		if _, err := os.Stat(GetTranscriptPath(entryPath)); err != nil {
 			continue
 		}
 
-		if !agent.PathsEqual(meta.CWD, projectPath) {
-			continue
+		// workspace.yaml carries the cwd/git_root used to match this session
+		// to the target project. Newer Copilot CLI releases have been known
+		// to omit fields or only populate git_root, so treat a missing or
+		// partially-empty workspace.yaml as "unknown" rather than discarding
+		// the candidate outright — only reject when we have metadata that
+		// clearly points elsewhere.
+		meta, _ := parseSessionMeta(entryPath)
+		sessionID := entry.Name()
+		if meta != nil {
+			if meta.ID != "" {
+				sessionID = meta.ID
+			}
+			if (meta.CWD != "" || meta.GitRoot != "") &&
+				!agent.PathsEqual(meta.CWD, projectPath) &&
+				!agent.PathsEqual(meta.GitRoot, projectPath) {
+				continue
+			}
 		}
 
 		if bestDir == "" || modTime.After(bestModTime) {
 			bestDir = entryPath
-			bestSessionID = meta.ID
+			bestSessionID = sessionID
 			bestModTime = modTime
 		}
 	}
@@ -471,5 +488,3 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 		ProjectPath:    projectPath,
 	}, nil
 }
-
-
