@@ -13,6 +13,14 @@ type sessionMeta struct {
 	ID      string `yaml:"id"`
 	CWD     string `yaml:"cwd"`
 	GitRoot string `yaml:"git_root,omitempty"`
+
+	// Some Copilot CLI releases nest the session identity under a "workspace"
+	// key instead of exposing id/cwd at the top level of workspace.yaml. We
+	// read both shapes and prefer whichever one is populated.
+	Workspace *struct {
+		ID  string `yaml:"id"`
+		CWD string `yaml:"cwd"`
+	} `yaml:"workspace,omitempty"`
 }
 
 // GetCopilotDir returns the path to Copilot's config/data directory.
@@ -44,6 +52,15 @@ func parseSessionMeta(sessionDir string) (*sessionMeta, error) {
 	var meta sessionMeta
 	if err := yaml.Unmarshal(data, &meta); err != nil {
 		return nil, err
+	}
+
+	if meta.Workspace != nil {
+		if meta.CWD == "" {
+			meta.CWD = meta.Workspace.CWD
+		}
+		if meta.ID == "" {
+			meta.ID = meta.Workspace.ID
+		}
 	}
 
 	return &meta, nil
@@ -81,4 +98,3 @@ func WriteSessionFile(sessionID string, data []byte) (string, error) {
 	eventsPath := GetTranscriptPath(sessionDir)
 	return eventsPath, os.WriteFile(eventsPath, data, 0600)
 }
-

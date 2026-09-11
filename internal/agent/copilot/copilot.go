@@ -427,6 +427,16 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	var bestSessionID string
 	var bestModTime time.Time
 
+	// Newer Copilot CLI releases have, in the past, changed where session
+	// identity lives in workspace.yaml (see parseSessionMeta). If none of the
+	// recent sessions expose a usable "cwd" field at all, we can't do
+	// project-path matching — fall back to the most recently modified recent
+	// session rather than reporting "no session found".
+	var fallbackDir string
+	var fallbackSessionID string
+	var fallbackModTime time.Time
+	sawUsableCWD := false
+
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -449,15 +459,30 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 			continue
 		}
 
-		if !agent.PathsEqual(meta.CWD, projectPath) {
+		if meta.CWD != "" {
+			sawUsableCWD = true
+			if !agent.PathsEqual(meta.CWD, projectPath) {
+				continue
+			}
+			if bestDir == "" || modTime.After(bestModTime) {
+				bestDir = entryPath
+				bestSessionID = meta.ID
+				bestModTime = modTime
+			}
 			continue
 		}
 
-		if bestDir == "" || modTime.After(bestModTime) {
-			bestDir = entryPath
-			bestSessionID = meta.ID
-			bestModTime = modTime
+		if fallbackDir == "" || modTime.After(fallbackModTime) {
+			fallbackDir = entryPath
+			fallbackSessionID = meta.ID
+			fallbackModTime = modTime
 		}
+	}
+
+	if bestDir == "" && !sawUsableCWD {
+		bestDir = fallbackDir
+		bestSessionID = fallbackSessionID
+		bestModTime = fallbackModTime
 	}
 
 	if bestDir == "" {
@@ -471,5 +496,3 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 		ProjectPath:    projectPath,
 	}, nil
 }
-
-
