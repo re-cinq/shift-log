@@ -20,7 +20,7 @@ func init() {
 // Agent implements the agent.Agent interface for GitHub Copilot CLI.
 type Agent struct{}
 
-func (a *Agent) Name() agent.Name   { return agent.Copilot }
+func (a *Agent) Name() agent.Name    { return agent.Copilot }
 func (a *Agent) DisplayName() string { return "Copilot CLI" }
 
 // ConfigureHooks sets up Copilot CLI hooks in .github/hooks/shiftlog.json.
@@ -119,10 +119,10 @@ func (a *Agent) DiagnoseHooks(repoRoot string) []agent.DiagnosticCheck {
 func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 	var hook struct {
 		// Generic format fields
-		SessionID      string `json:"session_id"`
-		TranscriptPath string `json:"transcript_path"`
+		SessionID       string `json:"session_id"`
+		TranscriptPath  string `json:"transcript_path"`
 		GenericToolName string `json:"tool_name"`
-		ToolInput      struct {
+		ToolInput       struct {
 			Command string `json:"command"`
 		} `json:"tool_input"`
 
@@ -427,6 +427,15 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	var bestSessionID string
 	var bestModTime time.Time
 
+	// Track the most recently active session regardless of project match, as
+	// a fallback in case the workspace metadata doesn't match what we expect
+	// (e.g. Copilot CLI changed its metadata format). This mirrors the
+	// documented "discover session from active session file or recent
+	// sessions" behavior of manual mode.
+	var fallbackDir string
+	var fallbackSessionID string
+	var fallbackModTime time.Time
+
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -449,7 +458,20 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 			continue
 		}
 
-		if !agent.PathsEqual(meta.CWD, projectPath) {
+		if fallbackDir == "" || modTime.After(fallbackModTime) {
+			fallbackDir = entryPath
+			fallbackSessionID = meta.ID
+			fallbackModTime = modTime
+		}
+
+		// Prefer an exact CWD match, but fall back to git_root: some
+		// Copilot CLI versions don't populate cwd reliably (e.g. in
+		// non-interactive/print mode) but do record the repo root.
+		matches := meta.CWD != "" && agent.PathsEqual(meta.CWD, projectPath)
+		if !matches && meta.GitRoot != "" {
+			matches = agent.PathsEqual(meta.GitRoot, projectPath)
+		}
+		if !matches {
 			continue
 		}
 
@@ -458,6 +480,10 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 			bestSessionID = meta.ID
 			bestModTime = modTime
 		}
+	}
+
+	if bestDir == "" {
+		bestDir, bestSessionID, bestModTime = fallbackDir, fallbackSessionID, fallbackModTime
 	}
 
 	if bestDir == "" {
@@ -471,5 +497,3 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 		ProjectPath:    projectPath,
 	}, nil
 }
-
-
