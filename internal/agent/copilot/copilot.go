@@ -1,3 +1,4 @@
+```go
 package copilot
 
 import (
@@ -409,55 +410,78 @@ func extractCommand(toolName string, toolArgs json.RawMessage) string {
 	return ""
 }
 
-// scanForRecentSession scans Copilot's session state directory for recent session directories.
+// scanForRecentSession scans Copilot's config directory for a recent session
+// transcript. Copilot CLI's on-disk layout for a session's events.jsonl has
+// shifted across versions (e.g. whether a finished session remains under
+// session-state/ or is relocated once the process exits), so rather than
+// assuming one fixed directory depth we walk the whole Copilot config
+// directory looking for any events.jsonl file. We prefer one whose sibling
+// workspace.yaml matches the given project path (via cwd or git_root), but
+// fall back to the single most recently modified transcript found overall
+// if no metadata match is available — mirroring the permissive approach
+// already used for Claude/Gemini session discovery.
 func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
-	sessionDir, err := GetSessionStateDir()
-	if err != nil {
-		return nil, nil
-	}
-
-	entries, err := os.ReadDir(sessionDir)
+	copilotDir, err := GetCopilotDir()
 	if err != nil {
 		return nil, nil
 	}
 
 	now := time.Now()
 	recentTimeout := agent.RecentSessionTimeout
-	var bestDir string
-	var bestSessionID string
-	var bestModTime time.Time
 
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
+	var matchedDir, matchedSessionID string
+	var matchedModTime time.Time
+
+	var recentDir, recentSessionID string
+	var recentModTime time.Time
+
+	_ = filepath.WalkDir(copilotDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || d.Name() != "events.jsonl" {
+			return nil
 		}
 
-		info, err := entry.Info()
+		info, err := d.Info()
 		if err != nil {
-			continue
+			return nil
 		}
 
 		modTime := info.ModTime()
 		if now.Sub(modTime) > recentTimeout {
-			continue
+			return nil
 		}
 
-		// Check if this session directory has a workspace.yaml
-		entryPath := filepath.Join(sessionDir, entry.Name())
-		meta, err := parseSessionMeta(entryPath)
+		sessionDir := filepath.Dir(path)
+		sessionID := filepath.Base(sessionDir)
+
+		if recentDir == "" || modTime.After(recentModTime) {
+			recentDir = sessionDir
+			recentSessionID = sessionID
+			recentModTime = modTime
+		}
+
+		meta, err := parseSessionMeta(sessionDir)
 		if err != nil || meta == nil {
-			continue
+			return nil
+		}
+		if meta.ID != "" {
+			sessionID = meta.ID
 		}
 
-		if !agent.PathsEqual(meta.CWD, projectPath) {
-			continue
+		if !agent.PathsEqual(meta.CWD, projectPath) && !agent.PathsEqual(meta.GitRoot, projectPath) {
+			return nil
 		}
 
-		if bestDir == "" || modTime.After(bestModTime) {
-			bestDir = entryPath
-			bestSessionID = meta.ID
-			bestModTime = modTime
+		if matchedDir == "" || modTime.After(matchedModTime) {
+			matchedDir = sessionDir
+			matchedSessionID = sessionID
+			matchedModTime = modTime
 		}
+		return nil
+	})
+
+	bestDir, bestSessionID, bestModTime := matchedDir, matchedSessionID, matchedModTime
+	if bestDir == "" {
+		bestDir, bestSessionID, bestModTime = recentDir, recentSessionID, recentModTime
 	}
 
 	if bestDir == "" {
@@ -471,5 +495,4 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 		ProjectPath:    projectPath,
 	}, nil
 }
-
-
+```
