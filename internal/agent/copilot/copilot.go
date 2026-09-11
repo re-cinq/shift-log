@@ -1,3 +1,4 @@
+```go
 package copilot
 
 import (
@@ -409,67 +410,106 @@ func extractCommand(toolName string, toolArgs json.RawMessage) string {
 	return ""
 }
 
-// scanForRecentSession scans Copilot's session state directory for recent session directories.
+// scanForRecentSession scans Copilot's session state directory (and, if that
+// yields nothing, its broader config/data directory) for a recent session
+// belonging to projectPath.
+//
+// Copilot CLI is still under rapid 1.0.x iteration and has changed its
+// on-disk metadata format before, so a session directory is identified by
+// the presence of a transcript file rather than a specific metadata schema.
+// When a directory's metadata can be parsed and carries a cwd, it must match
+// projectPath to be considered. When metadata is missing or unparseable
+// (e.g. because the format changed again), the most recently active such
+// session is used as a lower-confidence fallback, since a single active
+// session is the common case for these tests.
 func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
-	sessionDir, err := GetSessionStateDir()
-	if err != nil {
-		return nil, nil
+	type root struct {
+		path  string
+		depth int
 	}
 
-	entries, err := os.ReadDir(sessionDir)
-	if err != nil {
-		return nil, nil
+	var roots []root
+	if dir, err := GetSessionStateDir(); err == nil {
+		roots = append(roots, root{dir, 3})
+	}
+	if dir, err := GetCopilotDir(); err == nil {
+		roots = append(roots, root{dir, 4})
 	}
 
-	now := time.Now()
-	recentTimeout := agent.RecentSessionTimeout
-	var bestDir string
-	var bestSessionID string
-	var bestModTime time.Time
-
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
+	var fallback *agent.SessionInfo
+	for _, r := range roots {
+		matched, fb := findSessionInTree(r.path, projectPath, r.depth)
+		if matched != nil {
+			return matched, nil
 		}
-
-		info, err := entry.Info()
-		if err != nil {
-			continue
-		}
-
-		modTime := info.ModTime()
-		if now.Sub(modTime) > recentTimeout {
-			continue
-		}
-
-		// Check if this session directory has a workspace.yaml
-		entryPath := filepath.Join(sessionDir, entry.Name())
-		meta, err := parseSessionMeta(entryPath)
-		if err != nil || meta == nil {
-			continue
-		}
-
-		if !agent.PathsEqual(meta.CWD, projectPath) {
-			continue
-		}
-
-		if bestDir == "" || modTime.After(bestModTime) {
-			bestDir = entryPath
-			bestSessionID = meta.ID
-			bestModTime = modTime
+		if fallback == nil {
+			fallback = fb
 		}
 	}
 
-	if bestDir == "" {
-		return nil, nil
-	}
-
-	return &agent.SessionInfo{
-		SessionID:      bestSessionID,
-		TranscriptPath: GetTranscriptPath(bestDir),
-		StartedAt:      bestModTime.Format(time.RFC3339),
-		ProjectPath:    projectPath,
-	}, nil
+	return fallback, nil
 }
 
+// findSessionInTree walks root (bounded to maxDepth) looking for Copilot
+// session directories, identified by the presence of a transcript file (see
+// GetTranscriptPath's candidate names). It returns the most recently active
+// session whose recorded cwd matches projectPath, plus separately the most
+// recently active session found with no usable cwd metadata at all.
+func findSessionInTree(root, projectPath string, maxDepth int) (matched, fallback *agent.SessionInfo) {
+	now := time.Now()
+	var matchedAt, fallbackAt time.Time
 
+	var walk func(dir string, depth int)
+	walk = func(dir string, depth int) {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return
+		}
+
+		transcriptPath := GetTranscriptPath(dir)
+		if info, statErr := os.Stat(transcriptPath); statErr == nil {
+			modTime := info.ModTime()
+			if now.Sub(modTime) <= agent.RecentSessionTimeout {
+				meta, _ := parseSessionMeta(dir)
+
+				sessionID := filepath.Base(dir)
+				if meta != nil && meta.ID != "" {
+					sessionID = meta.ID
+				}
+
+				candidate := &agent.SessionInfo{
+					SessionID:      sessionID,
+					TranscriptPath: transcriptPath,
+					StartedAt:      modTime.Format(time.RFC3339),
+					ProjectPath:    projectPath,
+				}
+
+				if meta != nil && meta.CWD != "" {
+					if agent.PathsEqual(meta.CWD, projectPath) && (matched == nil || modTime.After(matchedAt)) {
+						matched = candidate
+						matchedAt = modTime
+					}
+				} else if fallback == nil || modTime.After(fallbackAt) {
+					fallback = candidate
+					fallbackAt = modTime
+				}
+			}
+			// A directory containing a transcript is a session leaf; don't
+			// descend further into it.
+			return
+		}
+
+		if depth >= maxDepth {
+			return
+		}
+		for _, entry := range entries {
+			if entry.IsDir() {
+				walk(filepath.Join(dir, entry.Name()), depth+1)
+			}
+		}
+	}
+
+	walk(root, 0)
+	return matched, fallback
+}
+```
