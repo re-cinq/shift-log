@@ -63,6 +63,19 @@ func GetSessionDir(projectPath string) (string, error) {
 	return filepath.Join(dataDir, "storage", "session", projectID), nil
 }
 
+// GetSessionStorageRoot returns the root directory under which OpenCode
+// stores all session metadata. Newer OpenCode versions have changed how
+// sessions are grouped under this root (e.g. the project identification
+// scheme used for subdirectories), so discovery scans this root broadly
+// rather than assuming a specific subdirectory layout.
+func GetSessionStorageRoot() (string, error) {
+	dataDir, err := GetDataDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dataDir, "storage", "session"), nil
+}
+
 // GetMessageDir returns the message storage directory for a session.
 func GetMessageDir(sessionID string) (string, error) {
 	dataDir, err := GetDataDir()

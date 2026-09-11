@@ -410,6 +410,10 @@ func extractCommand(toolName string, toolArgs json.RawMessage) string {
 }
 
 // scanForRecentSession scans Copilot's session state directory for recent session directories.
+// It prefers a session whose working directory matches projectPath. Copilot CLI has renamed
+// or relocated that field across versions, so when it can't be determined for any candidate
+// session, the most recently modified one within the timeout window is used instead of
+// failing outright.
 func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	sessionDir, err := GetSessionStateDir()
 	if err != nil {
@@ -426,6 +430,7 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	var bestDir string
 	var bestSessionID string
 	var bestModTime time.Time
+	matchedByCWD := false
 
 	for _, entry := range entries {
 		if !entry.IsDir() {
@@ -449,11 +454,24 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 			continue
 		}
 
-		if !agent.PathsEqual(meta.CWD, projectPath) {
+		if meta.HasCWD {
+			if !agent.PathsEqual(meta.CWD, projectPath) {
+				continue
+			}
+			// A confirmed working-directory match always wins over an
+			// undetermined fallback candidate.
+			if !matchedByCWD || modTime.After(bestModTime) {
+				bestDir = entryPath
+				bestSessionID = meta.ID
+				bestModTime = modTime
+				matchedByCWD = true
+			}
 			continue
 		}
 
-		if bestDir == "" || modTime.After(bestModTime) {
+		// No usable working-directory field found: keep this as a
+		// fallback candidate only if nothing has confirmed a match yet.
+		if !matchedByCWD && (bestDir == "" || modTime.After(bestModTime)) {
 			bestDir = entryPath
 			bestSessionID = meta.ID
 			bestModTime = modTime
@@ -471,5 +489,3 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 		ProjectPath:    projectPath,
 	}, nil
 }
-
-
