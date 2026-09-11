@@ -410,21 +410,35 @@ func extractCommand(toolName string, toolArgs json.RawMessage) string {
 }
 
 // scanForRecentSession scans Copilot's session state directory for recent session directories.
+// Copilot CLI has nested per-session metadata at different directory depths
+// (and used different metadata filenames/field names) across versions, so
+// this searches a couple of levels deep for a workspace metadata file rather
+// than assuming sessions sit directly under the session-state directory.
 func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	sessionDir, err := GetSessionStateDir()
 	if err != nil {
 		return nil, nil
 	}
 
-	entries, err := os.ReadDir(sessionDir)
-	if err != nil {
+	best, _ := findRecentCopilotSession(sessionDir, projectPath, 2)
+	if best == nil {
 		return nil, nil
+	}
+	return best, nil
+}
+
+// findRecentCopilotSession walks up to maxDepth directory levels below dir
+// looking for the most recently modified session whose metadata cwd matches
+// projectPath.
+func findRecentCopilotSession(dir, projectPath string, maxDepth int) (*agent.SessionInfo, time.Time) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, time.Time{}
 	}
 
 	now := time.Now()
 	recentTimeout := agent.RecentSessionTimeout
-	var bestDir string
-	var bestSessionID string
+	var best *agent.SessionInfo
 	var bestModTime time.Time
 
 	for _, entry := range entries {
@@ -432,44 +446,36 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 			continue
 		}
 
+		entryPath := filepath.Join(dir, entry.Name())
 		info, err := entry.Info()
 		if err != nil {
 			continue
 		}
-
 		modTime := info.ModTime()
-		if now.Sub(modTime) > recentTimeout {
+
+		if meta, metaErr := parseSessionMeta(entryPath); metaErr == nil {
+			if now.Sub(modTime) <= recentTimeout && agent.PathsEqual(meta.CWD, projectPath) &&
+				(best == nil || modTime.After(bestModTime)) {
+				best = &agent.SessionInfo{
+					SessionID:      meta.ID,
+					TranscriptPath: GetTranscriptPath(entryPath),
+					StartedAt:      modTime.Format(time.RFC3339),
+					ProjectPath:    projectPath,
+				}
+				bestModTime = modTime
+			}
 			continue
 		}
 
-		// Check if this session directory has a workspace.yaml
-		entryPath := filepath.Join(sessionDir, entry.Name())
-		meta, err := parseSessionMeta(entryPath)
-		if err != nil || meta == nil {
-			continue
-		}
-
-		if !agent.PathsEqual(meta.CWD, projectPath) {
-			continue
-		}
-
-		if bestDir == "" || modTime.After(bestModTime) {
-			bestDir = entryPath
-			bestSessionID = meta.ID
-			bestModTime = modTime
+		if maxDepth > 0 {
+			if nested, nestedModTime := findRecentCopilotSession(entryPath, projectPath, maxDepth-1); nested != nil {
+				if best == nil || nestedModTime.After(bestModTime) {
+					best = nested
+					bestModTime = nestedModTime
+				}
+			}
 		}
 	}
 
-	if bestDir == "" {
-		return nil, nil
-	}
-
-	return &agent.SessionInfo{
-		SessionID:      bestSessionID,
-		TranscriptPath: GetTranscriptPath(bestDir),
-		StartedAt:      bestModTime.Format(time.RFC3339),
-		ProjectPath:    projectPath,
-	}, nil
+	return best, bestModTime
 }
-
-
