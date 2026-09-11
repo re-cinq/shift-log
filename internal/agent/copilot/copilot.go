@@ -226,9 +226,32 @@ func (a *Agent) ParseTranscriptFile(path string) (*agent.Transcript, error) {
 	return parseCopilotTranscript(f)
 }
 
-// DiscoverSession finds an active or recent Copilot CLI session.
+// discoverPollInterval and discoverPollTimeout bound how long DiscoverSession
+// waits for Copilot CLI to flush its session-state files to disk. Newer
+// Copilot CLI releases can take noticeably longer than older ones to persist
+// workspace.yaml/events.jsonl after the CLI process exits, so a single
+// instantaneous scan can race that write and miss a session that lands a
+// moment later. Polling briefly trades a little latency for reliability
+// without changing how a session is matched.
+const (
+	discoverPollInterval = 250 * time.Millisecond
+	discoverPollTimeout  = 6 * time.Second
+)
+
+// DiscoverSession finds an active or recent Copilot CLI session, polling
+// briefly to tolerate Copilot CLI's asynchronous session-state flush.
 func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) {
-	return scanForRecentSession(projectPath)
+	deadline := time.Now().Add(discoverPollTimeout)
+	for {
+		session, err := scanForRecentSession(projectPath)
+		if err != nil || session != nil {
+			return session, err
+		}
+		if time.Now().After(deadline) {
+			return nil, nil
+		}
+		time.Sleep(discoverPollInterval)
+	}
 }
 
 // RestoreSession writes a transcript to Copilot CLI's expected location.
@@ -471,5 +494,3 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 		ProjectPath:    projectPath,
 	}, nil
 }
-
-

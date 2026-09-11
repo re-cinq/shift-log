@@ -229,9 +229,38 @@ func (a *Agent) parseMessageDir(dir string) (*agent.Transcript, error) {
 	return &agent.Transcript{Entries: entries}, nil
 }
 
+// discoverPollInterval and discoverPollTimeout bound how long DiscoverSession
+// waits for OpenCode to flush its session/message storage to disk. Newer
+// OpenCode releases can take noticeably longer than older ones to persist
+// session state after the CLI process exits, so a single instantaneous scan
+// can race that write and miss a session that lands a moment later. Polling
+// briefly trades a little latency for reliability without changing how a
+// session is matched.
+const (
+	discoverPollInterval = 250 * time.Millisecond
+	discoverPollTimeout  = 6 * time.Second
+)
+
 // DiscoverSession finds an active or recent OpenCode session.
 // It first tries flat file storage (pre-v1.2), then falls back to SQLite (v1.2+).
+// It polls briefly to tolerate OpenCode's asynchronous session persistence.
 func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) {
+	deadline := time.Now().Add(discoverPollTimeout)
+	for {
+		session, err := a.discoverOnce(projectPath)
+		if err != nil || session != nil {
+			return session, err
+		}
+		if time.Now().After(deadline) {
+			return nil, nil
+		}
+		time.Sleep(discoverPollInterval)
+	}
+}
+
+// discoverOnce performs a single, non-blocking attempt to find a session,
+// trying flat file storage first and falling back to SQLite.
+func (a *Agent) discoverOnce(projectPath string) (*agent.SessionInfo, error) {
 	// Try flat file storage first (pre-v1.2 OpenCode)
 	session, err := a.discoverFromFlatFiles(projectPath)
 	if err != nil {
@@ -454,7 +483,6 @@ func parseOpenCodeEntry(raw map[string]json.RawMessage, fullData []byte) agent.T
 	return entry
 }
 
-
 // parseOpenCodeMessage parses message content from an OpenCode entry.
 func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageType) *agent.Message {
 	if msgType == "" {
@@ -497,4 +525,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
