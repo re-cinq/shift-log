@@ -83,6 +83,21 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 		transcriptData = []byte(hook.TranscriptData)
 	}
 
+	// OpenCode's on-disk session storage has changed shape across releases
+	// (flat JSON files, then SQLite, and whatever comes next), so relying on
+	// it for post-commit ("manual") discovery is fragile. The plugin's
+	// SDK-fetched transcript data above comes straight from OpenCode's
+	// official client API and doesn't depend on any storage format, so cache
+	// it ourselves and let DiscoverSession prefer it.
+	if hook.SessionID != "" && hook.ProjectDir != "" {
+		gitRoot := agent.FindGitRoot(hook.ProjectDir)
+		_ = agent.WriteHookSessionMarker(agent.OpenCode, gitRoot, agent.HookSessionMarker{
+			SessionID:      hook.SessionID,
+			TranscriptPath: transcriptPath,
+			TranscriptData: transcriptData,
+		})
+	}
+
 	return &agent.HookData{
 		SessionID:      hook.SessionID,
 		TranscriptPath: transcriptPath,
@@ -96,12 +111,12 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 func (a *Agent) IsCommitCommand(toolName, command string) bool {
 	// OpenCode tool names for shell execution
 	shellTools := map[string]bool{
-		"bash":               true,
-		"shell":              true,
-		"terminal":           true,
-		"execute":            true,
-		"run":                true,
-		"command":            true,
+		"bash":     true,
+		"shell":    true,
+		"terminal": true,
+		"execute":  true,
+		"run":      true,
+		"command":  true,
 	}
 
 	if !shellTools[toolName] {
@@ -230,8 +245,22 @@ func (a *Agent) parseMessageDir(dir string) (*agent.Transcript, error) {
 }
 
 // DiscoverSession finds an active or recent OpenCode session.
-// It first tries flat file storage (pre-v1.2), then falls back to SQLite (v1.2+).
+// It first checks the marker shiftlog maintains from live plugin hook
+// invocations (backed by OpenCode's own SDK, so it's resilient to on-disk
+// storage format changes), then falls back to legacy on-disk discovery for
+// cases where the plugin never fired (e.g. a commit made from outside
+// OpenCode): flat file storage (pre-v1.2), then SQLite (v1.2+).
 func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) {
+	if marker := agent.ReadHookSessionMarker(agent.OpenCode, projectPath); marker != nil {
+		return &agent.SessionInfo{
+			SessionID:      marker.SessionID,
+			TranscriptPath: marker.TranscriptPath,
+			TranscriptData: marker.TranscriptData,
+			StartedAt:      marker.UpdatedAt.Format(time.RFC3339),
+			ProjectPath:    projectPath,
+		}, nil
+	}
+
 	// Try flat file storage first (pre-v1.2 OpenCode)
 	session, err := a.discoverFromFlatFiles(projectPath)
 	if err != nil {
@@ -454,7 +483,6 @@ func parseOpenCodeEntry(raw map[string]json.RawMessage, fullData []byte) agent.T
 	return entry
 }
 
-
 // parseOpenCodeMessage parses message content from an OpenCode entry.
 func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageType) *agent.Message {
 	if msgType == "" {
@@ -497,4 +525,3 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 
 	return msg
 }
-
