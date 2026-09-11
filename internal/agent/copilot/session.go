@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -49,9 +51,64 @@ func parseSessionMeta(sessionDir string) (*sessionMeta, error) {
 	return &meta, nil
 }
 
+// parseSessionMetaRaw reads a workspace.yaml file into a generic map rather than a
+// fixed struct. Copilot CLI is closed-source and has changed this schema across
+// releases (renamed or nested fields), so callers that need to locate a field use
+// extractStringField against this raw map instead of relying on one exact shape.
+func parseSessionMetaRaw(workspaceYAMLPath string) (map[string]interface{}, error) {
+	data, err := os.ReadFile(workspaceYAMLPath)
+	if err != nil {
+		return nil, err
+	}
+
+	var raw map[string]interface{}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+
+	return raw, nil
+}
+
 // GetTranscriptPath returns the path to the events.jsonl transcript within a session directory.
 func GetTranscriptPath(sessionDir string) string {
 	return filepath.Join(sessionDir, "events.jsonl")
+}
+
+// resolveTranscriptPath returns the transcript file within sessionDir. It prefers
+// the conventional events.jsonl name, but falls back to the most recently
+// modified *.jsonl file in the directory in case a newer Copilot CLI version
+// uses a different filename.
+func resolveTranscriptPath(sessionDir string) string {
+	preferred := GetTranscriptPath(sessionDir)
+	if _, err := os.Stat(preferred); err == nil {
+		return preferred
+	}
+
+	entries, err := os.ReadDir(sessionDir)
+	if err != nil {
+		return preferred
+	}
+
+	var best string
+	var bestModTime time.Time
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".jsonl") {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		if best == "" || info.ModTime().After(bestModTime) {
+			best = filepath.Join(sessionDir, entry.Name())
+			bestModTime = info.ModTime()
+		}
+	}
+
+	if best != "" {
+		return best
+	}
+	return preferred
 }
 
 // WriteSessionFile writes a session directory structure to Copilot's session state directory.
@@ -81,4 +138,3 @@ func WriteSessionFile(sessionID string, data []byte) (string, error) {
 	eventsPath := GetTranscriptPath(sessionDir)
 	return eventsPath, os.WriteFile(eventsPath, data, 0600)
 }
-
