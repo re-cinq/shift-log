@@ -9,10 +9,26 @@ import (
 )
 
 // sessionMeta represents lightweight metadata from a Copilot session workspace.yaml.
+// Copilot CLI has used a few different key names for the working directory across
+// releases, so every variant we've seen is tracked and treated as a valid match.
 type sessionMeta struct {
-	ID      string `yaml:"id"`
-	CWD     string `yaml:"cwd"`
-	GitRoot string `yaml:"git_root,omitempty"`
+	ID        string `yaml:"id"`
+	CWD       string `yaml:"cwd"`
+	Directory string `yaml:"directory,omitempty"`
+	Workspace string `yaml:"workspace,omitempty"`
+	GitRoot   string `yaml:"git_root,omitempty"`
+}
+
+// cwdCandidates returns every non-empty working-directory-like field on the
+// session metadata, in preference order.
+func (m *sessionMeta) cwdCandidates() []string {
+	var out []string
+	for _, v := range []string{m.CWD, m.Directory, m.Workspace, m.GitRoot} {
+		if v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 // GetCopilotDir returns the path to Copilot's config/data directory.
@@ -81,4 +97,3 @@ func WriteSessionFile(sessionID string, data []byte) (string, error) {
 	eventsPath := GetTranscriptPath(sessionDir)
 	return eventsPath, os.WriteFile(eventsPath, data, 0600)
 }
-
