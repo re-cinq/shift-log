@@ -34,6 +34,9 @@ func GetSessionStateDir() (string, error) {
 }
 
 // parseSessionMeta reads a workspace.yaml from a Copilot session directory.
+// Newer Copilot CLI releases have used different field names for the same
+// data across versions, so each field is looked up by several known
+// aliases instead of relying on a single fixed YAML key.
 func parseSessionMeta(sessionDir string) (*sessionMeta, error) {
 	path := filepath.Join(sessionDir, "workspace.yaml")
 	data, err := os.ReadFile(path)
@@ -41,12 +44,31 @@ func parseSessionMeta(sessionDir string) (*sessionMeta, error) {
 		return nil, err
 	}
 
-	var meta sessionMeta
-	if err := yaml.Unmarshal(data, &meta); err != nil {
+	var raw map[string]interface{}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
 		return nil, err
 	}
 
+	meta := sessionMeta{
+		ID:      firstStringField(raw, "id", "sessionId", "session_id"),
+		CWD:     firstStringField(raw, "cwd", "cwdPath", "cwd_path", "workingDirectory", "working_directory", "directory"),
+		GitRoot: firstStringField(raw, "git_root", "gitRoot", "root"),
+	}
+
 	return &meta, nil
+}
+
+// firstStringField returns the first non-empty string value found in raw
+// for any of the given keys.
+func firstStringField(raw map[string]interface{}, keys ...string) string {
+	for _, k := range keys {
+		if v, ok := raw[k]; ok {
+			if s, ok := v.(string); ok && s != "" {
+				return s
+			}
+		}
+	}
+	return ""
 }
 
 // GetTranscriptPath returns the path to the events.jsonl transcript within a session directory.
@@ -81,4 +103,3 @@ func WriteSessionFile(sessionID string, data []byte) (string, error) {
 	eventsPath := GetTranscriptPath(sessionDir)
 	return eventsPath, os.WriteFile(eventsPath, data, 0600)
 }
-

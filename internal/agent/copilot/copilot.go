@@ -410,6 +410,11 @@ func extractCommand(toolName string, toolArgs json.RawMessage) string {
 }
 
 // scanForRecentSession scans Copilot's session state directory for recent session directories.
+// It prefers sessions whose recorded working directory (or git root) matches
+// projectPath, but falls back to the single most recently modified session
+// with a valid transcript when no metadata match is found — newer Copilot
+// CLI releases have changed the workspace.yaml field names, so a session
+// may be missing recognizable metadata even though it is the active one.
 func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	sessionDir, err := GetSessionStateDir()
 	if err != nil {
@@ -423,9 +428,11 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 
 	now := time.Now()
 	recentTimeout := agent.RecentSessionTimeout
-	var bestDir string
-	var bestSessionID string
-	var bestModTime time.Time
+
+	var matchedDir, matchedSessionID string
+	var matchedModTime time.Time
+	var fallbackDir, fallbackSessionID string
+	var fallbackModTime time.Time
 
 	for _, entry := range entries {
 		if !entry.IsDir() {
@@ -442,34 +449,69 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 			continue
 		}
 
-		// Check if this session directory has a workspace.yaml
 		entryPath := filepath.Join(sessionDir, entry.Name())
-		meta, err := parseSessionMeta(entryPath)
-		if err != nil || meta == nil {
+
+		// A usable session must have a transcript.
+		if _, err := os.Stat(GetTranscriptPath(entryPath)); err != nil {
 			continue
 		}
 
-		if !agent.PathsEqual(meta.CWD, projectPath) {
+		sessionID := entry.Name()
+		meta, metaErr := parseSessionMeta(entryPath)
+		if metaErr == nil && meta != nil && meta.ID != "" {
+			sessionID = meta.ID
+		}
+
+		// Track the most recently modified session regardless of metadata
+		// match, to use as a fallback if nothing matches by path.
+		if fallbackDir == "" || modTime.After(fallbackModTime) {
+			fallbackDir = entryPath
+			fallbackSessionID = sessionID
+			fallbackModTime = modTime
+		}
+
+		if metaErr != nil || meta == nil || !sessionMatchesProject(meta, projectPath) {
 			continue
 		}
 
-		if bestDir == "" || modTime.After(bestModTime) {
-			bestDir = entryPath
-			bestSessionID = meta.ID
-			bestModTime = modTime
+		if matchedDir == "" || modTime.After(matchedModTime) {
+			matchedDir = entryPath
+			matchedSessionID = sessionID
+			matchedModTime = modTime
 		}
 	}
 
-	if bestDir == "" {
-		return nil, nil
+	if matchedDir != "" {
+		return &agent.SessionInfo{
+			SessionID:      matchedSessionID,
+			TranscriptPath: GetTranscriptPath(matchedDir),
+			StartedAt:      matchedModTime.Format(time.RFC3339),
+			ProjectPath:    projectPath,
+		}, nil
 	}
 
-	return &agent.SessionInfo{
-		SessionID:      bestSessionID,
-		TranscriptPath: GetTranscriptPath(bestDir),
-		StartedAt:      bestModTime.Format(time.RFC3339),
-		ProjectPath:    projectPath,
-	}, nil
+	if fallbackDir != "" {
+		return &agent.SessionInfo{
+			SessionID:      fallbackSessionID,
+			TranscriptPath: GetTranscriptPath(fallbackDir),
+			StartedAt:      fallbackModTime.Format(time.RFC3339),
+			ProjectPath:    projectPath,
+		}, nil
+	}
+
+	return nil, nil
 }
 
-
+// sessionMatchesProject reports whether a session's recorded metadata
+// corresponds to projectPath. Copilot CLI has recorded the project
+// location under different fields across versions, so both the working
+// directory and the git root are checked.
+func sessionMatchesProject(meta *sessionMeta, projectPath string) bool {
+	if meta.CWD != "" && agent.PathsEqual(meta.CWD, projectPath) {
+		return true
+	}
+	if meta.GitRoot != "" && agent.PathsEqual(meta.GitRoot, projectPath) {
+		return true
+	}
+	return false
+}
