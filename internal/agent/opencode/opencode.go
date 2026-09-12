@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -81,6 +82,16 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 	var transcriptData []byte
 	if hook.TranscriptData != "" {
 		transcriptData = []byte(hook.TranscriptData)
+	}
+
+	// Cache the transcript now, while the session is still live. OpenCode's
+	// internal storage layout has changed across releases (flat files, then
+	// SQLite, ...), so scanning it after the fact during a manual-commit
+	// post-commit hook is fragile. The plugin invokes this on every tool
+	// call (see plugin.go), so we get a fresh copy well before the CLI
+	// process exits.
+	if hook.ProjectDir != "" && hook.SessionID != "" && len(transcriptData) > 0 {
+		saveActiveSession(hook.ProjectDir, hook.SessionID, transcriptData)
 	}
 
 	return &agent.HookData{
@@ -230,8 +241,17 @@ func (a *Agent) parseMessageDir(dir string) (*agent.Transcript, error) {
 }
 
 // DiscoverSession finds an active or recent OpenCode session.
-// It first tries flat file storage (pre-v1.2), then falls back to SQLite (v1.2+).
+// It first checks shiftlog's own cached transcript (see saveActiveSession),
+// then tries flat file storage (pre-v1.2), then falls back to SQLite (v1.2+).
 func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) {
+	// Prefer the transcript we cached ourselves at hook time: OpenCode's own
+	// on-disk storage format has changed across releases and may no longer
+	// match what discoverFromFlatFiles/discoverFromSQLite expect by the time
+	// a manual commit triggers discovery.
+	if info := loadActiveSession(projectPath); info != nil {
+		return info, nil
+	}
+
 	// Try flat file storage first (pre-v1.2 OpenCode)
 	session, err := a.discoverFromFlatFiles(projectPath)
 	if err != nil {
@@ -454,7 +474,6 @@ func parseOpenCodeEntry(raw map[string]json.RawMessage, fullData []byte) agent.T
 	return entry
 }
 
-
 // parseOpenCodeMessage parses message content from an OpenCode entry.
 func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageType) *agent.Message {
 	if msgType == "" {
@@ -498,3 +517,73 @@ func parseOpenCodeMessage(raw map[string]json.RawMessage, msgType agent.MessageT
 	return msg
 }
 
+// activeSession is a durable pointer to the most recently observed OpenCode
+// session, written by ParseHookInput while the session is still live and
+// read back by DiscoverSession for manual-commit capture.
+type activeSession struct {
+	SessionID      string    `json:"session_id"`
+	ProjectPath    string    `json:"project_path"`
+	TranscriptData []byte    `json:"transcript_data,omitempty"`
+	SavedAt        time.Time `json:"saved_at"`
+}
+
+// activeSessionPath returns the path to shiftlog's own cached session marker.
+func activeSessionPath(projectPath string) string {
+	return filepath.Join(projectPath, ".shiftlog", "opencode-active-session.json")
+}
+
+// saveActiveSession persists a copy of the current session's transcript so it
+// can be recovered later even if OpenCode's own storage format/layout has
+// moved on by the time a manual commit triggers discovery.
+func saveActiveSession(projectPath, sessionID string, transcriptData []byte) {
+	if projectPath == "" || sessionID == "" || len(transcriptData) == 0 {
+		return
+	}
+
+	raw, err := json.Marshal(activeSession{
+		SessionID:      sessionID,
+		ProjectPath:    projectPath,
+		TranscriptData: transcriptData,
+		SavedAt:        time.Now(),
+	})
+	if err != nil {
+		return
+	}
+
+	dir := filepath.Join(projectPath, ".shiftlog")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return
+	}
+	_ = os.WriteFile(activeSessionPath(projectPath), raw, 0600)
+}
+
+// loadActiveSession reads back a session cached by saveActiveSession, if one
+// exists, matches projectPath, and is still fresh.
+func loadActiveSession(projectPath string) *agent.SessionInfo {
+	data, err := os.ReadFile(activeSessionPath(projectPath))
+	if err != nil {
+		return nil
+	}
+
+	var saved activeSession
+	if err := json.Unmarshal(data, &saved); err != nil {
+		return nil
+	}
+
+	if !agent.PathsEqual(saved.ProjectPath, projectPath) {
+		return nil
+	}
+	if time.Since(saved.SavedAt) > agent.RecentSessionTimeout {
+		return nil
+	}
+	if len(saved.TranscriptData) == 0 {
+		return nil
+	}
+
+	return &agent.SessionInfo{
+		SessionID:      saved.SessionID,
+		StartedAt:      saved.SavedAt.Format(time.RFC3339),
+		ProjectPath:    projectPath,
+		TranscriptData: saved.TranscriptData,
+	}
+}

@@ -160,6 +160,16 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 		}
 	}
 
+	// Cache the transcript now, while the session is still live. Newer
+	// Copilot CLI releases clean up ephemeral (non-interactive "-p") session
+	// directories shortly after the process exits, so by the time a manual
+	// `git commit` triggers the post-commit hook, scanForRecentSession can no
+	// longer find anything under ~/.copilot/session-state. Persisting a copy
+	// here keeps manual-commit discovery working regardless.
+	if hook.CWD != "" {
+		saveActiveSession(hook.CWD, sessionID, transcriptPath)
+	}
+
 	return &agent.HookData{
 		SessionID:      sessionID,
 		TranscriptPath: transcriptPath,
@@ -228,6 +238,12 @@ func (a *Agent) ParseTranscriptFile(path string) (*agent.Transcript, error) {
 
 // DiscoverSession finds an active or recent Copilot CLI session.
 func (a *Agent) DiscoverSession(projectPath string) (*agent.SessionInfo, error) {
+	// Prefer the transcript we cached ourselves at hook time: it survives
+	// Copilot CLI cleaning up its own ephemeral session-state directory
+	// after the process exits (see ParseHookInput / saveActiveSession).
+	if info := loadActiveSession(projectPath); info != nil {
+		return info, nil
+	}
 	return scanForRecentSession(projectPath)
 }
 
@@ -472,4 +488,78 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	}, nil
 }
 
+// activeSession is a durable pointer to the most recently observed Copilot
+// session, written by ParseHookInput while the session is still live and
+// read back by DiscoverSession for manual-commit capture.
+type activeSession struct {
+	SessionID      string    `json:"session_id"`
+	ProjectPath    string    `json:"project_path"`
+	TranscriptData []byte    `json:"transcript_data,omitempty"`
+	SavedAt        time.Time `json:"saved_at"`
+}
 
+// activeSessionPath returns the path to shiftlog's own cached session marker.
+func activeSessionPath(projectPath string) string {
+	return filepath.Join(projectPath, ".shiftlog", "copilot-active-session.json")
+}
+
+// saveActiveSession persists a copy of the current session's transcript so it
+// can be recovered later even if Copilot CLI removes its own session-state
+// directory before a manual commit triggers discovery.
+func saveActiveSession(projectPath, sessionID, transcriptPath string) {
+	if projectPath == "" || sessionID == "" || transcriptPath == "" {
+		return
+	}
+
+	data, err := os.ReadFile(transcriptPath)
+	if err != nil || len(data) == 0 {
+		return
+	}
+
+	raw, err := json.Marshal(activeSession{
+		SessionID:      sessionID,
+		ProjectPath:    projectPath,
+		TranscriptData: data,
+		SavedAt:        time.Now(),
+	})
+	if err != nil {
+		return
+	}
+
+	dir := filepath.Join(projectPath, ".shiftlog")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return
+	}
+	_ = os.WriteFile(activeSessionPath(projectPath), raw, 0600)
+}
+
+// loadActiveSession reads back a session cached by saveActiveSession, if one
+// exists, matches projectPath, and is still fresh.
+func loadActiveSession(projectPath string) *agent.SessionInfo {
+	data, err := os.ReadFile(activeSessionPath(projectPath))
+	if err != nil {
+		return nil
+	}
+
+	var saved activeSession
+	if err := json.Unmarshal(data, &saved); err != nil {
+		return nil
+	}
+
+	if !agent.PathsEqual(saved.ProjectPath, projectPath) {
+		return nil
+	}
+	if time.Since(saved.SavedAt) > agent.RecentSessionTimeout {
+		return nil
+	}
+	if len(saved.TranscriptData) == 0 {
+		return nil
+	}
+
+	return &agent.SessionInfo{
+		SessionID:      saved.SessionID,
+		StartedAt:      saved.SavedAt.Format(time.RFC3339),
+		ProjectPath:    projectPath,
+		TranscriptData: saved.TranscriptData,
+	}
+}
