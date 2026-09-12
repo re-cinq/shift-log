@@ -160,6 +160,15 @@ func (a *Agent) ParseHookInput(raw []byte) (*agent.HookData, error) {
 		}
 	}
 
+	// Cache a snapshot of this session's transcript now, while it's still
+	// live. Newer Copilot CLI releases have been observed to remove their
+	// own session-state directory shortly after the CLI process exits,
+	// which would otherwise leave nothing for a later manual (post-commit
+	// hook) lookup to find.
+	if hook.CWD != "" {
+		cacheSessionTranscript(hook.CWD, sessionID, transcriptPath)
+	}
+
 	return &agent.HookData{
 		SessionID:      sessionID,
 		TranscriptPath: transcriptPath,
@@ -461,7 +470,11 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 	}
 
 	if bestDir == "" {
-		return nil, nil
+		// Nothing found on disk. Copilot may have already cleaned up its own
+		// session-state directory for this session (observed with newer CLI
+		// releases for non-interactive, non-resumable runs) — fall back to
+		// shiftlog's own cache, populated while the session was still live.
+		return cachedSessionFor(projectPath), nil
 	}
 
 	return &agent.SessionInfo{
@@ -471,5 +484,3 @@ func scanForRecentSession(projectPath string) (*agent.SessionInfo, error) {
 		ProjectPath:    projectPath,
 	}, nil
 }
-
-
